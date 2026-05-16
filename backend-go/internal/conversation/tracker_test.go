@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -56,11 +57,22 @@ func TestConversationTracker_UpdateTitleMissingConversation(t *testing.T) {
 	ct := NewConversationTracker(1*time.Hour, 2*time.Hour)
 	defer ct.Stop()
 
-	if ct.UpdateTitle("messages", "session-123", "Build docs preview") {
-		t.Fatal("expected UpdateTitle to report missing conversation")
+	// title 请求先于对话创建到达时，应缓存 title 并返回 true
+	if !ct.UpdateTitle("messages", "session-123", "Build docs preview") {
+		t.Fatal("expected UpdateTitle to accept pending title")
 	}
 	if convs := ct.GetActiveConversations(""); len(convs) != 0 {
 		t.Fatalf("expected no conversation to be created by UpdateTitle, got %d", len(convs))
+	}
+
+	// 后续 Track 创建对话时应自动应用 pending title
+	ct.Track("messages", "session-123", "claude-opus-4-7", 0, "primary", "", "", 0)
+	convs := ct.GetActiveConversations("")
+	if len(convs) != 1 {
+		t.Fatalf("expected 1 conversation after Track, got %d", len(convs))
+	}
+	if !strings.Contains(convs[0].Title, "Build docs preview") {
+		t.Fatalf("expected pending title to be applied, got %q", convs[0].Title)
 	}
 }
 

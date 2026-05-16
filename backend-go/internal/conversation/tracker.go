@@ -14,7 +14,7 @@ type Conversation struct {
 	ID             string    `json:"id"`
 	Kind           string    `json:"kind"`
 	UserID         string    `json:"userId"`
-	RawUserID      string    `json:"-"`
+	RawUserID      string    `json:"rawUserId,omitempty"`
 	Title          string    `json:"title,omitempty"`
 	GeneratedTitle string    `json:"-"`
 	FallbackTitle  string    `json:"-"`
@@ -43,11 +43,17 @@ func (conv *Conversation) recomputeTitle() {
 	conv.Title = conv.FallbackTitle
 }
 
+type pendingTitle struct {
+	title     string
+	createdAt time.Time
+}
+
 type ConversationTracker struct {
 	mu               sync.RWMutex
 	conversations    map[string]*Conversation
 	sessionMapping   map[string]string // sessionID → conversationID (for Responses)
 	userMapping      map[string]string // kind:userID → conversationID (for Chat/Messages/Gemini)
+	pendingTitles    map[string]*pendingTitle // kind:userID → title (title 请求先于对话创建时暂存)
 	idleTTL          time.Duration
 	expireTTL        time.Duration
 	maxConversations int
@@ -67,6 +73,7 @@ func NewConversationTracker(idleTTL, expireTTL time.Duration, persistPath ...str
 		conversations:    make(map[string]*Conversation),
 		sessionMapping:   make(map[string]string),
 		userMapping:      make(map[string]string),
+		pendingTitles:    make(map[string]*pendingTitle),
 		idleTTL:          idleTTL,
 		expireTTL:        expireTTL,
 		maxConversations: 100,
@@ -115,6 +122,13 @@ func (ct *ConversationTracker) Track(kind, userID, model string, channelIndex in
 		}
 		compositeKey := kind + ":" + userID
 		ct.userMapping[compositeKey] = convID
+
+		// 应用先于对话创建到达的 pending title
+		if pt, ok := ct.pendingTitles[compositeKey]; ok {
+			conv.GeneratedTitle = pt.title
+			conv.recomputeTitle()
+			delete(ct.pendingTitles, compositeKey)
+		}
 	}
 
 	conv.LastActiveAt = now
@@ -150,7 +164,13 @@ func (ct *ConversationTracker) UpdateTitle(kind, userID, title string) bool {
 	convID := ct.resolveConversationID(kind, userID, "")
 	conv, exists := ct.conversations[convID]
 	if !exists {
-		return false
+		// 对话尚未创建（title 请求先于正常请求到达），暂存 title
+		compositeKey := kind + ":" + userID
+		ct.pendingTitles[compositeKey] = &pendingTitle{
+			title:     strings.TrimSpace(title),
+			createdAt: time.Now(),
+		}
+		return true
 	}
 
 	conv.GeneratedTitle = strings.TrimSpace(title)
@@ -378,6 +398,14 @@ func (ct *ConversationTracker) cleanup() {
 			removed++
 		} else if idleDuration > ct.idleTTL && conv.Status != "idle" {
 			conv.Status = "idle"
+		}
+	}
+
+	// 清理超时的 pending titles（超过 2 分钟未被消费则丢弃）
+	const pendingTitleTTL = 2 * time.Minute
+	for key, pt := range ct.pendingTitles {
+		if now.Sub(pt.createdAt) > pendingTitleTTL {
+			delete(ct.pendingTitles, key)
 		}
 	}
 

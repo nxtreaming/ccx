@@ -84,6 +84,14 @@
           <v-btn size="x-small" variant="text" @click.stop="$emit('toggleExpand')">Collapse</v-btn>
         </div>
       </div>
+
+      <!-- Row 3: Raw User ID -->
+      <div v-if="conversation.rawUserId" class="raw-user-id mt-2 d-flex align-center" @click.stop="copyRawUserId">
+        <span class="text-caption text-medium-emphasis font-weight-mono raw-user-id-text">{{ conversation.rawUserId }}</span>
+        <v-btn icon size="x-small" variant="text" class="ml-1 copy-btn" @click.stop="copyRawUserId">
+          <v-icon size="12">mdi-content-copy</v-icon>
+        </v-btn>
+      </div>
     </v-card-text>
   </v-card>
 </template>
@@ -276,6 +284,11 @@ function handleDemote(index: number) {
   const [item] = current.splice(index, 1)
   current.push(item)
   emit('setOverride', props.conversation.id, buildSequence(current))
+}
+
+function copyRawUserId() {
+  if (!props.conversation.rawUserId) return
+  navigator.clipboard.writeText(props.conversation.rawUserId)
 }
 
 </script>
@@ -487,5 +500,30 @@ function handleDemote(index: number) {
 
 .font-weight-mono {
   font-family: monospace;
+}
+
+/* Raw User ID */
+.raw-user-id {
+  border-top: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity));
+  padding-top: 6px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.raw-user-id:hover {
+  opacity: 0.9;
+}
+.raw-user-id-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.raw-user-id .copy-btn {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+.raw-user-id:hover .copy-btn {
+  opacity: 1;
 }
 </style>

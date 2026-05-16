@@ -2,7 +2,18 @@
   <div class="conversation-dashboard">
     <!-- 过滤栏 -->
     <div class="d-flex align-center mb-4 flex-wrap ga-2">
-      <v-chip-group v-model="kindFilter" mandatory selected-class="text-primary">
+      <!-- 手机端：下拉选择 -->
+      <v-select
+        v-if="xs"
+        v-model="kindFilter"
+        :items="kindFilterOptions"
+        density="compact"
+        variant="outlined"
+        hide-details
+        class="kind-filter-select"
+      />
+      <!-- 桌面端：chip 组 -->
+      <v-chip-group v-else v-model="kindFilter" mandatory selected-class="text-primary">
         <v-chip value="" variant="outlined" size="small" class="filter-chip" filter>ALL</v-chip>
         <v-chip value="messages" variant="outlined" size="small" color="purple" class="filter-chip" filter>MESSAGES</v-chip>
         <v-chip value="chat" variant="outlined" size="small" color="blue" class="filter-chip" filter>CHAT</v-chip>
@@ -66,6 +77,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useDisplay } from 'vuetify'
 import { api, type ConversationInfo, type SequenceOverrideInfo, type ChannelSequenceEntry } from '@/services/api'
 import { useGlobalTick } from '@/composables/useGlobalTick'
 import { useI18n } from '@/i18n'
@@ -73,6 +85,7 @@ import { useSystemStore } from '@/stores/system'
 import ConversationCard from './ConversationCard.vue'
 
 const { t } = useI18n()
+const { xs } = useDisplay()
 const systemStore = useSystemStore() as any
 
 const systemStatusText = computed(() => {
@@ -88,6 +101,15 @@ const loading = ref(true)
 const conversations = ref<ConversationInfo[]>([])
 const overrides = ref<Record<string, SequenceOverrideInfo>>({})
 const kindFilter = ref('')
+
+const kindFilterOptions = [
+  { title: 'ALL', value: '' },
+  { title: 'MESSAGES', value: 'messages' },
+  { title: 'CHAT', value: 'chat' },
+  { title: 'IMAGES', value: 'images' },
+  { title: 'RESPONSES', value: 'responses' },
+  { title: 'GEMINI', value: 'gemini' },
+]
 const expandedCards = ref(new Set<string>())
 type DashboardChannel = { index: number; name: string; priority: number; status: string }
 
@@ -211,6 +233,10 @@ fetchAllChannels()
   font-size: 10px !important;
   font-weight: 700;
   letter-spacing: 0.06em;
+}
+.kind-filter-select {
+  max-width: 160px;
+  flex: 0 0 auto;
 }
 .system-status-indicator {
   display: inline-flex;

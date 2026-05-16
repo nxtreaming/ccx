@@ -1502,6 +1502,7 @@ export interface ConversationInfo {
   id: string
   kind: 'messages' | 'responses' | 'chat' | 'gemini' | 'images'
   userId: string
+  rawUserId?: string
   title?: string
   createdAt: string
   lastActiveAt: string

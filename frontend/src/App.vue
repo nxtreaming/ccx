@@ -79,7 +79,7 @@
               class="mobile-tab-selector text-body-2 font-weight-bold"
               append-icon="mdi-chevron-down"
             >
-              {{ translatedApiTabOptions.find(tab => tab.value === channelStore.activeTab)?.label }}
+              {{ route.path === '/conversations' ? t('app.tabs.conversations') : translatedApiTabOptions.find(tab => tab.value === channelStore.activeTab)?.label }}
             </v-btn>
           </template>
           <v-list density="compact" nav>
