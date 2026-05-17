@@ -1,3 +1,15 @@
+## [Unreleased]
+
+### 新增
+
+- **Responses Compact 本地压缩** - 当 responses 渠道上游为非原生 Responses 类型（openai/claude/gemini）时，`/v1/responses/compact` 端点自动切换为本地 compact 模式：将对话历史格式化为 transcript，通过现有 converter 管线发送普通请求让模型生成摘要，再包装为 Responses 格式返回。支持流式/非流式跟随客户端、session 历史读取与 compact 结果写回、大输入截断保护。原生 responses 上游若返回 404/405/501 也会自动回退本地 compact
+- **SessionManager 新增只读查询与压缩会话创建** - 新增 `GetSessionByResponseID` 通过 responseID 只读查找 session；新增 `CreateCompactedSession` 创建压缩后的轻量会话并记录映射
+- **ResponsesProvider 提取公共请求构建方法** - 新增 `ConvertBodyToProviderRequest` 公共入口，接受 bodyBytes 参数复用现有 URL/转换/认证逻辑，供 compact 等场景调用
+
+### 改进
+
+- **Messages 渠道模型列表兼容国内 Claude 协议入口** - 当 `base_url` 以 `/anthropic`、`/claude`、`/messages` 结尾时（如 `https://api.deepseek.com/anthropic`），模型列表获取自动尝试三段候选 URL：当前路径 → 剔除协议尾段 → 纯域名根路径，解决国内服务商模型接口不在兼容协议子路径下的问题。管理端"获取模型"同步适配。
+
 ## [v2.6.99] - 2026-05-16
 
 ### 修复

@@ -51,8 +51,8 @@ type pendingTitle struct {
 type ConversationTracker struct {
 	mu               sync.RWMutex
 	conversations    map[string]*Conversation
-	sessionMapping   map[string]string // sessionID → conversationID (for Responses)
-	userMapping      map[string]string // kind:userID → conversationID (for Chat/Messages/Gemini)
+	sessionMapping   map[string]string        // sessionID → conversationID (for Responses)
+	userMapping      map[string]string        // kind:userID → conversationID (for Chat/Messages/Gemini)
 	pendingTitles    map[string]*pendingTitle // kind:userID → title (title 请求先于对话创建时暂存)
 	idleTTL          time.Duration
 	expireTTL        time.Duration
