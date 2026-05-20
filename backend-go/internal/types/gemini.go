@@ -183,6 +183,13 @@ func (fd *GeminiFunctionDeclaration) UnmarshalJSON(data []byte) error {
 // - exclusiveMinimum / exclusiveMaximum：Gemini 不支持（boolean 形式和 number 形式均移除）
 // - const：转换为 enum: [const]
 func SanitizeGeminiToolSchema(v interface{}) interface{} {
+	return sanitizeGeminiSchemaNode(v, false)
+}
+
+// sanitizeGeminiSchemaNode 递归清洗 JSON Schema。
+// insideProperties 为 true 时表示当前节点是 properties 映射的直接子项，
+// 此时不剥离 schema 关键字（因为键名是用户定义的参数名）。
+func sanitizeGeminiSchemaNode(v interface{}, insideProperties bool) interface{} {
 	switch vv := v.(type) {
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(vv))
@@ -190,6 +197,12 @@ func SanitizeGeminiToolSchema(v interface{}) interface{} {
 		hasConst := false
 
 		for k, val := range vv {
+			// properties 内部的键名是用户定义的参数名，不是 schema 关键字
+			if insideProperties {
+				out[k] = sanitizeGeminiSchemaNode(val, false)
+				continue
+			}
+
 			switch k {
 			case "$schema", "title", "examples", "additionalProperties", "propertyNames", "exclusiveMinimum", "exclusiveMaximum":
 				continue
@@ -198,13 +211,18 @@ func SanitizeGeminiToolSchema(v interface{}) interface{} {
 				hasConst = true
 				continue
 			default:
-				out[k] = SanitizeGeminiToolSchema(val)
+				// 如果键名是 "properties"，其子项的键名是用户参数名
+				if k == "properties" {
+					out[k] = sanitizeGeminiSchemaNode(val, true)
+				} else {
+					out[k] = sanitizeGeminiSchemaNode(val, false)
+				}
 			}
 		}
 
 		if hasConst {
 			if _, ok := out["enum"]; !ok {
-				out["enum"] = []interface{}{SanitizeGeminiToolSchema(constValue)}
+				out["enum"] = []interface{}{sanitizeGeminiSchemaNode(constValue, false)}
 			}
 		}
 
@@ -212,7 +230,7 @@ func SanitizeGeminiToolSchema(v interface{}) interface{} {
 	case []interface{}:
 		out := make([]interface{}, len(vv))
 		for i := range vv {
-			out[i] = SanitizeGeminiToolSchema(vv[i])
+			out[i] = sanitizeGeminiSchemaNode(vv[i], false)
 		}
 		return out
 	default:
