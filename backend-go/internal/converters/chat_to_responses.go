@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -32,6 +31,8 @@ type chatToResponsesState struct {
 	ReasoningBuf       strings.Builder
 	ReasoningPartAdded bool
 	ReasoningIndex     int
+	// <think> 标签状态机（用于将正文里的 <think>...</think> 提取为 reasoning_content）
+	Think thinkTagStateMachine
 	// usage（完整支持详细字段，参考 claude-code-hub）
 	InputTokens             int64
 	InputTokensIncludeCache bool // OpenAI prompt_tokens 口径，已包含 cached tokens
@@ -97,14 +98,6 @@ func (st *chatToResponsesState) addToolCallItemIfNeeded(idx int, nextSeq func() 
 }
 
 var chatDataTag = []byte("data:")
-
-// thinkTagRE 匹配 <think>...</think> 标签
-var thinkTagRE = regexp.MustCompile(`(?s)<think>.*?</think>\s*`)
-
-// stripThinkTags 从文本中移除 <think> 标签及其内容
-func stripThinkTags(text string) string {
-	return thinkTagRE.ReplaceAllString(text, "")
-}
 
 func emitResponsesEvent(event string, payload string) string {
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", event, payload)
@@ -191,6 +184,7 @@ func ConvertOpenAIChatToResponses(ctx context.Context, modelName string, origina
 		st.ReasoningItemID = ""
 		st.ReasoningIndex = 0
 		st.ReasoningPartAdded = false
+		st.Think.Reset()
 		st.FuncArgsBuf = make(map[int]*strings.Builder)
 		st.FuncNames = make(map[int]string)
 		st.FuncCallIDs = make(map[int]string)
@@ -236,89 +230,20 @@ func ConvertOpenAIChatToResponses(ctx context.Context, modelName string, origina
 
 		finishReason := choice.Get("finish_reason").String()
 
-		// 处理 reasoning_content（OpenAI o1 模型的 reasoning）
+		// 处理 reasoning_content（OpenAI o1 模型的原生 reasoning 字段）
 		if reasoning := delta.Get("reasoning_content"); reasoning.Exists() && reasoning.String() != "" {
-			reasoningText := reasoning.String()
-
-			// 开始 reasoning block
-			if !st.ReasoningActive {
-				st.ReasoningActive = true
-				st.ReasoningIndex = 0
-				st.ReasoningBuf.Reset()
-				st.ReasoningItemID = fmt.Sprintf("rs_%s_0", st.ResponseID)
-
-				// response.output_item.added for reasoning
-				item := `{"type":"response.output_item.added","sequence_number":0,"output_index":0,"item":{"id":"","type":"reasoning","status":"in_progress","summary":[]}}`
-				item, _ = sjson.Set(item, "sequence_number", nextSeq())
-				item, _ = sjson.Set(item, "output_index", st.ReasoningIndex)
-				item, _ = sjson.Set(item, "item.id", st.ReasoningItemID)
-				out = append(out, emitResponsesEvent("response.output_item.added", item))
-
-				// response.reasoning_summary_part.added
-				part := `{"type":"response.reasoning_summary_part.added","sequence_number":0,"item_id":"","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""}}`
-				part, _ = sjson.Set(part, "sequence_number", nextSeq())
-				part, _ = sjson.Set(part, "item_id", st.ReasoningItemID)
-				part, _ = sjson.Set(part, "output_index", st.ReasoningIndex)
-				out = append(out, emitResponsesEvent("response.reasoning_summary_part.added", part))
-				st.ReasoningPartAdded = true
-			}
-
-			// 发送 reasoning delta
-			st.ReasoningBuf.WriteString(reasoningText)
-			msg := `{"type":"response.reasoning_summary_text.delta","sequence_number":0,"item_id":"","output_index":0,"summary_index":0,"text":""}`
-			msg, _ = sjson.Set(msg, "sequence_number", nextSeq())
-			msg, _ = sjson.Set(msg, "item_id", st.ReasoningItemID)
-			msg, _ = sjson.Set(msg, "output_index", st.ReasoningIndex)
-			msg, _ = sjson.Set(msg, "text", reasoningText)
-			out = append(out, emitResponsesEvent("response.reasoning_summary_text.delta", msg))
+			out = append(out, st.handleReasoningPart(reasoning.String(), nextSeq)...)
 		}
 
-		// 处理 content（文本内容）
+		// 处理 content（文本内容）：先经过 <think> 状态机分流到 reasoning / content
 		if content := delta.Get("content"); content.Exists() && content.String() != "" {
-			contentText := content.String()
-
-			// 如果 reasoning 还在活跃状态，先关闭它
-			if st.ReasoningActive {
-				out = append(out, st.closeReasoningBlock(nextSeq)...)
+			reasoningParts, contentParts := st.Think.Feed(content.String())
+			for _, rp := range reasoningParts {
+				out = append(out, st.handleReasoningPart(rp, nextSeq)...)
 			}
-
-			// 开始 text block
-			if !st.InTextBlock {
-				st.InTextBlock = true
-				// 计算 output_index：如果有 reasoning 则为 1，否则为 0
-				outputIndex := 0
-				if st.ReasoningPartAdded {
-					outputIndex = 1
-				}
-				st.CurrentMsgID = fmt.Sprintf("msg_%s_%d", st.ResponseID, outputIndex)
-
-				// response.output_item.added for message
-				item := `{"type":"response.output_item.added","sequence_number":0,"output_index":0,"item":{"id":"","type":"message","status":"in_progress","content":[],"role":"assistant"}}`
-				item, _ = sjson.Set(item, "sequence_number", nextSeq())
-				item, _ = sjson.Set(item, "output_index", outputIndex)
-				item, _ = sjson.Set(item, "item.id", st.CurrentMsgID)
-				out = append(out, emitResponsesEvent("response.output_item.added", item))
-
-				// response.content_part.added
-				part := `{"type":"response.content_part.added","sequence_number":0,"item_id":"","output_index":0,"content_index":0,"part":{"type":"output_text","annotations":[],"logprobs":[],"text":""}}`
-				part, _ = sjson.Set(part, "sequence_number", nextSeq())
-				part, _ = sjson.Set(part, "item_id", st.CurrentMsgID)
-				part, _ = sjson.Set(part, "output_index", outputIndex)
-				out = append(out, emitResponsesEvent("response.content_part.added", part))
+			for _, cp := range contentParts {
+				out = append(out, st.handleContentPart(cp, nextSeq)...)
 			}
-
-			// 发送 text delta
-			st.TextBuf.WriteString(contentText)
-			outputIndex := 0
-			if st.ReasoningPartAdded {
-				outputIndex = 1
-			}
-			msg := `{"type":"response.output_text.delta","sequence_number":0,"item_id":"","output_index":0,"content_index":0,"delta":"","logprobs":[]}`
-			msg, _ = sjson.Set(msg, "sequence_number", nextSeq())
-			msg, _ = sjson.Set(msg, "item_id", st.CurrentMsgID)
-			msg, _ = sjson.Set(msg, "output_index", outputIndex)
-			msg, _ = sjson.Set(msg, "delta", contentText)
-			out = append(out, emitResponsesEvent("response.output_text.delta", msg))
 		}
 
 		// 处理 tool_calls
@@ -403,6 +328,8 @@ func ConvertOpenAIChatToResponses(ctx context.Context, modelName string, origina
 
 		// 处理 finish_reason
 		if finishReason != "" && finishReason != "null" {
+			// 先把 think 状态机剩余 buffer 兜底刷出
+			out = append(out, st.flushThinkTagBuf(nextSeq)...)
 			// 关闭所有打开的 blocks
 			if st.ReasoningActive {
 				out = append(out, st.closeReasoningBlock(nextSeq)...)
@@ -502,6 +429,112 @@ func ConvertOpenAIChatToResponses(ctx context.Context, modelName string, origina
 	return out
 }
 
+// handleReasoningPart 发射 reasoning 块相关事件，并维护 ReasoningActive/ReasoningBuf 等状态
+func (st *chatToResponsesState) handleReasoningPart(reasoningText string, nextSeq func() int) []string {
+	if reasoningText == "" {
+		return nil
+	}
+	var out []string
+
+	// 开始 reasoning block
+	if !st.ReasoningActive {
+		st.ReasoningActive = true
+		st.ReasoningIndex = 0
+		st.ReasoningBuf.Reset()
+		st.ReasoningItemID = fmt.Sprintf("rs_%s_0", st.ResponseID)
+
+		// response.output_item.added for reasoning
+		item := `{"type":"response.output_item.added","sequence_number":0,"output_index":0,"item":{"id":"","type":"reasoning","status":"in_progress","summary":[]}}`
+		item, _ = sjson.Set(item, "sequence_number", nextSeq())
+		item, _ = sjson.Set(item, "output_index", st.ReasoningIndex)
+		item, _ = sjson.Set(item, "item.id", st.ReasoningItemID)
+		out = append(out, emitResponsesEvent("response.output_item.added", item))
+
+		// response.reasoning_summary_part.added
+		part := `{"type":"response.reasoning_summary_part.added","sequence_number":0,"item_id":"","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""}}`
+		part, _ = sjson.Set(part, "sequence_number", nextSeq())
+		part, _ = sjson.Set(part, "item_id", st.ReasoningItemID)
+		part, _ = sjson.Set(part, "output_index", st.ReasoningIndex)
+		out = append(out, emitResponsesEvent("response.reasoning_summary_part.added", part))
+		st.ReasoningPartAdded = true
+	}
+
+	// 发送 reasoning delta
+	st.ReasoningBuf.WriteString(reasoningText)
+	msg := `{"type":"response.reasoning_summary_text.delta","sequence_number":0,"item_id":"","output_index":0,"summary_index":0,"text":""}`
+	msg, _ = sjson.Set(msg, "sequence_number", nextSeq())
+	msg, _ = sjson.Set(msg, "item_id", st.ReasoningItemID)
+	msg, _ = sjson.Set(msg, "output_index", st.ReasoningIndex)
+	msg, _ = sjson.Set(msg, "text", reasoningText)
+	out = append(out, emitResponsesEvent("response.reasoning_summary_text.delta", msg))
+	return out
+}
+
+// handleContentPart 发射 text 块相关事件，并维护 InTextBlock/TextBuf 等状态
+func (st *chatToResponsesState) handleContentPart(contentText string, nextSeq func() int) []string {
+	if contentText == "" {
+		return nil
+	}
+	var out []string
+
+	// 如果 reasoning 还在活跃状态，先关闭它
+	if st.ReasoningActive {
+		out = append(out, st.closeReasoningBlock(nextSeq)...)
+	}
+
+	// 开始 text block
+	if !st.InTextBlock {
+		st.InTextBlock = true
+		// 计算 output_index：如果有 reasoning 则为 1，否则为 0
+		outputIndex := 0
+		if st.ReasoningPartAdded {
+			outputIndex = 1
+		}
+		st.CurrentMsgID = fmt.Sprintf("msg_%s_%d", st.ResponseID, outputIndex)
+
+		// response.output_item.added for message
+		item := `{"type":"response.output_item.added","sequence_number":0,"output_index":0,"item":{"id":"","type":"message","status":"in_progress","content":[],"role":"assistant"}}`
+		item, _ = sjson.Set(item, "sequence_number", nextSeq())
+		item, _ = sjson.Set(item, "output_index", outputIndex)
+		item, _ = sjson.Set(item, "item.id", st.CurrentMsgID)
+		out = append(out, emitResponsesEvent("response.output_item.added", item))
+
+		// response.content_part.added
+		part := `{"type":"response.content_part.added","sequence_number":0,"item_id":"","output_index":0,"content_index":0,"part":{"type":"output_text","annotations":[],"logprobs":[],"text":""}}`
+		part, _ = sjson.Set(part, "sequence_number", nextSeq())
+		part, _ = sjson.Set(part, "item_id", st.CurrentMsgID)
+		part, _ = sjson.Set(part, "output_index", outputIndex)
+		out = append(out, emitResponsesEvent("response.content_part.added", part))
+	}
+
+	// 发送 text delta
+	st.TextBuf.WriteString(contentText)
+	outputIndex := 0
+	if st.ReasoningPartAdded {
+		outputIndex = 1
+	}
+	msg := `{"type":"response.output_text.delta","sequence_number":0,"item_id":"","output_index":0,"content_index":0,"delta":"","logprobs":[]}`
+	msg, _ = sjson.Set(msg, "sequence_number", nextSeq())
+	msg, _ = sjson.Set(msg, "item_id", st.CurrentMsgID)
+	msg, _ = sjson.Set(msg, "output_index", outputIndex)
+	msg, _ = sjson.Set(msg, "delta", contentText)
+	out = append(out, emitResponsesEvent("response.output_text.delta", msg))
+	return out
+}
+
+// flushThinkTagBuf 刷新 <think> 标签状态机的尾部缓冲（用于流结束兜底）。
+// 把残留文本按状态归到 reasoning 或 content 通道并发对应事件。
+func (st *chatToResponsesState) flushThinkTagBuf(nextSeq func() int) []string {
+	remaining, toReasoning := st.Think.Drain()
+	if remaining == "" {
+		return nil
+	}
+	if toReasoning {
+		return st.handleReasoningPart(remaining, nextSeq)
+	}
+	return st.handleContentPart(remaining, nextSeq)
+}
+
 // closeReasoningBlock 关闭 reasoning block
 func (st *chatToResponsesState) closeReasoningBlock(nextSeq func() int) []string {
 	if !st.ReasoningActive {
@@ -556,7 +589,7 @@ func (st *chatToResponsesState) closeTextBlock(nextSeq func() int) []string {
 	done, _ = sjson.Set(done, "sequence_number", nextSeq())
 	done, _ = sjson.Set(done, "item_id", st.CurrentMsgID)
 	done, _ = sjson.Set(done, "output_index", outputIndex)
-	done, _ = sjson.Set(done, "text", stripThinkTags(st.TextBuf.String()))
+	done, _ = sjson.Set(done, "text", st.TextBuf.String())
 	out = append(out, emitResponsesEvent("response.output_text.done", done))
 
 	// response.content_part.done
@@ -564,7 +597,7 @@ func (st *chatToResponsesState) closeTextBlock(nextSeq func() int) []string {
 	partDone, _ = sjson.Set(partDone, "sequence_number", nextSeq())
 	partDone, _ = sjson.Set(partDone, "item_id", st.CurrentMsgID)
 	partDone, _ = sjson.Set(partDone, "output_index", outputIndex)
-	partDone, _ = sjson.Set(partDone, "part.text", stripThinkTags(st.TextBuf.String()))
+	partDone, _ = sjson.Set(partDone, "part.text", st.TextBuf.String())
 	out = append(out, emitResponsesEvent("response.content_part.done", partDone))
 
 	// response.output_item.done for message
@@ -572,7 +605,7 @@ func (st *chatToResponsesState) closeTextBlock(nextSeq func() int) []string {
 	final, _ = sjson.Set(final, "sequence_number", nextSeq())
 	final, _ = sjson.Set(final, "output_index", outputIndex)
 	final, _ = sjson.Set(final, "item.id", st.CurrentMsgID)
-	final, _ = sjson.Set(final, "item.content.0.text", stripThinkTags(st.TextBuf.String()))
+	final, _ = sjson.Set(final, "item.content.0.text", st.TextBuf.String())
 	out = append(out, emitResponsesEvent("response.output_item.done", final))
 
 	st.InTextBlock = false
@@ -668,6 +701,9 @@ func (st *chatToResponsesState) generateCompletedEvents(originalRequestRawJSON [
 	var out []string
 	nextSeq := func() int { st.Seq++; return st.Seq }
 
+	// 兜底：刷出 think 状态机的尾部缓冲（如未闭合的 <think> 或 "<thi" 之类边界片段）
+	out = append(out, st.flushThinkTagBuf(nextSeq)...)
+
 	// 先关闭所有打开的 blocks
 	if st.ReasoningActive {
 		out = append(out, st.closeReasoningBlock(nextSeq)...)
@@ -750,7 +786,7 @@ func (st *chatToResponsesState) generateCompletedEvents(originalRequestRawJSON [
 				"type":        "output_text",
 				"annotations": []interface{}{},
 				"logprobs":    []interface{}{},
-				"text":        stripThinkTags(st.TextBuf.String()),
+				"text":        st.TextBuf.String(),
 			}},
 			"role": "assistant",
 		}
@@ -1010,9 +1046,13 @@ func ConvertOpenAIChatToResponsesNonStream(_ context.Context, _ string, original
 			reasoningBuf.WriteString(reasoning.String())
 		}
 
-		// 处理 content
+		// 处理 content：开头若有 <think>...</think>，提取到 reasoning，剩余作为正文
 		if content := message.Get("content"); content.Exists() && content.String() != "" {
-			textBuf.WriteString(content.String())
+			remaining, thinking, hasThink := extractThinkTag(content.String())
+			if hasThink && thinking != "" {
+				reasoningBuf.WriteString(thinking)
+			}
+			textBuf.WriteString(remaining)
 		}
 
 		// 处理 tool_calls

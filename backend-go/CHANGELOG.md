@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Added
+
+- 新增流式与非流式 `<think>...</think>` 标签提取状态机（`thinkTagStateMachine`），支持跨 chunk 边界的字符级状态机解析，将 Minimax 2.7 等模型的思考内容提取为原生 `reasoning_content`。
+- 新增 `extractThinkTag` 共享函数，支持非流式响应（`ConvertOpenAIChatToResponsesNonStream` 与 `OpenAIChatResponseToResponses`）中的思考标签提取。
+- 新增 `think_tag_fuzz_test.go`，包含 `SplitInvariant` 与 `ExtractThinkTag` 两个 fuzz 测试，覆盖 150 万次以上随机切分与边界输入。
+- 新增 `responses_converter_think_test.go`，覆盖 think 在开头、与原生 `reasoning_content` 共存合并、middle 不剥离、only tool_calls 无空 message、未闭合 think 等单测场景。
+
+### Changed
+
+- 重构 `ConvertOpenAIChatToResponses`，将内联的 reasoning 和 content 处理逻辑封装为 `handleReasoningPart` 和 `handleContentPart`，使流式事件发射与状态机解耦。
+- 移除 PR #83 引入的 `stripThinkTags` 直接丢弃逻辑，升级为协议级提取与原生推理字段转换。
+
 ## [v2.7.5] - 2026-05-18
 
 ### Added

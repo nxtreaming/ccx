@@ -790,7 +790,19 @@ func OpenAIChatResponseToResponses(openaiResp map[string]interface{}, sessionID 
 		choice, ok := choices[0].(map[string]interface{})
 		if ok {
 			message, _ := choice["message"].(map[string]interface{})
-			if reasoning, _ := message["reasoning_content"].(string); reasoning != "" {
+			reasoningFromField, _ := message["reasoning_content"].(string)
+			contentRaw, _ := message["content"].(string)
+			remainingContent, extractedThinking, hasThink := extractThinkTag(contentRaw)
+			// 合并：原生 reasoning_content 优先，再追加从 <think> 提取出的内容
+			reasoning := reasoningFromField
+			if hasThink && extractedThinking != "" {
+				if reasoning != "" {
+					reasoning += extractedThinking
+				} else {
+					reasoning = extractedThinking
+				}
+			}
+			if reasoning != "" {
 				output = append(output, types.ResponsesItem{
 					Type:   "reasoning",
 					Status: "completed",
@@ -800,15 +812,13 @@ func OpenAIChatResponseToResponses(openaiResp map[string]interface{}, sessionID 
 					}},
 				})
 			}
-			contentRaw, _ := message["content"].(string)
-			content := stripThinkTags(contentRaw)
-			if content != "" {
+			if remainingContent != "" {
 				output = append(output, types.ResponsesItem{
 					Type: "message",
 					Role: "assistant",
 					Content: []types.ContentBlock{{
 						Type: "output_text",
-						Text: content,
+						Text: remainingContent,
 					}},
 				})
 			}
