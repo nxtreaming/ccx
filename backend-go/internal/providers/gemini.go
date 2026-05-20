@@ -75,8 +75,24 @@ func (p *GeminiProvider) ConvertToProviderRequest(c *gin.Context, upstream *conf
 
 // convertToGeminiRequest 转换为 Gemini 请求体
 func (p *GeminiProvider) convertToGeminiRequest(claudeReq *types.ClaudeRequest, upstream *config.UpstreamConfig) map[string]interface{} {
+	contents := p.convertMessages(claudeReq.Messages)
+
+	// Claude 协议不携带 Gemini 的 thoughtSignature 字段，因此转换出的 functionCall
+	// 永远缺少签名。当上游严格校验（如 vip.undyingapi.com）时会返回 400:
+	// "Function call is missing a thought_signature in functionCall parts"。
+	// 按渠道开关注入 dummy 签名或显式剥离字段，保持与原生 Gemini 入口一致的语义。
+	if upstream != nil {
+		switch {
+		case upstream.StripThoughtSignature:
+			// Claude→Gemini 场景下本来就不会带签名，StripThoughtSignature 在此为 no-op，
+			// 但保留分支避免被下方 InjectDummyThoughtSignature 覆盖。
+		case upstream.InjectDummyThoughtSignature:
+			injectDummyThoughtSignatureInMapContents(contents)
+		}
+	}
+
 	req := map[string]interface{}{
-		"contents": p.convertMessages(claudeReq.Messages),
+		"contents": contents,
 	}
 
 	// 添加系统指令
@@ -116,6 +132,34 @@ func (p *GeminiProvider) convertToGeminiRequest(claudeReq *types.ClaudeRequest, 
 	}
 
 	return req
+}
+
+// injectDummyThoughtSignatureInMapContents 给 map 形式的 contents 中所有 functionCall
+// part 注入 part 层级的 thoughtSignature（dummy 值），用于通过 vip.undyingapi.com 等
+// 第三方网关的严格校验。Google 官方 API 也接受 dummy 值。
+// 仅在 part 不存在 thoughtSignature 时注入，避免覆盖客户端原始签名。
+func injectDummyThoughtSignatureInMapContents(contents []map[string]interface{}) {
+	for _, content := range contents {
+		parts, ok := content["parts"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, p := range parts {
+			partMap, ok := p.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if _, hasFunctionCall := partMap["functionCall"]; !hasFunctionCall {
+				continue
+			}
+			if sig, exists := partMap["thoughtSignature"]; exists {
+				if s, ok := sig.(string); ok && s != "" {
+					continue
+				}
+			}
+			partMap["thoughtSignature"] = types.DummyThoughtSignature
+		}
+	}
 }
 
 // convertMessages 转换消息
@@ -168,7 +212,10 @@ func (p *GeminiProvider) convertMessage(msg types.ClaudeMessage) map[string]inte
 
 		switch contentType {
 		case "text":
-			if text, ok := content["text"].(string); ok {
+			// 跳过空文本块：Gemini API 严格校验 Part 的 oneof data 字段，
+			// 空 {"text": ""} 会被部分上游网关判定为 "required oneof field 'data' must have one initialized field"，
+			// Claude 在带 tool_use 的 assistant 消息中常会附带空 text 前缀，必须过滤。
+			if text, ok := content["text"].(string); ok && text != "" {
 				parts = append(parts, map[string]string{
 					"text": text,
 				})

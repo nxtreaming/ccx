@@ -19,6 +19,17 @@
   - 将 `GeminiFunctionResponse.Response` 字段类型从 `map[string]interface{}` 变更为 `interface{}`，提高结构体容错性。
   - 在 `backend-go/internal/providers/gemini.go` 的 `convertMessage` 方法中，对 `tool_result` 的 `content` 进行了智能解析和规范化，确保转换后的 `response` 始终是一个符合 Gemini 官方协议要求的 JSON 对象。
   - 新增了 `gemini_tool_result_test.go` 单元测试，覆盖了 `tool_result` 为数组、字符串、JSON 对象等各种场景，验证其能正确转换为 Gemini 期望的格式。
+- **Gemini 渠道空 text part 触发上游 400**：
+  - 修复了 `messages` 接口转上游 `gemini` 类型渠道时，Claude assistant 消息中常出现的空 text 块（如带 tool_use 时的前置 padding）被无脑翻译为 `{"text": ""}`，被严格按 Gemini protobuf 校验的上游（如 vip.undyingapi.com）判定为 `contents[X].parts[Y].data: required oneof field 'data' must have one initialized field` 返回 400 的问题。
+  - 在 `backend-go/internal/providers/gemini.go` 的 `convertMessage` 中处理 `text` 类型 content 时跳过空字符串，确保不向 Gemini 上游下发无意义的空 Part。
+  - 在 `gemini_tool_result_test.go` 中新增 `TestGeminiProvider_ConvertMessage_SkipsEmptyTextBlock` 与 `TestGeminiProvider_ConvertMessage_KeepsNonEmptyTextBlock` 两条用例，覆盖空 text 块被剔除与非空 text 块仍保留两种场景。
+- **Claude→Gemini provider 转换遵循 thought_signature 渠道开关**：
+  - 修复了 `messages` 接口转上游 `gemini` 类型渠道时，Claude 协议本身不携带 thought_signature 字段，导致严格校验的上游（如 vip.undyingapi.com）返回 `Function call is missing a thought_signature in functionCall parts` 400 的问题。
+  - 在 `backend-go/internal/providers/gemini.go` 的 `convertToGeminiRequest` 中按上游 `injectDummyThoughtSignature` / `stripThoughtSignature` 开关注入 part 层级的 `thoughtSignature`，与原生 Gemini 入口（`handlers/gemini/handler.go`）的策略对齐：默认不修改、`injectDummyThoughtSignature` 开启时注入 `DummyThoughtSignature`、`stripThoughtSignature` 优先级更高且在该场景为 no-op（Claude 协议本就无签名）。
+  - 在 `gemini_tool_result_test.go` 中新增 `TestGeminiProvider_ConvertToGeminiRequest_InjectDummyThoughtSignature`、`TestGeminiProvider_ConvertToGeminiRequest_DefaultNoSignature`、`TestGeminiProvider_ConvertToGeminiRequest_StripThoughtSignatureNoOp` 三条用例。
+- **`maskKey` 短密钥脱敏过度**：
+  - 修复了 `backend-go/main.go` 中启动日志 `maskKey` 对长度 ≤ 4 的密钥直接输出 `****`、完全遮蔽用户能识别的字符的问题。
+  - 现在对长度 ≤ 3 的密钥保留首字符（如 `abc` → `a****`），长度 4~8 保留首尾字符，长度 > 8 保留前后各 2 字符。
 
 ### 新增
 
