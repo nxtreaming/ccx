@@ -184,3 +184,36 @@ func TestGeminiHandleStreamResponse_SafetyFinishReasonMapsToEndTurn(t *testing.T
 		t.Fatalf("expected stop_reason=end_turn for SAFETY finishReason, got %q", stopReason)
 	}
 }
+
+
+func TestGeminiHandleStreamResponse_FunctionCallMapsStopReasonToToolUse(t *testing.T) {
+	body := strings.Join([]string{
+		`data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"mcp__serena__check_onboarding_performed","args":{}}}]},"finishReason":"STOP"}]}`,
+	}, "\n")
+
+	provider := &GeminiProvider{}
+	eventChan, errChan, err := provider.HandleStreamResponse(io.NopCloser(strings.NewReader(body)))
+	if err != nil {
+		t.Fatalf("HandleStreamResponse returned error: %v", err)
+	}
+
+	events := collectStreamEvents(eventChan)
+	select {
+	case streamErr := <-errChan:
+		if streamErr != nil {
+			t.Fatalf("unexpected stream error: %v", streamErr)
+		}
+	default:
+	}
+
+	messageDelta := extractMessageDelta(t, events)
+	delta, ok := messageDelta["delta"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("delta field missing in message_delta: %v", messageDelta)
+	}
+
+	stopReason, _ := delta["stop_reason"].(string)
+	if stopReason != "tool_use" {
+		t.Fatalf("expected stop_reason=tool_use for functionCall stream, got %q", stopReason)
+	}
+}

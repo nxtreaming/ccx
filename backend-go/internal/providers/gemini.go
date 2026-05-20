@@ -493,6 +493,7 @@ func (p *GeminiProvider) HandleStreamResponse(body io.ReadCloser) (<-chan string
 		toolUseBlockIndex := 0
 		messageStartSent := false
 		stopReason := ""
+		hasToolUse := false
 		latestInputTokens := 0
 		latestOutputTokens := 0
 
@@ -639,6 +640,7 @@ func (p *GeminiProvider) HandleStreamResponse(body io.ReadCloser) (<-chan string
 					for _, event := range events {
 						eventChan <- event
 					}
+					hasToolUse = true
 					toolUseBlockIndex++
 				}
 			}
@@ -681,7 +683,9 @@ func (p *GeminiProvider) HandleStreamResponse(body io.ReadCloser) (<-chan string
 		}
 
 		if messageStartSent {
-			if stopReason == "" {
+			if hasToolUse {
+				stopReason = "tool_use"
+			} else if stopReason == "" {
 				stopReason = "end_turn"
 			}
 			deltaEvent := map[string]interface{}{
