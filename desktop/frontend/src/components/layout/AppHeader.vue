@@ -26,7 +26,7 @@ const statusColor = computed(() => {
 
 <template>
   <header class="sticky top-0 z-50 w-full bg-background/80 backdrop-blur-md border-b border-border">
-    <div class="flex h-14 items-center justify-between px-6">
+    <div class="flex h-14 items-center justify-between pr-6 pl-24">
       <h1 class="text-lg font-semibold tracking-tight">CCX Desktop</h1>
       <Badge :class="statusColor" variant="outline" class="border-0 font-bold">
         {{ statusText }}

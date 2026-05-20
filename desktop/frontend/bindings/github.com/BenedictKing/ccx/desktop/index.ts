@@ -5,3 +5,7 @@ import * as DesktopService from "./desktopservice.js";
 export {
     DesktopService
 };
+
+export {
+    EnvFileState
+} from "./models.js";

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/BenedictKing/ccx/desktop/internal/backend"
@@ -16,6 +18,12 @@ type DesktopService struct {
 	configService *configservice.Service
 	app           *application.App
 	mainWindow    application.Window
+}
+
+type EnvFileState struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Exists  bool   `json:"exists"`
 }
 
 func NewDesktopService(manager *backend.Manager) *DesktopService {
@@ -35,6 +43,30 @@ func (s *DesktopService) GetStatus() backend.Status {
 	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	defer cancel()
 	return s.manager.Status(ctx)
+}
+
+func (s *DesktopService) GetProxyAccessKey() (string, error) {
+	return s.manager.EnsureProxyAccessKey()
+}
+
+func (s *DesktopService) GetEnvFile() (EnvFileState, error) {
+	path := filepath.Join(s.manager.DataDir(), ".env")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return EnvFileState{Path: path, Exists: false}, nil
+		}
+		return EnvFileState{}, err
+	}
+	return EnvFileState{Path: path, Content: string(content), Exists: true}, nil
+}
+
+func (s *DesktopService) SaveEnvFile(content string) error {
+	path := filepath.Join(s.manager.DataDir(), ".env")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0o600)
 }
 
 func (s *DesktopService) StartService() error {

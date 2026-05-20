@@ -12,6 +12,10 @@ import * as backend$0 from "./internal/backend/models.js";
 // @ts-ignore: Unused imports
 import * as configservice$0 from "./internal/configservice/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 export function ApplyAgentConfig(req: configservice$0.ApplyAgentConfigRequest): $CancellablePromise<void> {
     return $Call.ByID(1194974726, req);
 }
@@ -22,15 +26,25 @@ export function GetAgentConfigStatus(platform: string): $CancellablePromise<conf
     });
 }
 
-export function GetLogs(): $CancellablePromise<string[]> {
-    return $Call.ByID(1688970508).then(($result: any) => {
+export function GetEnvFile(): $CancellablePromise<$models.EnvFileState> {
+    return $Call.ByID(4130444060).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
+export function GetLogs(): $CancellablePromise<string[]> {
+    return $Call.ByID(1688970508).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+export function GetProxyAccessKey(): $CancellablePromise<string> {
+    return $Call.ByID(355938326);
+}
+
 export function GetStatus(): $CancellablePromise<backend$0.Status> {
     return $Call.ByID(2036427713).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
     });
 }
 
@@ -44,6 +58,14 @@ export function RestartService(): $CancellablePromise<void> {
 
 export function RestoreAgentConfig(platform: string): $CancellablePromise<void> {
     return $Call.ByID(3544811620, platform);
+}
+
+export function SaveEnvFile(content: string): $CancellablePromise<void> {
+    return $Call.ByID(4266218857, content);
+}
+
+export function ShowAgentTab(): $CancellablePromise<void> {
+    return $Call.ByID(978526812);
 }
 
 export function ShowStatusTab(): $CancellablePromise<void> {
@@ -68,5 +90,6 @@ export function StopService(): $CancellablePromise<void> {
 
 // Private type creation functions
 const $$createType0 = configservice$0.AgentConfigStatus.createFrom;
-const $$createType1 = $Create.Array($Create.Any);
-const $$createType2 = backend$0.Status.createFrom;
+const $$createType1 = $models.EnvFileState.createFrom;
+const $$createType2 = $Create.Array($Create.Any);
+const $$createType3 = backend$0.Status.createFrom;

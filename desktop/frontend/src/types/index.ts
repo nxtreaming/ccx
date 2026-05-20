@@ -52,4 +52,4 @@ export type ApplyAgentConfigRequest = {
   baseUrl?: string
 }
 
-export type TabValue = 'status' | 'agent' | 'web'
+export type TabValue = 'status' | 'agent' | 'env' | 'web'

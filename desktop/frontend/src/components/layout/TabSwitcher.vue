@@ -20,6 +20,12 @@ const activeTab = defineModel<string>({ default: 'status' })
         Agent 配置
       </TabsTrigger>
       <TabsTrigger
+        value="env"
+        class="rounded-full px-4 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all"
+      >
+        环境配置
+      </TabsTrigger>
+      <TabsTrigger
         value="web"
         class="rounded-full px-4 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all"
       >
@@ -32,6 +38,9 @@ const activeTab = defineModel<string>({ default: 'status' })
     </TabsContent>
     <TabsContent value="agent" class="mt-4 focus-visible:outline-none">
       <slot name="agent" />
+    </TabsContent>
+    <TabsContent value="env" class="mt-4 focus-visible:outline-none">
+      <slot name="env" />
     </TabsContent>
     <TabsContent value="web" class="mt-4 focus-visible:outline-none">
       <slot name="web" />

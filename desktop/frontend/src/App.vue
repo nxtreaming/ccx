@@ -4,11 +4,12 @@ import AppHeader from '@/components/layout/AppHeader.vue'
 import TabSwitcher from '@/components/layout/TabSwitcher.vue'
 import StatusTab from '@/components/status/StatusTab.vue'
 import AgentTab from '@/components/agent/AgentTab.vue'
+import EnvTab from '@/components/env/EnvTab.vue'
 import WebUITab from '@/components/webui/WebUITab.vue'
 import { useStatus } from '@/composables/useStatus'
 import { useWailsEvents } from '@/composables/useWailsEvents'
 
-const activeTab = ref<'status' | 'agent' | 'web'>('status')
+const activeTab = ref<'status' | 'agent' | 'env' | 'web'>('status')
 const { status, actionError, syncStatus } = useStatus()
 
 useWailsEvents(activeTab, actionError, syncStatus)
@@ -28,6 +29,9 @@ const switchToWeb = () => {
         </template>
         <template #agent>
           <AgentTab />
+        </template>
+        <template #env>
+          <EnvTab />
         </template>
         <template #web>
           <WebUITab :status="status" :loading="false" />

@@ -2,7 +2,7 @@ import { onMounted, onBeforeUnmount, type Ref } from 'vue'
 import { Events } from '@wailsio/runtime'
 
 export function useWailsEvents(
-  activeTab: Ref<'status' | 'agent' | 'web'>,
+  activeTab: Ref<'status' | 'agent' | 'env' | 'web'>,
   actionError: Ref<string>,
   syncStatus: () => Promise<void>,
 ) {
@@ -11,7 +11,7 @@ export function useWailsEvents(
 
   onMounted(() => {
     unsubscribeTab = Events.On('desktop:show-tab', (event: { data: string }) => {
-      const validTabs = ['status', 'agent', 'web'] as const
+      const validTabs = ['status', 'agent', 'env', 'web'] as const
       if (validTabs.includes(event.data as typeof validTabs[number])) {
         activeTab.value = event.data as typeof validTabs[number]
       }

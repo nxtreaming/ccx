@@ -1727,6 +1727,27 @@ onMounted(async () => {
   // 版本检查（独立于认证，静默执行）
   checkVersion()
 
+  const desktopAutoLogin = window.self !== window.top && new URLSearchParams(window.location.search).get('ccx_desktop') === '1'
+
+  if (desktopAutoLogin) {
+    authStore.clearAuth()
+    authStore.setAutoAuthenticating(false)
+    authStore.setInitialized(true)
+    authStore.setAuthError(t('toast.enterAccessKeyContinue'))
+
+    const handleDesktopAuth = async (event: MessageEvent) => {
+      const data = event.data as { type?: string; accessKey?: string }
+      if (data?.type !== 'ccx-desktop-auth' || !data.accessKey) return
+
+      window.removeEventListener('message', handleDesktopAuth)
+      authStore.setAuthKeyInput(data.accessKey)
+      await handleAuthSubmit()
+    }
+
+    window.addEventListener('message', handleDesktopAuth)
+    return
+  }
+
   // 检查 AuthStore 中是否有保存的密钥
   if (authStore.apiKey) {
     // 有保存的密钥，开始自动认证

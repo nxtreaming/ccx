@@ -1,17 +1,38 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Globe } from 'lucide-vue-next'
 import type { DesktopStatus } from '@/types'
-import { OpenWebUIInBrowser } from '@bindings/github.com/BenedictKing/ccx/desktop/desktopservice'
+import { GetProxyAccessKey, OpenWebUIInBrowser } from '@bindings/github.com/BenedictKing/ccx/desktop/desktopservice'
 
 const props = defineProps<{
   status: DesktopStatus
   loading: boolean
 }>()
 
-const iframeSrc = computed(() => props.status.url)
+const iframeRef = ref<HTMLIFrameElement | null>(null)
+
+const iframeSrc = computed(() => {
+  if (!props.status.url) return ''
+  const url = new URL(props.status.url.replace('http://127.0.0.1:', 'http://localhost:'))
+  url.searchParams.set('ccx_desktop', '1')
+  return url.toString()
+})
+
+const postProxyAccessKey = async () => {
+  if (!iframeRef.value?.contentWindow || !iframeSrc.value) return
+  try {
+    const accessKey = await GetProxyAccessKey()
+    const targetOrigin = new URL(iframeSrc.value).origin
+    iframeRef.value.contentWindow.postMessage(
+      { type: 'ccx-desktop-auth', accessKey },
+      targetOrigin,
+    )
+  } catch {
+    // Web UI 仍可手动输入 access key
+  }
+}
 
 const openInBrowser = async () => {
   try {
@@ -26,10 +47,12 @@ const openInBrowser = async () => {
   <div>
     <div v-if="status.running && iframeSrc" class="rounded-lg overflow-hidden border border-border" style="min-height: 620px">
       <iframe
+        ref="iframeRef"
         :src="iframeSrc"
         class="w-full border-0"
         style="min-height: 620px; background: white"
         title="CCX Web UI"
+        @load="postProxyAccessKey"
       />
     </div>
     <Card v-else>
