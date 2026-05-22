@@ -17,6 +17,7 @@ const envError = ref('')
 const loadEnvFile = async () => {
   envLoading.value = true
   envError.value = ''
+  envMessage.value = ''
   try {
     const data = await GetEnvFile() as EnvFileState
     envFile.value = data
@@ -32,6 +33,7 @@ const saveEnvFile = async (content?: string) => {
   envSaving.value = true
   envMessage.value = ''
   envError.value = ''
+  envMessage.value = ''
   try {
     const nextContent = content ?? envContent.value
     await SaveEnvFile(nextContent)

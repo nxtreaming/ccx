@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { RefreshCw, Save } from 'lucide-vue-next'
+import { Alert } from '@/components/ui/alert'
+import { Check, RefreshCw, Save, X } from 'lucide-vue-next'
 import { useEnvFile } from '@/composables/useEnvFile'
 import { detectEnvNewline, getEnvFieldValue, parseEnvFile, serializeEnvFile, type EnvEntry } from '@/lib/env-file'
 
@@ -116,6 +117,23 @@ const fieldMap = new Map(allFields.map((field) => [field.key, field]))
 
 const { envFile, envLoading, envSaving, envMessage, envError, loadEnvFile, saveEnvFile } = useEnvFile()
 
+const saveState = ref<'idle' | 'saved' | 'failed'>('idle')
+let saveResetTimer: ReturnType<typeof setTimeout> | null = null
+
+const resetSaveState = () => {
+  if (saveResetTimer) {
+    clearTimeout(saveResetTimer)
+    saveResetTimer = null
+  }
+  saveState.value = 'idle'
+  clearMessages()
+}
+
+const clearMessages = () => {
+  envMessage.value = ''
+  envError.value = ''
+}
+
 const entries = ref<EnvEntry[]>([])
 const newline = ref('\n')
 const showSecret = reactive<Record<string, boolean>>({})
@@ -157,21 +175,116 @@ const fieldErrors = computed(() => {
 
 const validationError = computed(() => Object.values(fieldErrors.value)[0] || '')
 
+const alertMessage = computed(() => {
+  if (validationError.value) return validationError.value
+  if (saveState.value === 'saved') return '.env 已保存，重启服务后生效'
+  if (saveState.value === 'failed' && envError.value) return envError.value
+  if (envError.value) return envError.value
+  if (envMessage.value) return envMessage.value
+  return ''
+})
+
+const alertVariant = computed(() => {
+  if (validationError.value || saveState.value === 'failed' || envError.value) return 'destructive'
+  if (saveState.value === 'saved' || envMessage.value) return 'success'
+  return 'default'
+})
+
+const alertIcon = computed(() => {
+  if (validationError.value || saveState.value === 'failed' || envError.value) return X
+  if (saveState.value === 'saved' || envMessage.value) return Check
+  return null
+})
+
+const saveButtonState = computed(() => {
+  const states = {
+    saved: {
+      variant: 'success' as const,
+      icon: Check,
+      text: '已保存',
+      disabled: false,
+      spinning: false,
+    },
+    failed: {
+      variant: 'error' as const,
+      icon: X,
+      text: '失败',
+      disabled: false,
+      spinning: false,
+    },
+    idle: {
+      variant: 'default' as const,
+      icon: Save,
+      text: '保存',
+      disabled: false,
+      spinning: false,
+    },
+  }
+
+  if (envSaving.value) {
+    return {
+      variant: 'default' as const,
+      icon: RefreshCw,
+      text: '保存中',
+      disabled: true,
+      spinning: true,
+    }
+  }
+
+  return states[saveState.value]
+})
+
+const isSaveDisabled = computed(() => {
+  return envLoading.value || envSaving.value || Boolean(validationError.value)
+})
+
 const load = async () => {
-  await loadEnvFile()
-  const content = envFile.value.content || ''
-  newline.value = detectEnvNewline(content)
-  entries.value = parseEnvFile(content)
-  for (const field of allFields) {
-    form[field.key] = getEnvFieldValue(entries.value, field.key, field.defaultValue)
+  if (envSaving.value) {
+    return
+  }
+
+  if (saveResetTimer) {
+    clearTimeout(saveResetTimer)
+    saveResetTimer = null
+  }
+
+  resetSaveState()
+
+  try {
+    await loadEnvFile()
+    const content = envFile.value.content || ''
+    newline.value = detectEnvNewline(content)
+    entries.value = parseEnvFile(content)
+    for (const field of allFields) {
+      form[field.key] = getEnvFieldValue(entries.value, field.key, field.defaultValue)
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    envError.value = `加载配置失败：${msg}`
   }
 }
 
 const save = async () => {
-  if (validationError.value) return
-  const content = serializeEnvFile(entries.value, form, supportedKeys, newline.value)
-  await saveEnvFile(content)
-  entries.value = parseEnvFile(envFile.value.content || content)
+  if (validationError.value || envSaving.value) return
+
+  if (saveResetTimer) {
+    clearTimeout(saveResetTimer)
+    saveResetTimer = null
+  }
+
+  clearMessages()
+
+  const serialized = serializeEnvFile(entries.value, form, supportedKeys, newline.value)
+  await saveEnvFile(serialized)
+
+  if (envError.value) {
+    saveState.value = 'failed'
+  } else {
+    saveState.value = 'saved'
+    entries.value = parseEnvFile(envFile.value.content || serialized)
+  }
+
+  saveResetTimer = setTimeout(resetSaveState, 5000)
 }
 
 const inputType = (field: EnvField) => {
@@ -181,6 +294,13 @@ const inputType = (field: EnvField) => {
 }
 
 onMounted(load)
+
+onUnmounted(() => {
+  if (saveResetTimer) {
+    clearTimeout(saveResetTimer)
+    saveResetTimer = null
+  }
+})
 </script>
 
 <template>
@@ -198,12 +318,19 @@ onMounted(load)
             <RefreshCw class="w-4 h-4 mr-1.5" />
             刷新
           </Button>
-          <Button size="sm" :disabled="envLoading || envSaving || Boolean(validationError)" @click="save">
-            <Save class="w-4 h-4 mr-1.5" />
-            保存
+          <Button size="sm" :variant="saveButtonState.variant" :disabled="isSaveDisabled" @click="save">
+            <component :is="saveButtonState.icon" class="w-4 h-4 mr-1.5" :class="{ 'animate-spin': saveButtonState.spinning }" />
+            {{ saveButtonState.text }}
           </Button>
         </div>
       </div>
+
+      <Alert v-if="alertMessage" :variant="alertVariant" class="mt-3">
+        <div class="flex items-center gap-2">
+          <component :is="alertIcon" class="w-4 h-4" />
+          <p class="text-sm font-medium">{{ alertMessage }}</p>
+        </div>
+      </Alert>
     </CardHeader>
 
     <CardContent class="space-y-6">
@@ -250,9 +377,6 @@ onMounted(load)
         </div>
       </section>
 
-      <p v-if="validationError" class="text-xs text-destructive-foreground">{{ validationError }}</p>
-      <p v-if="envMessage" class="text-xs text-accent-foreground">{{ envMessage }}</p>
-      <p v-if="envError" class="text-xs text-destructive-foreground">{{ envError }}</p>
     </CardContent>
   </Card>
 </template>
