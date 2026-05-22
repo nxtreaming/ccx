@@ -206,6 +206,17 @@ func (p *ResponsesProvider) buildProviderRequestBody(c *gin.Context, requestPath
 			if upstream.FastMode {
 				reqMap["service_tier"] = "priority"
 			}
+
+			// converter 路径转成 Claude/Messages 风格后，MiMo 等上游同样需要回传 reasoning_content
+			if upstream.PassbackReasoningContent {
+				if marshaledReq, err := utils.MarshalJSONNoEscape(reqMap); err == nil {
+					var normalized map[string]interface{}
+					if normalizedBytes := convertThinkingToReasoningContent(marshaledReq); json.Unmarshal(normalizedBytes, &normalized) == nil {
+						reqMap = normalized
+						convertedReq = reqMap
+					}
+				}
+			}
 		}
 
 		providerReq = convertedReq
@@ -326,6 +337,9 @@ func (p *ResponsesProvider) buildResponsesRequestFromClaude(c *gin.Context, body
 	}
 	if claudeReq.ToolChoice != nil {
 		responsesReq["tool_choice"] = claudeReq.ToolChoice
+	}
+	if userID, ok := claudeReq.Metadata["user_id"].(string); ok && userID != "" {
+		responsesReq["user"] = userID
 	}
 	if len(claudeReq.Tools) > 0 {
 		tools := make([]map[string]interface{}, 0, len(claudeReq.Tools))

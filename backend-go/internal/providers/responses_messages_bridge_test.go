@@ -231,7 +231,7 @@ func TestResponsesProvider_BuildResponsesRequestFromClaude_ReasoningInputOmitsSt
 	}
 }
 
-func TestResponsesProvider_BuildResponsesRequestFromClaude_MapsPromptCacheOnly(t *testing.T) {
+func TestResponsesProvider_BuildResponsesRequestFromClaude_MapsPromptCacheAndUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	provider := &ResponsesProvider{}
 	upstream := &config.UpstreamConfig{ServiceType: "responses"}
@@ -259,8 +259,8 @@ func TestResponsesProvider_BuildResponsesRequestFromClaude_MapsPromptCacheOnly(t
 	if got := result["prompt_cache_key"]; got != "sess_from_header" {
 		t.Fatalf("prompt_cache_key = %v, want sess_from_header", got)
 	}
-	if _, exists := result["user"]; exists {
-		t.Fatalf("user exists = true, want false; value = %v", result["user"])
+	if got := result["user"]; got != "user_123" {
+		t.Fatalf("user = %v, want user_123", got)
 	}
 	if got := result["top_p"]; got != 0.8 {
 		t.Fatalf("top_p = %v, want 0.8", got)
@@ -300,7 +300,7 @@ func TestResponsesProvider_BuildResponsesRequestFromClaude_UsesUnifiedSessionIDF
 	}
 }
 
-func TestResponsesProvider_BuildResponsesRequestFromClaude_DoesNotMapMetadataUserIDToUser(t *testing.T) {
+func TestResponsesProvider_BuildResponsesRequestFromClaude_MapsMetadataUserIDToUser(t *testing.T) {
 	provider := &ResponsesProvider{}
 	upstream := &config.UpstreamConfig{ServiceType: "responses"}
 
@@ -317,8 +317,8 @@ func TestResponsesProvider_BuildResponsesRequestFromClaude_DoesNotMapMetadataUse
 	if got := result["prompt_cache_key"]; got != "user_abc_session_xyz" {
 		t.Fatalf("prompt_cache_key = %v, want user_abc_session_xyz", got)
 	}
-	if _, exists := result["user"]; exists {
-		t.Fatalf("user exists = true, want false; value = %v", result["user"])
+	if got := result["user"]; got != "user_abc_session_xyz" {
+		t.Fatalf("user = %v, want user_abc_session_xyz", got)
 	}
 }
 
@@ -611,4 +611,45 @@ func TestResponsesProvider_BuildProviderRequestBody_NormalizesPassthroughInputTe
 	assertContentType(0, "input_text")
 	assertContentType(1, "output_text")
 	assertContentType(2, "refusal")
+}
+
+func TestResponsesProvider_BuildProviderRequestBody_PassbackReasoningContentForClaudeUpstream(t *testing.T) {
+	provider := &ResponsesProvider{}
+	upstream := &config.UpstreamConfig{
+		ServiceType:               "claude",
+		PassbackReasoningContent:  true,
+	}
+
+	body := []byte(`{
+		"model":"gpt-5",
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]},
+			{"type":"message","role":"assistant","content":[{"type":"output_text","text":"gpt answer"}]}
+		]
+	}`)
+
+	reqBody, _, err := provider.buildProviderRequestBody(nil, "/v1/responses", body, upstream)
+	if err != nil {
+		t.Fatalf("buildProviderRequestBody() err = %v", err)
+	}
+
+	reqMap, ok := reqBody.(map[string]interface{})
+	if !ok {
+		t.Fatalf("provider request type = %T, want map[string]interface{}", reqBody)
+	}
+
+	messages, ok := reqMap["messages"].([]interface{})
+	if !ok || len(messages) != 2 {
+		t.Fatalf("reqMap[messages] = %#v, want 2 messages", reqMap["messages"])
+	}
+
+	assistant, ok := messages[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("assistant message type = %T, want map[string]interface{}", messages[1])
+	}
+
+	rc, _ := assistant["reasoning_content"].(string)
+	if rc == "" {
+		t.Fatalf("assistant.reasoning_content = %q, want non-empty placeholder", rc)
+	}
 }
