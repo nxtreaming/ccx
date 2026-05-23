@@ -375,35 +375,46 @@ func applyTargetDefaults(payload *ChannelPayload, provider string, target string
 		payload.ServiceType = "claude"
 		payload.StripEmptyTextBlocks = true
 		payload.StripThoughtSignature = true
-		if provider == ProviderDeepSeek {
-			payload.NoVision = true
-			payload.SupportedModels = []string{"deepseek-chat", "deepseek-reasoner"}
-		}
-		if provider == ProviderMiMo {
-			payload.PassbackReasoningContent = true
-			payload.StripEmptyTextBlocks = true
-			payload.InjectDummyThoughtSignature = true
+		switch provider {
+		case ProviderDeepSeek:
 			payload.ModelMapping = map[string]string{
-				"claude-3-5-haiku-latest":  "mimo-v2.5-pro",
-				"claude-3-5-sonnet-latest": "mimo-v2.5-pro",
-				"claude-3-7-sonnet-latest": "mimo-v2.5-pro",
-				"claude-sonnet-4-5":        "mimo-v2.5-pro",
-				"claude-opus-4-5":          "mimo-v2.5-pro",
+				"haiku":  "deepseek-v4-flash",
+				"opus":   "deepseek-v4-pro",
+				"sonnet": "deepseek-v4-pro",
 			}
+			payload.ReasoningParamStyle = "reasoning"
+			payload.PassbackReasoningContent = true
+			payload.NoVision = true
+			payload.CodexToolCompat = false
+		case ProviderMiMo:
+			payload.ModelMapping = map[string]string{
+				"haiku":  "mimo-v2.5-pro",
+				"opus":   "mimo-v2.5-pro",
+				"sonnet": "mimo-v2.5-pro",
+			}
+			payload.ReasoningParamStyle = "reasoning"
+			payload.PassbackReasoningContent = true
+			payload.CodexToolCompat = false
 			payload.NoVisionModels = []string{"mimo-v2.5-pro"}
-			payload.VisionFallbackModel = "MiMo-V2.5"
-			payload.SupportedModels = []string{"mimo-v2.5-pro", "MiMo-V2.5"}
+			payload.VisionFallbackModel = "mimo-v2.5"
+			payload.SupportedModels = []string{"mimo-v2.5-pro", "mimo-v2.5"}
 		}
 	case TargetChat:
 		payload.ServiceType = "openai"
 		payload.NormalizeNonstandardChatRoles = true
 		switch provider {
 		case ProviderDeepSeek:
-			payload.SupportedModels = []string{"deepseek-chat", "deepseek-reasoner"}
+			payload.ReasoningParamStyle = "reasoning"
+			payload.CodexToolCompat = false
+			payload.NoVision = true
+			payload.SupportedModels = []string{"deepseek-v4-*"}
 		case ProviderMiMo:
-			payload.SupportedModels = []string{"mimo-v2.5-pro", "MiMo-V2.5"}
+			payload.ModelMapping = map[string]string{"gpt": "mimo-v2.5-pro"}
+			payload.ReasoningParamStyle = "reasoning"
+			payload.CodexToolCompat = false
+			payload.SupportedModels = []string{"mimo-v2.5-pro", "mimo-v2.5"}
 			payload.NoVisionModels = []string{"mimo-v2.5-pro"}
-			payload.VisionFallbackModel = "MiMo-V2.5"
+			payload.VisionFallbackModel = "mimo-v2.5"
 		case ProviderKimi:
 			payload.SupportedModels = []string{"moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "kimi-k2-0711-preview"}
 		case ProviderGLM:
@@ -417,11 +428,23 @@ func applyTargetDefaults(payload *ChannelPayload, provider string, target string
 		payload.StripCodexClientTools = true
 		switch provider {
 		case ProviderDeepSeek:
-			payload.SupportedModels = []string{"deepseek-chat", "deepseek-reasoner"}
+			payload.ModelMapping = map[string]string{
+				"gpt":  "deepseek-v4-pro",
+				"mini": "deepseek-v4-flash",
+			}
+			payload.ReasoningMapping = map[string]string{"gpt": "max"}
+			payload.ReasoningParamStyle = "reasoning"
+			payload.CodexToolCompat = false
+			payload.StripCodexClientTools = false
+			payload.NoVision = true
 		case ProviderMiMo:
-			payload.SupportedModels = []string{"mimo-v2.5-pro", "MiMo-V2.5"}
+			payload.ModelMapping = map[string]string{"gpt": "mimo-v2.5-pro"}
+			payload.ReasoningParamStyle = "reasoning"
+			payload.CodexToolCompat = false
+			payload.StripCodexClientTools = false
+			payload.SupportedModels = []string{"mimo-v2.5-pro", "mimo-v2.5"}
 			payload.NoVisionModels = []string{"mimo-v2.5-pro"}
-			payload.VisionFallbackModel = "MiMo-V2.5"
+			payload.VisionFallbackModel = "mimo-v2.5"
 		case ProviderKimi:
 			payload.SupportedModels = []string{"moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "kimi-k2-0711-preview"}
 		case ProviderGLM:

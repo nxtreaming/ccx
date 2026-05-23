@@ -7,40 +7,49 @@ import (
 
 func TestBuildPayload(t *testing.T) {
 	tests := []struct {
-		name         string
-		req          CreateChannelRequest
-		wantTarget   string
-		wantBaseURL  string
-		wantService  string
-		wantVision   bool
-		wantPassback bool
-		wantCodex    bool
-		wantModels   []string
-		wantModelMap bool
-		wantFallback string
+		name           string
+		req            CreateChannelRequest
+		wantBaseURL    string
+		wantService    string
+		wantVision     bool
+		wantPassback   bool
+		wantCodex      bool
+		wantStripCodex bool
+		wantModels     []string
+		wantModelMap   map[string]string
+		wantFallback   string
 	}{
 		{
-			name:        "deepseek messages (anthropic endpoint)",
-			req:         CreateChannelRequest{Provider: ProviderDeepSeek, Target: TargetMessages, APIKey: "sk-test"},
-			wantBaseURL: "https://api.deepseek.com/anthropic",
-			wantService: "claude",
-			wantVision:  true,
-			wantModels:  []string{"deepseek-chat", "deepseek-reasoner"},
+			name:         "deepseek messages (anthropic endpoint)",
+			req:          CreateChannelRequest{Provider: ProviderDeepSeek, Target: TargetMessages, APIKey: "sk-test"},
+			wantBaseURL:  "https://api.deepseek.com/anthropic",
+			wantService:  "claude",
+			wantVision:   true,
+			wantPassback: true,
+			wantModelMap: map[string]string{
+				"haiku":  "deepseek-v4-flash",
+				"opus":   "deepseek-v4-pro",
+				"sonnet": "deepseek-v4-pro",
+			},
 		},
 		{
 			name:        "deepseek chat (openai endpoint)",
 			req:         CreateChannelRequest{Provider: ProviderDeepSeek, Target: TargetChat, APIKey: "sk-test"},
 			wantBaseURL: "https://api.deepseek.com/v1",
 			wantService: "openai",
-			wantModels:  []string{"deepseek-chat", "deepseek-reasoner"},
+			wantVision:  true,
+			wantModels:  []string{"deepseek-v4-*"},
 		},
 		{
 			name:        "deepseek responses (openai endpoint)",
 			req:         CreateChannelRequest{Provider: ProviderDeepSeek, Target: TargetResponses, APIKey: "sk-test"},
 			wantBaseURL: "https://api.deepseek.com/v1",
 			wantService: "openai",
-			wantCodex:   true,
-			wantModels:  []string{"deepseek-chat", "deepseek-reasoner"},
+			wantVision:  true,
+			wantModelMap: map[string]string{
+				"gpt":  "deepseek-v4-pro",
+				"mini": "deepseek-v4-flash",
+			},
 		},
 		{
 			name:         "mimo messages (token plan)",
@@ -48,8 +57,13 @@ func TestBuildPayload(t *testing.T) {
 			wantBaseURL:  "https://token-plan-sgp.xiaomimimo.com/anthropic",
 			wantService:  "claude",
 			wantPassback: true,
-			wantModelMap: true,
-			wantFallback: "MiMo-V2.5",
+			wantModels:   []string{"mimo-v2.5-pro", "mimo-v2.5"},
+			wantModelMap: map[string]string{
+				"haiku":  "mimo-v2.5-pro",
+				"opus":   "mimo-v2.5-pro",
+				"sonnet": "mimo-v2.5-pro",
+			},
+			wantFallback: "mimo-v2.5",
 		},
 		{
 			name:         "mimo messages (auto plan)",
@@ -57,25 +71,35 @@ func TestBuildPayload(t *testing.T) {
 			wantBaseURL:  "https://api.xiaomimimo.com/anthropic",
 			wantService:  "claude",
 			wantPassback: true,
-			wantModelMap: true,
-			wantFallback: "MiMo-V2.5",
+			wantModels:   []string{"mimo-v2.5-pro", "mimo-v2.5"},
+			wantModelMap: map[string]string{
+				"haiku":  "mimo-v2.5-pro",
+				"opus":   "mimo-v2.5-pro",
+				"sonnet": "mimo-v2.5-pro",
+			},
+			wantFallback: "mimo-v2.5",
 		},
 		{
-			name:         "mimo chat",
-			req:          CreateChannelRequest{Provider: ProviderMiMo, Target: TargetChat, APIKey: "tp-test"},
-			wantBaseURL:  "https://api.xiaomimimo.com/v1",
-			wantService:  "openai",
-			wantModels:   []string{"mimo-v2.5-pro", "MiMo-V2.5"},
-			wantFallback: "MiMo-V2.5",
+			name:        "mimo chat",
+			req:         CreateChannelRequest{Provider: ProviderMiMo, Target: TargetChat, APIKey: "tp-test"},
+			wantBaseURL: "https://api.xiaomimimo.com/v1",
+			wantService: "openai",
+			wantModels:  []string{"mimo-v2.5-pro", "mimo-v2.5"},
+			wantModelMap: map[string]string{
+				"gpt": "mimo-v2.5-pro",
+			},
+			wantFallback: "mimo-v2.5",
 		},
 		{
-			name:         "mimo responses",
-			req:          CreateChannelRequest{Provider: ProviderMiMo, Target: TargetResponses, APIKey: "tp-test"},
-			wantBaseURL:  "https://api.xiaomimimo.com/v1",
-			wantService:  "openai",
-			wantCodex:    true,
-			wantModels:   []string{"mimo-v2.5-pro", "MiMo-V2.5"},
-			wantFallback: "MiMo-V2.5",
+			name:        "mimo responses",
+			req:         CreateChannelRequest{Provider: ProviderMiMo, Target: TargetResponses, APIKey: "tp-test"},
+			wantBaseURL: "https://api.xiaomimimo.com/v1",
+			wantService: "openai",
+			wantModels:  []string{"mimo-v2.5-pro", "mimo-v2.5"},
+			wantModelMap: map[string]string{
+				"gpt": "mimo-v2.5-pro",
+			},
+			wantFallback: "mimo-v2.5",
 		},
 		{
 			name:        "kimi chat",
@@ -84,11 +108,12 @@ func TestBuildPayload(t *testing.T) {
 			wantService: "openai",
 		},
 		{
-			name:        "kimi responses",
-			req:         CreateChannelRequest{Provider: ProviderKimi, Target: TargetResponses, APIKey: "sk-test"},
-			wantBaseURL: "https://api.moonshot.cn/v1",
-			wantService: "openai",
-			wantCodex:   true,
+			name:           "kimi responses",
+			req:            CreateChannelRequest{Provider: ProviderKimi, Target: TargetResponses, APIKey: "sk-test"},
+			wantBaseURL:    "https://api.moonshot.cn/v1",
+			wantService:    "openai",
+			wantCodex:      true,
+			wantStripCodex: true,
 		},
 		{
 			name:        "glm chat",
@@ -97,11 +122,12 @@ func TestBuildPayload(t *testing.T) {
 			wantService: "openai",
 		},
 		{
-			name:        "glm responses",
-			req:         CreateChannelRequest{Provider: ProviderGLM, Target: TargetResponses, APIKey: "sk-test"},
-			wantBaseURL: "https://open.bigmodel.cn/api/paas/v4",
-			wantService: "openai",
-			wantCodex:   true,
+			name:           "glm responses",
+			req:            CreateChannelRequest{Provider: ProviderGLM, Target: TargetResponses, APIKey: "sk-test"},
+			wantBaseURL:    "https://open.bigmodel.cn/api/paas/v4",
+			wantService:    "openai",
+			wantCodex:      true,
+			wantStripCodex: true,
 		},
 		{
 			name:        "minimax chat",
@@ -110,11 +136,12 @@ func TestBuildPayload(t *testing.T) {
 			wantService: "openai",
 		},
 		{
-			name:        "minimax responses",
-			req:         CreateChannelRequest{Provider: ProviderMiniMax, Target: TargetResponses, APIKey: "sk-test"},
-			wantBaseURL: "https://api.minimax.chat/v1",
-			wantService: "openai",
-			wantCodex:   true,
+			name:           "minimax responses",
+			req:            CreateChannelRequest{Provider: ProviderMiniMax, Target: TargetResponses, APIKey: "sk-test"},
+			wantBaseURL:    "https://api.minimax.chat/v1",
+			wantService:    "openai",
+			wantCodex:      true,
+			wantStripCodex: true,
 		},
 	}
 	for _, tt := range tests {
@@ -138,14 +165,17 @@ func TestBuildPayload(t *testing.T) {
 			if got.CodexToolCompat != tt.wantCodex {
 				t.Fatalf("CodexToolCompat = %v, want %v", got.CodexToolCompat, tt.wantCodex)
 			}
+			if got.StripCodexClientTools != tt.wantStripCodex {
+				t.Fatalf("StripCodexClientTools = %v, want %v", got.StripCodexClientTools, tt.wantStripCodex)
+			}
 			if tt.wantModels != nil {
 				if !slices.Equal(got.SupportedModels, tt.wantModels) {
 					t.Fatalf("SupportedModels = %v, want %v", got.SupportedModels, tt.wantModels)
 				}
 			}
-			if tt.wantModelMap {
-				if got.ModelMapping["claude-sonnet-4-5"] != "mimo-v2.5-pro" {
-					t.Fatalf("mimo model mapping missing: %#v", got.ModelMapping)
+			for source, target := range tt.wantModelMap {
+				if got.ModelMapping[source] != target {
+					t.Fatalf("ModelMapping[%q] = %q, want %q; all mappings: %#v", source, got.ModelMapping[source], target, got.ModelMapping)
 				}
 			}
 			if tt.wantFallback != "" {
