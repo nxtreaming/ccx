@@ -126,9 +126,10 @@ jobs:
       - name: Generate macOS checksums
         run: |
           {
-            shasum -a 256 backend-go/ccx-darwin-arm64 backend-go/ccx-darwin-amd64
+            shasum -a 256 backend-go/ccx-darwin-arm64 backend-go/ccx-darwin-amd64 \
+              | awk '{split($2,a,"/"); $2=a[length(a)]; print}'
             for f in desktop/bin/CCX-Desktop-*-darwin-*.dmg; do
-              shasum -a 256 "$f"
+              shasum -a 256 "$f" | awk '{split($2,a,"/"); $2=a[length(a)]; print}'
             done
           } > checksums-macos.txt
 
@@ -300,9 +301,10 @@ jobs:
       - name: Generate Windows checksums
         run: |
           {
-            sha256sum backend-go/ccx-windows-amd64.exe backend-go/ccx-windows-arm64.exe
+            sha256sum backend-go/ccx-windows-amd64.exe backend-go/ccx-windows-arm64.exe \
+              | awk '{split($2,a,"/"); $2=a[length(a)]; print}'
             for f in desktop/.release-staging/CCX-Desktop-*-windows-*-setup.exe; do
-              sha256sum "$f"
+              sha256sum "$f" | awk '{split($2,a,"/"); $2=a[length(a)]; print}'
             done
           } > checksums-windows.txt
 
@@ -415,9 +417,10 @@ jobs:
       - name: Generate Linux checksums
         run: |
           {
-            sha256sum backend-go/ccx-linux-amd64 backend-go/ccx-linux-arm64
+            sha256sum backend-go/ccx-linux-amd64 backend-go/ccx-linux-arm64 \
+              | awk '{split($2,a,"/"); $2=a[length(a)]; print}'
             for f in desktop/bin/CCX-Desktop-*-linux-*.AppImage; do
-              sha256sum "$f"
+              sha256sum "$f" | awk '{split($2,a,"/"); $2=a[length(a)]; print}'
             done
           } > checksums-linux.txt
 
