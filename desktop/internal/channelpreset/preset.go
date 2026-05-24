@@ -6,12 +6,12 @@ import (
 )
 
 const (
-	ProviderDeepSeek  = "deepseek"
-	ProviderMiMo      = "mimo"
-	ProviderKimi      = "kimi"
-	ProviderGLM       = "glm"
-	ProviderMiniMax   = "minimax"
-	ProviderDashScope  = "dashscope"
+	ProviderDeepSeek    = "deepseek"
+	ProviderMiMo        = "mimo"
+	ProviderKimi        = "kimi"
+	ProviderGLM         = "glm"
+	ProviderMiniMax     = "minimax"
+	ProviderDashScope   = "dashscope"
 	ProviderOpenCodeZen = "opencode-zen"
 	ProviderOpenCodeGo  = "opencode-go"
 

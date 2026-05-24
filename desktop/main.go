@@ -4,11 +4,15 @@ import (
 	"embed"
 	_ "embed"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/BenedictKing/ccx/desktop/internal/backend"
+	"github.com/BenedictKing/ccx/desktop/internal/singleinstance"
 	"github.com/BenedictKing/ccx/desktop/internal/windowstate"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -33,7 +37,30 @@ func init() {
 }
 
 func main() {
+	defer recoverWithMessageBox()
+	if err := run(); err != nil {
+		showErrorDialog("CCX Desktop - 启动失败", err.Error())
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	manager := backend.NewManager(backend.Options{})
+
+	// 文件日志：同时写入 dataDir/desktop.log 和 stderr
+	logCloser := setupFileLog(manager.DataDir())
+	defer logCloser()
+
+	// 单实例互斥锁：检测已有实例时弹窗退出
+	lock, err := singleinstance.Acquire(singleInstanceArg(manager.DataDir()))
+	if err != nil {
+		if err == singleinstance.ErrAlreadyRunning {
+			showErrorDialog("CCX Desktop", "CCX Desktop 已经在运行中。\n\n请检查系统托盘或任务栏。")
+			os.Exit(0)
+		}
+		return fmt.Errorf("获取单实例锁失败: %w", err)
+	}
+	defer lock.Release()
 	desktopService := NewDesktopService(manager)
 	desktopService.setVersion(VersionInfo{
 		Version:   Version,
@@ -394,6 +421,21 @@ func main() {
 	showMainWindow(false)
 
 	if err := app.Run(); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
+}
+
+// setupFileLog 在 dataDir 下打开 desktop.log 并将 log 输出同时写入文件和 stderr。
+// 返回的关闭函数应通过 defer 调用。
+func setupFileLog(dataDir string) func() {
+	logPath := filepath.Join(dataDir, "desktop.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Printf("[Desktop-Log] 无法打开日志文件 %s: %v", logPath, err)
+		return func() {}
+	}
+	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	log.Printf("[Desktop-Log] 日志文件: %s", logPath)
+	return func() { f.Close() }
 }

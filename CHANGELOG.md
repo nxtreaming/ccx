@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### 修复
+
+- **Windows 桌面端双击无反应** - 修复 Windows 生产构建（`-H windowsgui`）下启动失败时错误静默吞掉的问题
+  - 添加 Windows MessageBox 弹窗：WebView2 缺失、ccx-go 找不到等致命错误现在会弹窗提示用户
+  - 添加顶层 `recover()` 兜底：未处理的 panic 不再导致进程静默退出
+  - 添加单实例互斥锁：重复双击时弹窗提示"已在运行中"，检查系统托盘
+  - 添加持久化文件日志：`%APPDATA%\ccx-desktop\<hash>\desktop.log` 记录启动日志便于排查
+  - NSIS 安装器 `ccx-go.exe` 从可选改为必需，缺失则安装失败
+
 ## [v2.7.27] - 2026-05-24
 
 ### 新增

@@ -88,8 +88,8 @@ Section
     
     !insertmacro wails.files
 
-    ; 捆绑 ccx-go 后端二进制
-    File /nonfatal "ccx-go.exe"
+    ; 捆绑 ccx-go 后端二进制（必需，缺失则安装失败）
+    File "ccx-go.exe"
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
