@@ -51,13 +51,13 @@ const openInBrowser = async () => {
 </script>
 
 <template>
-  <div>
-    <div v-if="status.running && iframeSrc" class="rounded-lg overflow-hidden border border-border" style="min-height: 620px">
+  <div class="h-full">
+    <div v-if="status.running && iframeSrc" class="h-full rounded-lg overflow-hidden border-0">
       <iframe
         ref="iframeRef"
         :src="iframeSrc"
-        class="w-full border-0"
-        style="min-height: 620px; background: white"
+        class="w-full h-full border-0 block"
+        style="background: white"
         title="CCX Web UI"
         @load="postProxyAccessKey"
       />
