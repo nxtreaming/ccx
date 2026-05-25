@@ -37,6 +37,12 @@ const booleanOptions = [
   { label: 'false', value: 'false' },
 ]
 
+const defaultAppUILanguage = () => {
+  if (typeof navigator === 'undefined') return 'en'
+  const languages = [...(navigator.languages || []), navigator.language].filter(Boolean)
+  return languages.some(language => language.toLowerCase().startsWith('zh')) ? 'zh-CN' : 'en'
+}
+
 const envGroups: EnvGroup[] = [
   {
     title: '访问控制',
@@ -59,7 +65,7 @@ const envGroups: EnvGroup[] = [
     description: '控制管理界面是否启用以及默认语言。',
     fields: [
       { key: 'ENABLE_WEB_UI', label: '启用 Web UI', type: 'select', defaultValue: 'true', options: booleanOptions, description: 'Desktop 模式通常会强制启用。' },
-      { key: 'APP_UI_LANGUAGE', label: '默认语言', type: 'select', defaultValue: 'en', options: [{ label: 'English', value: 'en' }, { label: 'Bahasa Indonesia', value: 'id' }, { label: '简体中文', value: 'zh-CN' }] },
+      { key: 'APP_UI_LANGUAGE', label: '默认语言', type: 'select', defaultValue: defaultAppUILanguage(), options: [{ label: 'English', value: 'en' }, { label: 'Bahasa Indonesia', value: 'id' }, { label: '简体中文', value: 'zh-CN' }] },
     ],
   },
   {
