@@ -99,20 +99,23 @@ const openFileInEditor = async (filePath: string) => {
           { label: '当前 Provider', value: (platform === 'codex' ? codexProviderLabel : claudeProviderLabel)?.(agentStatus?.provider) || agentStatus?.provider || '未设置' },
           { label: '当前 URL', value: agentStatus?.currentBaseUrl || '未设置' },
           { label: '目标 URL', value: platform === 'claude' ? claudeTargetBaseUrl?.() : codexTargetBaseUrl?.() },
-        ]" :key="detail.label" class="flex items-center justify-between">
+        ]" :key="detail.label" class="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-3">
           <span class="text-muted-foreground">{{ detail.label }}</span>
-          <code class="text-xs bg-secondary px-2 py-0.5 rounded break-all max-w-[60%] text-right">{{ detail.value }}</code>
+          <div class="min-w-0 text-right">
+            <code class="inline-block max-w-full rounded bg-secondary px-2 py-0.5 text-right text-xs break-all">{{ detail.value }}</code>
+          </div>
         </div>
         <!-- 配置文件 — 带编辑器打开按钮 -->
-        <div class="flex items-center justify-between">
+        <div class="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-3">
           <span class="text-muted-foreground">配置文件</span>
-          <div class="flex items-center gap-1">
-            <code class="text-xs bg-secondary px-2 py-0.5 rounded break-all max-w-[60%] text-right">{{ agentStatus?.configPath || '--' }}</code>
+          <div class="flex min-w-0 items-center justify-end gap-2">
+            <code class="inline-block min-w-0 max-w-full rounded bg-secondary px-2 py-0.5 text-right text-xs break-all">{{ agentStatus?.configPath || '--' }}</code>
             <Button
               v-if="agentStatus?.configPath && editors.length > 0"
               variant="ghost"
               size="icon-sm"
               title="用编辑器打开"
+              class="shrink-0"
               :disabled="openingFile === agentStatus.configPath"
               @click="openFileInEditor(agentStatus.configPath)"
             >
@@ -121,15 +124,16 @@ const openFileInEditor = async (filePath: string) => {
           </div>
         </div>
         <!-- 认证文件 — 带编辑器打开按钮 -->
-        <div v-if="agentStatus?.authPath" class="flex items-center justify-between">
+        <div v-if="agentStatus?.authPath" class="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-3">
           <span class="text-muted-foreground">认证文件</span>
-          <div class="flex items-center gap-1">
-            <code class="text-xs bg-secondary px-2 py-0.5 rounded break-all max-w-[60%] text-right">{{ agentStatus.authPath }}</code>
+          <div class="flex min-w-0 items-center justify-end gap-2">
+            <code class="inline-block min-w-0 max-w-full rounded bg-secondary px-2 py-0.5 text-right text-xs break-all">{{ agentStatus.authPath }}</code>
             <Button
               v-if="editors.length > 0"
               variant="ghost"
               size="icon-sm"
               title="用编辑器打开"
+              class="shrink-0"
               :disabled="openingFile === agentStatus.authPath"
               @click="openFileInEditor(agentStatus.authPath!)"
             >

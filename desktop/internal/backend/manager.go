@@ -385,7 +385,10 @@ func (m *Manager) ReadProxyAccessKey() (string, error) {
 
 // IsSetupComplete 判断初始配置是否完成：仅当 PROXY_ACCESS_KEY 已存在时为 true。
 func (m *Manager) IsSetupComplete() bool {
-	key, err := m.ReadProxyAccessKey()
+	m.mu.Lock()
+	dataDir := m.dataDir
+	m.mu.Unlock()
+	key, err := readProxyAccessKey(filepath.Join(dataDir, ".env"))
 	if err != nil {
 		return false
 	}

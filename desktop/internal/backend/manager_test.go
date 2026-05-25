@@ -236,6 +236,31 @@ func TestEnsureProxyAccessKey(t *testing.T) {
 	})
 }
 
+func TestIsSetupCompleteUsesDesktopEnvOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	rootDir := t.TempDir()
+
+	t.Setenv("PROXY_ACCESS_KEY", "env-key-123")
+	if err := os.WriteFile(filepath.Join(rootDir, ".env"), []byte("PROXY_ACCESS_KEY=root-key\n"), 0o600); err != nil {
+		t.Fatalf("write root .env failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, ".env"), []byte("PROXY_ACCESS_KEY=\n"), 0o600); err != nil {
+		t.Fatalf("write desktop .env failed: %v", err)
+	}
+
+	m := NewManager(Options{RootDir: rootDir, DataDir: dataDir})
+	if m.IsSetupComplete() {
+		t.Fatal("empty desktop PROXY_ACCESS_KEY should require setup")
+	}
+
+	if err := os.WriteFile(filepath.Join(dataDir, ".env"), []byte("PROXY_ACCESS_KEY=desktop-key\n"), 0o600); err != nil {
+		t.Fatalf("write desktop .env failed: %v", err)
+	}
+	if !m.IsSetupComplete() {
+		t.Fatal("desktop PROXY_ACCESS_KEY should complete setup")
+	}
+}
+
 func TestGenerateProxyAccessKey(t *testing.T) {
 	key, err := generateProxyAccessKey()
 	if err != nil {
