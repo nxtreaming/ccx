@@ -10,6 +10,7 @@ import (
 const (
 	ProviderDeepSeek    = "deepseek"
 	ProviderMiMo        = "mimo"
+	ProviderCompshare   = "compshare"
 	ProviderKimi        = "kimi"
 	ProviderGLM         = "glm"
 	ProviderMiniMax     = "minimax"
@@ -46,8 +47,10 @@ type ProviderPlan struct {
 
 // Protocol 返回 plan 所属的协议类型。
 func (p ProviderPlan) Protocol() string {
+	id := strings.ToLower(p.ID)
+	label := strings.ToLower(p.Label)
 	baseURL := strings.TrimRight(strings.ToLower(p.BaseURL), "/")
-	if strings.Contains(baseURL, "anthropic") || strings.HasSuffix(baseURL, "/messages") {
+	if strings.Contains(id, "anthropic") || strings.Contains(label, "anthropic") || strings.Contains(baseURL, "anthropic") || strings.HasSuffix(baseURL, "/messages") {
 		return "anthropic"
 	}
 	return "openai"
@@ -146,6 +149,25 @@ func Presets() []ProviderPreset {
 			},
 			Targets: []ChannelTarget{
 				{Type: TargetMessages, Label: "Messages 原生透传", Description: "自动开启 reasoning passback 兼容", Recommended: true},
+				{Type: TargetResponses, Label: "Codex Responses", Description: "OpenAI Responses 协议，供 Codex 使用"},
+				{Type: TargetChat, Label: "Chat 渠道透传", Description: "OpenAI Chat 协议，供 Chat 客户端使用"},
+			},
+			DefaultTarget: TargetMessages,
+		},
+		{
+			ID:                  ProviderCompshare,
+			Label:               "Compshare 套餐",
+			Description:         "独立套餐 BaseURL 与 API Key，兼容 Anthropic Messages、OpenAI Chat 与 Codex Responses。",
+			DirectAgent:         true,
+			NativeMessages:      true,
+			ChatCompatible:      true,
+			ResponsesCompatible: true,
+			Plans: []ProviderPlan{
+				{ID: "anthropic", Label: "Anthropic-compatible", BaseURL: "https://cp.compshare.cn", Description: "Claude Messages 原生入口", Recommended: true},
+				{ID: "openai-chat", Label: "OpenAI-compatible", BaseURL: "https://cp.compshare.cn/v1", Description: "OpenAI Chat / Responses 兼容入口"},
+			},
+			Targets: []ChannelTarget{
+				{Type: TargetMessages, Label: "Messages 原生透传", Description: "Claude Code 直连或 CCX messages 渠道", Recommended: true},
 				{Type: TargetResponses, Label: "Codex Responses", Description: "OpenAI Responses 协议，供 Codex 使用"},
 				{Type: TargetChat, Label: "Chat 渠道透传", Description: "OpenAI Chat 协议，供 Chat 客户端使用"},
 			},
@@ -470,6 +492,16 @@ var channelTargetConfigs = map[string]map[string]channelTargetConfig{
 			NoVisionModels:           []string{"mimo-v2.5-pro"},
 			VisionFallbackModel:      "mimo-v2.5",
 		},
+		ProviderCompshare: {
+			ModelMapping: map[string]string{
+				"haiku":  "deepseek-v4-flash",
+				"opus":   "deepseek-v4-pro",
+				"sonnet": "deepseek-v4-pro",
+			},
+			ReasoningParamStyle:      "reasoning",
+			PassbackReasoningContent: true,
+			NoVision:                 true,
+		},
 		ProviderKimi: {
 			ModelMapping: map[string]string{
 				"haiku":  "kimi-k2.6",
@@ -525,6 +557,22 @@ var channelTargetConfigs = map[string]map[string]channelTargetConfig{
 			NoVisionModels:      []string{"mimo-v2.5-pro"},
 			VisionFallbackModel: "mimo-v2.5",
 		},
+		ProviderCompshare: {
+			ModelMapping: map[string]string{
+				"gpt-5.5":       "glm-5.1",
+				"gpt-5.4":       "deepseek-v4-pro",
+				"gpt-5.4-mini":  "deepseek-v4-flash",
+				"gpt-5.3-codex": "deepseek-v4-pro",
+			},
+			ReasoningMapping: map[string]string{
+				"gpt-5.5":       "high",
+				"gpt-5.4":       "max",
+				"gpt-5.4-mini":  "high",
+				"gpt-5.3-codex": "high",
+			},
+			ReasoningParamStyle: "reasoning",
+			NoVision:            true,
+		},
 		ProviderMiniMax: {
 			ModelMapping: map[string]string{"gpt-5": "MiniMax-M2.7"},
 		},
@@ -570,6 +618,19 @@ var channelTargetConfigs = map[string]map[string]channelTargetConfig{
 			StripCodexClientTools: boolRef(false),
 			NoVisionModels:        []string{"mimo-v2.5-pro"},
 			VisionFallbackModel:   "mimo-v2.5",
+		},
+		ProviderCompshare: {
+			ModelMapping: map[string]string{
+				"gpt":  "deepseek-v4-pro",
+				"mini": "deepseek-v4-flash",
+			},
+			ReasoningMapping:              map[string]string{"gpt": "max"},
+			ReasoningParamStyle:           "reasoning",
+			CodexToolCompat:               boolRef(false),
+			StripCodexClientTools:         boolRef(false),
+			CodexNativeToolPassthrough:    true,
+			NormalizeNonstandardChatRoles: true,
+			NoVision:                      true,
 		},
 		ProviderMiniMax: {
 			ModelMapping:                  map[string]string{"gpt-5": "MiniMax-M2.7"},

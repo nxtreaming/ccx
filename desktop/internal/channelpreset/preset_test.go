@@ -104,6 +104,50 @@ func TestBuildPayload(t *testing.T) {
 			wantFallback: "mimo-v2.5",
 		},
 		{
+			name:         "compshare messages",
+			req:          CreateChannelRequest{Provider: ProviderCompshare, Target: TargetMessages, APIKey: "cs-test"},
+			wantBaseURL:  "https://cp.compshare.cn",
+			wantService:  "claude",
+			wantVision:   true,
+			wantPassback: true,
+			wantModelMap: map[string]string{
+				"haiku":  "deepseek-v4-flash",
+				"opus":   "deepseek-v4-pro",
+				"sonnet": "deepseek-v4-pro",
+			},
+		},
+		{
+			name:          "compshare chat",
+			req:           CreateChannelRequest{Provider: ProviderCompshare, Target: TargetChat, APIKey: "cs-test"},
+			wantBaseURL:   "https://cp.compshare.cn/v1",
+			wantService:   "openai",
+			wantNormalize: true,
+			wantVision:    true,
+			wantModelMap: map[string]string{
+				"gpt-5.4":      "deepseek-v4-pro",
+				"gpt-5.4-mini": "deepseek-v4-flash",
+			},
+			wantReasoning: map[string]string{
+				"gpt-5.4": "max",
+			},
+		},
+		{
+			name:           "compshare responses",
+			req:            CreateChannelRequest{Provider: ProviderCompshare, Target: TargetResponses, APIKey: "cs-test"},
+			wantBaseURL:    "https://cp.compshare.cn/v1",
+			wantService:    "openai",
+			wantVision:     true,
+			wantNativeTool: true,
+			wantNormalize:  true,
+			wantModelMap: map[string]string{
+				"gpt":  "deepseek-v4-pro",
+				"mini": "deepseek-v4-flash",
+			},
+			wantReasoning: map[string]string{
+				"gpt": "max",
+			},
+		},
+		{
 			name:          "kimi chat",
 			req:           CreateChannelRequest{Provider: ProviderKimi, Target: TargetChat, APIKey: "sk-test"},
 			wantBaseURL:   "https://api.moonshot.cn/v1",
@@ -289,22 +333,39 @@ func TestBuildPayloadRejectsUnsupportedTarget(t *testing.T) {
 }
 
 func TestBestPlanForTarget(t *testing.T) {
-	preset, _ := FindPreset(ProviderDeepSeek)
 	tests := []struct {
-		target string
-		want   string
+		provider string
+		target   string
+		want     string
 	}{
-		{TargetMessages, "anthropic"},
-		{TargetChat, "openai-chat"},
-		{TargetResponses, "openai-chat"},
+		{ProviderDeepSeek, TargetMessages, "anthropic"},
+		{ProviderDeepSeek, TargetChat, "openai-chat"},
+		{ProviderDeepSeek, TargetResponses, "openai-chat"},
+		{ProviderCompshare, TargetMessages, "anthropic"},
+		{ProviderCompshare, TargetChat, "openai-chat"},
+		{ProviderCompshare, TargetResponses, "openai-chat"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.target, func(t *testing.T) {
+		t.Run(tt.provider+"/"+tt.target, func(t *testing.T) {
+			preset, ok := FindPreset(tt.provider)
+			if !ok {
+				t.Fatalf("FindPreset(%s) failed", tt.provider)
+			}
 			got := bestPlanForTarget(preset, tt.target)
 			if got != tt.want {
-				t.Fatalf("bestPlanForTarget(deepseek, %s) = %q, want %q", tt.target, got, tt.want)
+				t.Fatalf("bestPlanForTarget(%s, %s) = %q, want %q", tt.provider, tt.target, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPresetsIncludesCompshareAtThirdPosition(t *testing.T) {
+	presets := Presets()
+	if len(presets) < 3 {
+		t.Fatalf("Presets() length = %d, want at least 3", len(presets))
+	}
+	if presets[2].ID != ProviderCompshare {
+		t.Fatalf("Presets()[2].ID = %q, want %q", presets[2].ID, ProviderCompshare)
 	}
 }
 
