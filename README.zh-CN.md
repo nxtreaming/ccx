@@ -72,6 +72,14 @@ CCX 对外提供一个统一后端入口：
 
 ## 快速开始
 
+### 方式零：CCX Desktop
+
+如果你希望在桌面端快速上手，可优先使用 [CCX Desktop](docs/guide/desktop)：
+
+1. 下载并安装对应平台的桌面应用。
+2. 打开应用并按向导配置 `PROXY_ACCESS_KEY`。
+3. 启动服务、添加渠道、写入客户端配置后即可开始使用。
+
 ### 方式一：直接运行二进制
 
 1. 从 [Releases](https://github.com/BenedictKing/ccx/releases/latest) 下载最新可执行文件；Windows 普通用户可优先使用 Microsoft Store 版本（上架后提供），Store 负责签名与更新
@@ -189,6 +197,8 @@ make dev
 
 ## 相关文档
 
+- [CCX Desktop 用户教程](docs/guide/desktop)
+- [客户端接入总览](docs/guide/clients)
 - [README.md](README.md)
 - [backend-go/README.md](backend-go/README.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)

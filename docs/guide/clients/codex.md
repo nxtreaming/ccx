@@ -1,6 +1,6 @@
 # Codex CLI / Codex App 接入 CCX
 
-Codex CLI 和 Codex App 使用同一套 OpenAI 兼容配置：Base URL、API Key 和模型名一致，只是配置入口不同。
+如果你正在使用 **CCX Desktop**，可先在 [Agent Config](/guide/desktop/#Agent配置) 中写入 Codex 配置，再回到本页确认 Responses 入口和 Base URL 规则。
 
 ## 工作方式
 

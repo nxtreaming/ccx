@@ -1,6 +1,6 @@
 # OpenCode 接入 CCX
 
-OpenCode 可通过 OpenAI Chat 兼容配置接入 CCX。接入 CCX 时，推荐走 CCX 的 **Chat** 入口。
+如果你正在使用 **CCX Desktop**，可先在 [Agent Config](/guide/desktop/#Agent配置) 中写入 OpenCode 配置，再回到本页确认 Chat 入口和 Base URL 规则。
 
 ## 工作方式
 

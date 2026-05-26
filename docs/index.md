@@ -9,6 +9,9 @@ hero:
       text: 快速开始
       link: /guide/getting-started
     - theme: alt
+      text: 桌面端上手
+      link: /guide/desktop/
+    - theme: alt
       text: 客户端接入
       link: /guide/clients/
     - theme: alt
