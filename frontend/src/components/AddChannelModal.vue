@@ -1408,6 +1408,7 @@ const allSourceModelOptions = computed(() => {
   }
   if (props.channelType === 'images') {
     return [
+      { title: 'gpt-image-2', value: 'gpt-image-2' },
       { title: 'gpt-image-1', value: 'gpt-image-1' },
       { title: 'dall-e-3', value: 'dall-e-3' },
       { title: 'dall-e-2', value: 'dall-e-2' }
