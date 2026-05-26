@@ -111,9 +111,9 @@ tasks:
     summary: Packages a production build of the application into a Finder-styled DMG
     vars:
       DISPLAY_APP_NAME: '{{.DISPLAY_APP_NAME | default "CCX Desktop"}}'
-      DMG_WINDOW_SIZE: '{{.DMG_WINDOW_SIZE | default "600,400"}}'
-      DMG_APP_POSITION: '{{.DMG_APP_POSITION | default "150,190"}}'
-      DMG_APPLICATIONS_POSITION: '{{.DMG_APPLICATIONS_POSITION | default "450,190"}}'
+      DMG_WINDOW_SIZE: '{{.DMG_WINDOW_SIZE | default "520,340"}}'
+      DMG_APP_POSITION: '{{.DMG_APP_POSITION | default "120,130"}}'
+      DMG_APPLICATIONS_POSITION: '{{.DMG_APPLICATIONS_POSITION | default "390,130"}}'
       DMG_APP_ICON_SIZE: '{{.DMG_APP_ICON_SIZE | default 96}}'
       DMG_APPLICATIONS_ICON_SIZE: '{{.DMG_APPLICATIONS_ICON_SIZE | default 96}}'
     deps:
@@ -149,9 +149,9 @@ tasks:
     summary: Creates a DMG with a custom Finder layout using create-dmg
     vars:
       DISPLAY_APP_NAME: '{{.DISPLAY_APP_NAME | default "CCX Desktop"}}'
-      DMG_WINDOW_SIZE: '{{.DMG_WINDOW_SIZE | default "600,400"}}'
-      DMG_APP_POSITION: '{{.DMG_APP_POSITION | default "150,190"}}'
-      DMG_APPLICATIONS_POSITION: '{{.DMG_APPLICATIONS_POSITION | default "450,190"}}'
+      DMG_WINDOW_SIZE: '{{.DMG_WINDOW_SIZE | default "520,340"}}'
+      DMG_APP_POSITION: '{{.DMG_APP_POSITION | default "120,130"}}'
+      DMG_APPLICATIONS_POSITION: '{{.DMG_APPLICATIONS_POSITION | default "390,130"}}'
       DMG_APP_ICON_SIZE: '{{.DMG_APP_ICON_SIZE | default 96}}'
       VERSION: '{{.BUILD_VERSION | default "0.0.0"}}'
       DMG_OUTPUT: '{{.BIN_DIR}}/CCX-Desktop-{{.VERSION}}-darwin-{{.ARCH | default ARCH}}.dmg'
