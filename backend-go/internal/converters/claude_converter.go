@@ -33,6 +33,8 @@ func (c *ClaudeConverter) ToProviderRequest(sess *session.Session, req *types.Re
 	// 复制其他参数
 	if req.MaxTokens > 0 {
 		claudeReq["max_tokens"] = req.MaxTokens
+	} else {
+		claudeReq["max_tokens"] = 4096
 	}
 	if req.Temperature > 0 {
 		claudeReq["temperature"] = req.Temperature

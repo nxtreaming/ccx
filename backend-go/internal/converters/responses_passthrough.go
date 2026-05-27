@@ -14,13 +14,12 @@ type ResponsesPassthroughConverter struct{}
 // ToProviderRequest 透传 Responses 请求（不做转换）
 func (c *ResponsesPassthroughConverter) ToProviderRequest(sess *session.Session, req *types.ResponsesRequest) (interface{}, error) {
 	// 直接返回原始请求
-	return map[string]interface{}{
+	reqMap := map[string]interface{}{
 		"model":                req.Model,
 		"instructions":         req.Instructions,
 		"input":                req.Input,
 		"previous_response_id": req.PreviousResponseID,
 		"store":                req.Store,
-		"max_tokens":           req.MaxTokens,
 		"temperature":          req.Temperature,
 		"top_p":                req.TopP,
 		"frequency_penalty":    req.FrequencyPenalty,
@@ -29,7 +28,11 @@ func (c *ResponsesPassthroughConverter) ToProviderRequest(sess *session.Session,
 		"stop":                 req.Stop,
 		"user":                 req.User,
 		"stream_options":       req.StreamOptions,
-	}, nil
+	}
+	if req.MaxTokens > 0 {
+		reqMap["max_tokens"] = req.MaxTokens
+	}
+	return reqMap, nil
 }
 
 // FromProviderResponse 透传 Responses 响应（不做转换）
