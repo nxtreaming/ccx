@@ -178,11 +178,11 @@ const openFileInEditor = async (filePath: string) => {
             class="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             @change="emit('update:selectedCodexProvider', ($event.target as HTMLSelectElement).value as AgentProvider)"
           >
-            <option value="ccx">{{ t('agent.localGateway') }}</option>
+            <option value="ccx">{{ t('agent.provider.localGateway') }}</option>
             <option value="openai">{{ t('agent.provider.openaiDirect') }}</option>
-            <option value="dashscope">DashScope</option>
-            <option value="opencode-zen">OpenCode Zen</option>
-            <option value="opencode-go">OpenCode Go</option>
+            <option value="dashscope">{{ t('agent.provider.dashscopeDirect') }}</option>
+            <option value="opencode-zen">{{ t('agent.provider.opencodeZenDirect') }}</option>
+            <option value="opencode-go">{{ t('agent.provider.opencodeGoDirect') }}</option>
           </select>
         </div>
         <button
@@ -214,13 +214,13 @@ const openFileInEditor = async (filePath: string) => {
             class="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             @change="emit('update:selectedOpenCodeProvider', ($event.target as HTMLSelectElement).value as AgentProvider)"
           >
-            <option value="ccx">CCX 本地网关</option>
-            <option value="deepseek">DeepSeek 直连</option>
-            <option value="kimi">Kimi 直连</option>
-            <option value="glm">GLM 直连</option>
-            <option value="minimax">MiniMax 直连</option>
-            <option value="opencode-zen">OpenCode Zen 直连</option>
-            <option value="opencode-go">OpenCode Go 直连</option>
+            <option value="ccx">{{ t('agent.provider.localGateway') }}</option>
+            <option value="deepseek">{{ t('agent.provider.deepseekDirect') }}</option>
+            <option value="kimi">{{ t('agent.provider.kimiDirect') }}</option>
+            <option value="glm">{{ t('agent.provider.glmDirect') }}</option>
+            <option value="minimax">{{ t('agent.provider.minimaxDirect') }}</option>
+            <option value="opencode-zen">{{ t('agent.provider.opencodeZenDirect') }}</option>
+            <option value="opencode-go">{{ t('agent.provider.opencodeGoDirect') }}</option>
           </select>
         </div>
         <button
@@ -229,7 +229,7 @@ const openFileInEditor = async (filePath: string) => {
           class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-200"
           @click="openProviderConsole(selectedOpenCodeProvider)"
         >
-          访问官方控制台
+          {{ t('agent.openConsole') }}
           <ExternalLink class="h-3 w-3" />
         </button>
         <div v-if="selectedOpenCodeProvider !== 'ccx'" class="space-y-1.5">
@@ -237,7 +237,7 @@ const openFileInEditor = async (filePath: string) => {
           <Input
             type="password"
             autocomplete="off"
-            :placeholder="savedProviderKeys?.[`codex:${selectedOpenCodeProvider}`] ? '已保存，留空则使用已保存的 key' : '输入 API Key'"
+            :placeholder="savedProviderKeys?.[`codex:${selectedOpenCodeProvider}`] ? t('agent.codexPlaceholderSaved') : t('agent.codexPlaceholderRequired')"
             :model-value="openCodeOpenAIKey || ''"
             @update:model-value="emit('update:openCodeOpenAIKey', String($event))"
           />
