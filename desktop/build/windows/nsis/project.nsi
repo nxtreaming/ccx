@@ -58,7 +58,9 @@ ManifestDPIAware true
 
 !insertmacro MUI_PAGE_WELCOME # Welcome to the installer page.
 # !insertmacro MUI_PAGE_LICENSE "resources\eula.txt" # Adds a EULA page to the installer
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipDirectoryPageIfUpgrade
 !insertmacro MUI_PAGE_DIRECTORY # In which folder install page.
+!undef MUI_PAGE_CUSTOMFUNCTION_PRE
 !insertmacro MUI_PAGE_INSTFILES # Installing page.
 !insertmacro MUI_PAGE_FINISH # Finished installation page.
 
@@ -75,8 +77,38 @@ OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the i
 InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}" # Default installing folder ($PROGRAMFILES is Program Files folder).
 ShowInstDetails show # This will always show the installation details.
 
+Var HAS_PREVIOUS_INSTALL
+
 Function .onInit
-   !insertmacro wails.checkArchitecture
+    !insertmacro wails.checkArchitecture
+
+    StrCpy $HAS_PREVIOUS_INSTALL "0"
+
+    SetRegView 64
+    ReadRegStr $0 HKLM "${UNINST_KEY}" "InstallLocation"
+    ${If} $0 != ""
+    ${AndIf} ${FileExists} "$0\${PRODUCT_EXECUTABLE}"
+        StrCpy $INSTDIR "$0"
+        StrCpy $HAS_PREVIOUS_INSTALL "1"
+    ${EndIf}
+
+    ${If} $HAS_PREVIOUS_INSTALL == "0"
+        ReadRegStr $0 HKLM "${UNINST_KEY}" "DisplayIcon"
+        ${If} $0 != ""
+            ${GetParent} "$0" $1
+            ${If} $1 != ""
+            ${AndIf} ${FileExists} "$1\${PRODUCT_EXECUTABLE}"
+                StrCpy $INSTDIR "$1"
+                StrCpy $HAS_PREVIOUS_INSTALL "1"
+            ${EndIf}
+        ${EndIf}
+    ${EndIf}
+FunctionEnd
+
+Function SkipDirectoryPageIfUpgrade
+    ${If} $HAS_PREVIOUS_INSTALL == "1"
+        Abort
+    ${EndIf}
 FunctionEnd
 
 Section
@@ -98,6 +130,9 @@ Section
     !insertmacro wails.associateCustomProtocols
     
     !insertmacro wails.writeUninstaller
+
+    SetRegView 64
+    WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
 SectionEnd
 
 Section "uninstall" 
