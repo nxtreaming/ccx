@@ -133,6 +133,12 @@ func (s *DesktopService) GetProxyAccessKey() (string, error) {
 	return s.manager.EnsureProxyAccessKey()
 }
 
+// GetAdminAccessKey 返回管理 API 访问密钥。
+// 优先使用 ADMIN_ACCESS_KEY，未设置时回退到 PROXY_ACCESS_KEY。
+func (s *DesktopService) GetAdminAccessKey() (string, error) {
+	return s.adminAccessKey()
+}
+
 // IsSetupComplete 判断是否已完成初始配置（PROXY_ACCESS_KEY 已存在）。
 func (s *DesktopService) IsSetupComplete() bool {
 	return s.manager.IsSetupComplete()

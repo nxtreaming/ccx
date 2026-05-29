@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Globe } from 'lucide-vue-next'
 import type { DesktopStatus } from '@/types'
 import { useLanguage } from '@/composables/useLanguage'
-import { GetProxyAccessKey, OpenWebUIInBrowser } from '@bindings/github.com/BenedictKing/ccx/desktop/desktopservice'
+import { GetAdminAccessKey, OpenWebUIInBrowser } from '@bindings/github.com/BenedictKing/ccx/desktop/desktopservice'
 
 const props = defineProps<{
   status: DesktopStatus
@@ -26,7 +26,7 @@ const iframeSrc = computed(() => {
 const postProxyAccessKey = async () => {
   if (!iframeRef.value?.contentWindow || !iframeSrc.value) return
   try {
-    const accessKey = await GetProxyAccessKey()
+    const accessKey = await GetAdminAccessKey()
     if (!accessKey) return
     const targetOrigin = new URL(iframeSrc.value).origin
     // 重试发送：web UI 的 onMounted 可能尚未注册 message 监听器

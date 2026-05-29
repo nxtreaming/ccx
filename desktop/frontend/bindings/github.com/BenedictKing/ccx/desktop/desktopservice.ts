@@ -110,6 +110,10 @@ export function GetProviderPresets(target: string): $CancellablePromise<channelp
     });
 }
 
+export function GetAdminAccessKey(): $CancellablePromise<string> {
+    return $Call.ByID(2254986559);
+}
+
 export function GetProxyAccessKey(): $CancellablePromise<string> {
     return $Call.ByID(355938326);
 }
