@@ -92,6 +92,7 @@ type ChannelPayload struct {
 	ReasoningMapping              map[string]string `json:"reasoningMapping,omitempty"`
 	ReasoningParamStyle           string            `json:"reasoningParamStyle,omitempty"`
 	PassbackReasoningContent      bool              `json:"passbackReasoningContent,omitempty"`
+	PassbackThinkingBlocks        bool              `json:"passbackThinkingBlocks,omitempty"`
 	NoVision                      bool              `json:"noVision,omitempty"`
 	NoVisionModels                []string          `json:"noVisionModels,omitempty"`
 	VisionFallbackModel           string            `json:"visionFallbackModel,omitempty"`
@@ -452,9 +453,11 @@ type channelTargetConfig struct {
 	ReasoningMapping              map[string]string
 	ReasoningParamStyle           string
 	PassbackReasoningContent      bool
+	PassbackThinkingBlocks        bool
 	NoVision                      bool
 	NoVisionModels                []string
 	VisionFallbackModel           string
+	StripEmptyTextBlocks          bool
 	CodexNativeToolPassthrough    bool
 	CodexToolCompat               *bool
 	StripCodexClientTools         *bool
@@ -471,6 +474,7 @@ var channelTargetConfigs = map[string]map[string]channelTargetConfig{
 			},
 			ReasoningParamStyle:      "reasoning",
 			PassbackReasoningContent: true,
+			PassbackThinkingBlocks:   true,
 			NoVision:                 true,
 		},
 		ProviderMiMo: {
@@ -634,8 +638,10 @@ func applyChannelTargetConfig(payload *ChannelPayload, config channelTargetConfi
 	payload.NoVisionModels = slices.Clone(config.NoVisionModels)
 	payload.ReasoningParamStyle = config.ReasoningParamStyle
 	payload.PassbackReasoningContent = payload.PassbackReasoningContent || config.PassbackReasoningContent
+	payload.PassbackThinkingBlocks = payload.PassbackThinkingBlocks || config.PassbackThinkingBlocks
 	payload.NoVision = payload.NoVision || config.NoVision
 	payload.VisionFallbackModel = config.VisionFallbackModel
+	payload.StripEmptyTextBlocks = payload.StripEmptyTextBlocks || config.StripEmptyTextBlocks
 	payload.CodexNativeToolPassthrough = payload.CodexNativeToolPassthrough || config.CodexNativeToolPassthrough
 	payload.NormalizeNonstandardChatRoles = payload.NormalizeNonstandardChatRoles || config.NormalizeNonstandardChatRoles
 	if config.CodexToolCompat != nil {

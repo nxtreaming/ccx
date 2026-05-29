@@ -268,6 +268,28 @@
                     </v-btn>
                   </div>
 
+                  <div v-if="showClaudeChannelPresets" class="d-flex align-center flex-wrap ga-2 mb-4">
+                    <div class="text-caption text-medium-emphasis">{{ t('addChannel.oneClickSetup') }}</div>
+                    <v-btn
+                      size="small"
+                      variant="tonal"
+                      color="secondary"
+                      prepend-icon="mdi-lightning-bolt"
+                      @click="applyClaudeChannelPreset('mimo')"
+                    >
+                      MiMo
+                    </v-btn>
+                    <v-btn
+                      size="small"
+                      variant="tonal"
+                      color="secondary"
+                      prepend-icon="mdi-lightning-bolt"
+                      @click="applyClaudeChannelPreset('deepseek')"
+                    >
+                      DeepSeek
+                    </v-btn>
+                  </div>
+
                   <!-- 现有映射列表 -->
                   <div v-if="Object.keys(form.modelMapping).length" class="mb-4">
                     <v-list density="compact" class="bg-transparent">
@@ -1612,6 +1634,51 @@ const applyModelMappingPreset = (preset: keyof typeof modelMappingPresets) => {
   } else {
     form.reasoningMapping = {}
   }
+}
+
+// Claude 协议上游渠道一键预设（MiMo / DeepSeek）
+const showClaudeChannelPresets = computed(() => {
+  if (form.serviceType !== 'claude') return false
+  return props.channelType === 'messages' || props.channelType === 'chat' || props.channelType === 'responses'
+})
+
+const claudeChannelPresets: Record<
+  'mimo' | 'deepseek',
+  {
+    passbackReasoningContent: boolean
+    passbackThinkingBlocks: boolean
+    stripEmptyTextBlocks: boolean
+    noVision: boolean
+    noVisionModels: string[]
+    visionFallbackModel: string
+  }
+> = {
+  mimo: {
+    passbackReasoningContent: true,
+    passbackThinkingBlocks: false,
+    stripEmptyTextBlocks: false,
+    noVision: false,
+    noVisionModels: ['mimo-v2.5-pro'],
+    visionFallbackModel: 'mimo-v2.5'
+  },
+  deepseek: {
+    passbackReasoningContent: true,
+    passbackThinkingBlocks: true,
+    stripEmptyTextBlocks: true,
+    noVision: true,
+    noVisionModels: [],
+    visionFallbackModel: ''
+  }
+}
+
+const applyClaudeChannelPreset = (preset: keyof typeof claudeChannelPresets) => {
+  const presetConfig = claudeChannelPresets[preset]
+  form.passbackReasoningContent = presetConfig.passbackReasoningContent
+  form.passbackThinkingBlocks = presetConfig.passbackThinkingBlocks
+  form.stripEmptyTextBlocks = presetConfig.stripEmptyTextBlocks
+  form.noVision = presetConfig.noVision
+  form.noVisionModels = [...presetConfig.noVisionModels]
+  form.visionFallbackModel = presetConfig.visionFallbackModel
 }
 
 // 模型优先级排序规则（索引越小优先级越高）
