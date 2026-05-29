@@ -754,7 +754,7 @@ const pingChannel = async (channelId: number) => {
 
 const showCapabilityTestDialog = ref(false)
 const capabilityTestChannelName = ref('')
-const capabilityTestChannelId = ref(0)
+const capabilityTestChannelId = ref<number | null>(null)
 const capabilityTestChannelType = ref<CapabilityChannelKind>('messages')
 const capabilityTestSourceTab = ref<CapabilityChannelKind>('messages')
 const capabilityTestDialogRef = ref<InstanceType<typeof CapabilityTestDialog> | null>(null)
@@ -1222,16 +1222,14 @@ const getCapabilityPreviousJobId = (protocol: string): string | undefined => {
 }
 
 const testChannelCapability = async (channelId: number) => {
-  console.log('[CapabilityTest] 触发测试:', { channelId, activeTab: channelStore.activeTab })
   if (!isCapabilityChannelKind(channelStore.activeTab)) {
-    console.warn('[CapabilityTest] 当前 Tab 不支持能力测试:', channelStore.activeTab)
     showToast(t('toast.unsupportedProtocol', { protocol: channelStore.activeTab }), 'warning')
     return
   }
 
   const channel = channelStore.currentChannelsData.channels?.find((ch: Channel) => ch.index === channelId)
   if (!channel) {
-    console.error('[CapabilityTest] 渠道未找到:', channelId, '当前渠道数:', channelStore.currentChannelsData.channels?.length)
+    console.error('Channel not found:', channelId)
     return
   }
 
@@ -1255,9 +1253,7 @@ const testChannelCapability = async (channelId: number) => {
 
   try {
     // sourceTab 是渠道的实际协议类型，channelType 是 API 路径
-    console.log('[CapabilityTest] 请求 snapshot:', { channelType, channelId, sourceTab })
     const snapshot = await api.getChannelCapabilitySnapshot(channelType, channelId, sourceTab)
-    console.log('[CapabilityTest] snapshot 返回:', snapshot)
     if (capabilityTestChannelId.value !== channelId || capabilityTestChannelType.value !== channelType) return
     const snapshotJob = buildCapabilityJobFromSnapshot(snapshot, channelId, capabilityTestChannelName.value, channelType)
     capabilityTestJob.value = snapshotJob
@@ -1269,7 +1265,6 @@ const testChannelCapability = async (channelId: number) => {
       }
     }
   } catch (error) {
-    console.error('[CapabilityTest] snapshot 请求失败:', error)
     if (error instanceof ApiError && error.status === 404) return
     if (error instanceof ApiError && error.status === 401) {
       // 401 已由 ApiService 清除认证，关闭能力测试对话框
@@ -1285,7 +1280,7 @@ const handleTestCapabilityProtocol = async (protocol: string, models?: string[])
   if (!isCapabilityChannelKind(channelStore.activeTab) || !isCapabilityProtocol(protocol)) {
     return
   }
-  if (!capabilityTestChannelId.value) return
+  if (capabilityTestChannelId.value === null) return
 
   const channelType = capabilityTestChannelType.value
   const channelId = capabilityTestChannelId.value
@@ -1302,7 +1297,6 @@ const handleTestCapabilityProtocol = async (protocol: string, models?: string[])
     updatedAt: new Date().toISOString()
   })
   try {
-    console.log('[CapabilityTest] Starting test with sourceTab:', capabilityTestSourceTab.value, 'channelType:', channelType)
     const startResp: CapabilityTestJobStartResponse = await api.startChannelCapabilityTest(
       channelType,
       channelId,
@@ -1336,6 +1330,7 @@ const handleTestCapabilityProtocolWithModels = handleTestCapabilityProtocol
 const handleCancelCapabilityTest = async () => {
   if (!capabilityTestJob.value) return
   if (!capabilityTestChannelType.value) return
+  if (capabilityTestChannelId.value === null) return
   try {
     const activeIds = collectActiveJobIds(capabilityTestJob.value)
     const channelType = capabilityTestChannelType.value
@@ -1364,6 +1359,8 @@ const handleCancelCapabilityTest = async () => {
 const handleRetryCapabilityModel = async (protocol: string, model: string) => {
   if (!capabilityTestJob.value) return
   if (!capabilityTestChannelType.value) return
+  if (capabilityTestChannelId.value === null) return
+  const channelId = capabilityTestChannelId.value
   const job = capabilityTestJob.value
   const protocolTest = job.tests.find(t => t.protocol === protocol)
   if (!protocolTest) return
@@ -1380,8 +1377,8 @@ const handleRetryCapabilityModel = async (protocol: string, model: string) => {
 
     capabilityTestJob.value = markCapabilityModelRetrying(capabilityTestJob.value, protocol, model)
 
-    await api.retryCapabilityTestModel(capabilityTestChannelType.value, capabilityTestChannelId.value, retryJobId, protocol, model)
-    startCapabilityPolling(capabilityTestChannelType.value, capabilityTestChannelId.value, retryJobId)
+    await api.retryCapabilityTestModel(capabilityTestChannelType.value, channelId, retryJobId, protocol, model)
+    startCapabilityPolling(capabilityTestChannelType.value, channelId, retryJobId)
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       await handleTestCapabilityProtocolWithModels(protocol, [model])
