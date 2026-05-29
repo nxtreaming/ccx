@@ -1222,14 +1222,16 @@ const getCapabilityPreviousJobId = (protocol: string): string | undefined => {
 }
 
 const testChannelCapability = async (channelId: number) => {
+  console.log('[CapabilityTest] 触发测试:', { channelId, activeTab: channelStore.activeTab })
   if (!isCapabilityChannelKind(channelStore.activeTab)) {
+    console.warn('[CapabilityTest] 当前 Tab 不支持能力测试:', channelStore.activeTab)
     showToast(t('toast.unsupportedProtocol', { protocol: channelStore.activeTab }), 'warning')
     return
   }
 
   const channel = channelStore.currentChannelsData.channels?.find((ch: Channel) => ch.index === channelId)
   if (!channel) {
-    console.error('Channel not found:', channelId)
+    console.error('[CapabilityTest] 渠道未找到:', channelId, '当前渠道数:', channelStore.currentChannelsData.channels?.length)
     return
   }
 
@@ -1253,7 +1255,9 @@ const testChannelCapability = async (channelId: number) => {
 
   try {
     // sourceTab 是渠道的实际协议类型，channelType 是 API 路径
+    console.log('[CapabilityTest] 请求 snapshot:', { channelType, channelId, sourceTab })
     const snapshot = await api.getChannelCapabilitySnapshot(channelType, channelId, sourceTab)
+    console.log('[CapabilityTest] snapshot 返回:', snapshot)
     if (capabilityTestChannelId.value !== channelId || capabilityTestChannelType.value !== channelType) return
     const snapshotJob = buildCapabilityJobFromSnapshot(snapshot, channelId, capabilityTestChannelName.value, channelType)
     capabilityTestJob.value = snapshotJob
@@ -1265,7 +1269,13 @@ const testChannelCapability = async (channelId: number) => {
       }
     }
   } catch (error) {
+    console.error('[CapabilityTest] snapshot 请求失败:', error)
     if (error instanceof ApiError && error.status === 404) return
+    if (error instanceof ApiError && error.status === 401) {
+      // 401 已由 ApiService 清除认证，关闭能力测试对话框
+      showCapabilityTestDialog.value = false
+      return
+    }
     const message = error instanceof Error ? error.message : t('system.unknown')
     capabilityTestDialogRef.value?.setError(t('toast.capabilityFailed', { message }))
   }
@@ -1769,17 +1779,34 @@ onMounted(async () => {
     authStore.setInitialized(true)
     authStore.setAuthError(t('toast.enterAccessKeyContinue'))
 
+    // 桌面端通过 postMessage 发送密钥，监听直到认证成功
     const handleDesktopAuth = async (event: MessageEvent) => {
       const data = event.data as { type?: string; accessKey?: string }
       if (data?.type !== 'ccx-desktop-auth' || !data.accessKey) return
 
-      window.removeEventListener('message', handleDesktopAuth)
       authStore.setAuthKeyInput(data.accessKey)
       await handleAuthSubmit()
+      // 认证成功后移除监听器；失败时保留以便桌面端重试
+      if (authStore.apiKey) {
+        window.removeEventListener('message', handleDesktopAuth)
+      }
     }
 
     window.addEventListener('message', handleDesktopAuth)
     return
+  }
+
+  // 桌面端嵌入但 ccx_desktop 参数缺失时，也注册 postMessage 监听器作为后备
+  if (window.self !== window.top) {
+    const handleDesktopAuthFallback = async (event: MessageEvent) => {
+      const data = event.data as { type?: string; accessKey?: string }
+      if (data?.type !== 'ccx-desktop-auth' || !data.accessKey) return
+
+      window.removeEventListener('message', handleDesktopAuthFallback)
+      authStore.setAuthKeyInput(data.accessKey)
+      await handleAuthSubmit()
+    }
+    window.addEventListener('message', handleDesktopAuthFallback)
   }
 
   // 检查 AuthStore 中是否有保存的密钥

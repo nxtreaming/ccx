@@ -27,11 +27,16 @@ const postProxyAccessKey = async () => {
   if (!iframeRef.value?.contentWindow || !iframeSrc.value) return
   try {
     const accessKey = await GetProxyAccessKey()
+    if (!accessKey) return
     const targetOrigin = new URL(iframeSrc.value).origin
-    iframeRef.value.contentWindow.postMessage(
-      { type: 'ccx-desktop-auth', accessKey },
-      targetOrigin,
-    )
+    // 重试发送：web UI 的 onMounted 可能尚未注册 message 监听器
+    for (let i = 0; i < 5; i++) {
+      iframeRef.value.contentWindow?.postMessage(
+        { type: 'ccx-desktop-auth', accessKey },
+        targetOrigin,
+      )
+      await new Promise(r => setTimeout(r, 200))
+    }
   } catch {
     // Web UI 仍可手动输入 access key
   }
