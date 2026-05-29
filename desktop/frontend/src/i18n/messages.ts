@@ -96,6 +96,97 @@ export type MessageKey =
   | 'channel.addToCCX'
   | 'channel.badgeDirectAgent'
   | 'channel.badgeNativeMessages'
+  // Provider labels & descriptions
+  | 'channel.preset.deepseek.label'
+  | 'channel.preset.deepseek.description'
+  | 'channel.preset.mimo.label'
+  | 'channel.preset.mimo.description'
+  | 'channel.preset.compshare.label'
+  | 'channel.preset.compshare.description'
+  | 'channel.preset.kimi.label'
+  | 'channel.preset.kimi.description'
+  | 'channel.preset.glm.label'
+  | 'channel.preset.glm.description'
+  | 'channel.preset.minimax.label'
+  | 'channel.preset.minimax.description'
+  | 'channel.preset.dashscope.label'
+  | 'channel.preset.dashscope.description'
+  | 'channel.preset.opencode-zen.label'
+  | 'channel.preset.opencode-zen.description'
+  | 'channel.preset.opencode-go.label'
+  | 'channel.preset.opencode-go.description'
+  // DeepSeek plans
+  | 'channel.preset.deepseek.plan.anthropic.label'
+  | 'channel.preset.deepseek.plan.anthropic.description'
+  | 'channel.preset.deepseek.plan.openai-chat.label'
+  | 'channel.preset.deepseek.plan.openai-chat.description'
+  // MiMo plans
+  | 'channel.preset.mimo.plan.anthropic.label'
+  | 'channel.preset.mimo.plan.anthropic.description'
+  | 'channel.preset.mimo.plan.openai-chat.label'
+  | 'channel.preset.mimo.plan.openai-chat.description'
+  | 'channel.preset.mimo.plan.token-cn.label'
+  | 'channel.preset.mimo.plan.token-cn.description'
+  | 'channel.preset.mimo.plan.token-sgp.label'
+  | 'channel.preset.mimo.plan.token-sgp.description'
+  | 'channel.preset.mimo.plan.token-ams.label'
+  | 'channel.preset.mimo.plan.token-ams.description'
+  | 'channel.preset.mimo.plan.token-cn-anthropic.label'
+  | 'channel.preset.mimo.plan.token-cn-anthropic.description'
+  | 'channel.preset.mimo.plan.token-sgp-anthropic.label'
+  | 'channel.preset.mimo.plan.token-sgp-anthropic.description'
+  | 'channel.preset.mimo.plan.token-ams-anthropic.label'
+  | 'channel.preset.mimo.plan.token-ams-anthropic.description'
+  // Compshare plans
+  | 'channel.preset.compshare.plan.anthropic.label'
+  | 'channel.preset.compshare.plan.anthropic.description'
+  | 'channel.preset.compshare.plan.openai-chat.label'
+  | 'channel.preset.compshare.plan.openai-chat.description'
+  // Kimi plans
+  | 'channel.preset.kimi.plan.anthropic.label'
+  | 'channel.preset.kimi.plan.anthropic.description'
+  | 'channel.preset.kimi.plan.openai-chat.label'
+  | 'channel.preset.kimi.plan.openai-chat.description'
+  // GLM plans
+  | 'channel.preset.glm.plan.anthropic.label'
+  | 'channel.preset.glm.plan.anthropic.description'
+  | 'channel.preset.glm.plan.coding.label'
+  | 'channel.preset.glm.plan.coding.description'
+  | 'channel.preset.glm.plan.openai-chat.label'
+  | 'channel.preset.glm.plan.openai-chat.description'
+  // MiniMax plans
+  | 'channel.preset.minimax.plan.anthropic.label'
+  | 'channel.preset.minimax.plan.anthropic.description'
+  | 'channel.preset.minimax.plan.openai-chat.label'
+  | 'channel.preset.minimax.plan.openai-chat.description'
+  // DashScope plans
+  | 'channel.preset.dashscope.plan.anthropic.label'
+  | 'channel.preset.dashscope.plan.anthropic.description'
+  | 'channel.preset.dashscope.plan.openai-chat.label'
+  | 'channel.preset.dashscope.plan.openai-chat.description'
+  | 'channel.preset.dashscope.plan.coding-anthropic.label'
+  | 'channel.preset.dashscope.plan.coding-anthropic.description'
+  | 'channel.preset.dashscope.plan.coding-openai-chat.label'
+  | 'channel.preset.dashscope.plan.coding-openai-chat.description'
+  // OpenCode Zen plans
+  | 'channel.preset.opencode-zen.plan.anthropic.label'
+  | 'channel.preset.opencode-zen.plan.anthropic.description'
+  | 'channel.preset.opencode-zen.plan.openai-chat.label'
+  | 'channel.preset.opencode-zen.plan.openai-chat.description'
+  // OpenCode Go plans
+  | 'channel.preset.opencode-go.plan.anthropic.label'
+  | 'channel.preset.opencode-go.plan.anthropic.description'
+  | 'channel.preset.opencode-go.plan.openai-chat.label'
+  | 'channel.preset.opencode-go.plan.openai-chat.description'
+  // Targets (shared across providers)
+  | 'channel.target.messages.label'
+  | 'channel.target.messages.description'
+  | 'channel.target.responses.label'
+  | 'channel.target.responses.description'
+  | 'channel.target.chat.label'
+  | 'channel.target.chat.description'
+  // MiMo target override
+  | 'channel.preset.mimo.target.messages.description'
   | 'env.title'
   | 'env.pathDetecting'
   | 'env.refresh'
@@ -350,6 +441,97 @@ export const messages: Record<SupportedLocale, Messages> = {
     'channel.addToCCX': 'Add to CCX',
     'channel.badgeDirectAgent': 'Agent direct',
     'channel.badgeNativeMessages': 'Native Messages',
+    // Provider labels & descriptions
+    'channel.preset.deepseek.label': 'DeepSeek',
+    'channel.preset.deepseek.description': 'Messages native passthrough, Codex Responses, and Chat passthrough — three protocol support.',
+    'channel.preset.mimo.label': 'MiMo',
+    'channel.preset.mimo.description': 'Messages native passthrough, Codex Responses, and Chat passthrough; includes pay-as-you-go and Token Plan endpoints.',
+    'channel.preset.compshare.label': 'Compshare Plans',
+    'channel.preset.compshare.description': 'Standalone plan BaseURL and API Key, compatible with Anthropic Messages, OpenAI Chat, and Codex Responses.',
+    'channel.preset.kimi.label': 'Kimi / Moonshot',
+    'channel.preset.kimi.description': 'Messages native passthrough, Codex Responses, and Chat passthrough — three protocol support.',
+    'channel.preset.glm.label': 'GLM / BigModel',
+    'channel.preset.glm.description': 'Messages native passthrough, Codex Responses, and Chat passthrough — three protocol support.',
+    'channel.preset.minimax.label': 'MiniMax',
+    'channel.preset.minimax.description': 'Messages native passthrough, Codex Responses, and Chat passthrough — three protocol support.',
+    'channel.preset.dashscope.label': 'Alibaba DashScope',
+    'channel.preset.dashscope.description': 'Messages native passthrough, Codex Responses, and Chat passthrough — three protocol support.',
+    'channel.preset.opencode-zen.label': 'OpenCode Zen',
+    'channel.preset.opencode-zen.description': 'Pay-as-you-go curated model gateway, supporting Messages, Chat, and Responses protocols.',
+    'channel.preset.opencode-go.label': 'OpenCode Go',
+    'channel.preset.opencode-go.description': 'Affordable open-source model subscription ($5/mo+), supporting Messages, Chat, and Responses protocols.',
+    // DeepSeek plans
+    'channel.preset.deepseek.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.deepseek.plan.anthropic.description': 'Claude Messages native endpoint',
+    'channel.preset.deepseek.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.deepseek.plan.openai-chat.description': 'Chat / Responses shared endpoint',
+    // MiMo plans
+    'channel.preset.mimo.plan.anthropic.label': 'Pay-as-you-go - Anthropic',
+    'channel.preset.mimo.plan.anthropic.description': 'Messages native endpoint',
+    'channel.preset.mimo.plan.openai-chat.label': 'Pay-as-you-go - OpenAI',
+    'channel.preset.mimo.plan.openai-chat.description': 'Chat / Responses shared endpoint',
+    'channel.preset.mimo.plan.token-cn.label': 'Token Plan - China',
+    'channel.preset.mimo.plan.token-cn.description': 'China subscription plan',
+    'channel.preset.mimo.plan.token-sgp.label': 'Token Plan - Singapore',
+    'channel.preset.mimo.plan.token-sgp.description': 'Singapore subscription plan',
+    'channel.preset.mimo.plan.token-ams.label': 'Token Plan - Europe',
+    'channel.preset.mimo.plan.token-ams.description': 'Europe subscription plan',
+    'channel.preset.mimo.plan.token-cn-anthropic.label': 'Token Plan - China (Anthropic)',
+    'channel.preset.mimo.plan.token-cn-anthropic.description': 'China subscription plan Anthropic endpoint',
+    'channel.preset.mimo.plan.token-sgp-anthropic.label': 'Token Plan - Singapore (Anthropic)',
+    'channel.preset.mimo.plan.token-sgp-anthropic.description': 'Singapore subscription plan Anthropic endpoint',
+    'channel.preset.mimo.plan.token-ams-anthropic.label': 'Token Plan - Europe (Anthropic)',
+    'channel.preset.mimo.plan.token-ams-anthropic.description': 'Europe subscription plan Anthropic endpoint',
+    // Compshare plans
+    'channel.preset.compshare.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.compshare.plan.anthropic.description': 'Claude Messages native endpoint',
+    'channel.preset.compshare.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.compshare.plan.openai-chat.description': 'OpenAI Chat / Responses compatible endpoint',
+    // Kimi plans
+    'channel.preset.kimi.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.kimi.plan.anthropic.description': 'Claude Messages native endpoint',
+    'channel.preset.kimi.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.kimi.plan.openai-chat.description': 'Moonshot OpenAI compatible endpoint',
+    // GLM plans
+    'channel.preset.glm.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.glm.plan.anthropic.description': 'Claude Messages native endpoint',
+    'channel.preset.glm.plan.coding.label': 'OpenAI-compatible (Coding)',
+    'channel.preset.glm.plan.coding.description': 'Zhipu Coding plan endpoint',
+    'channel.preset.glm.plan.openai-chat.label': 'OpenAI-compatible (General)',
+    'channel.preset.glm.plan.openai-chat.description': 'Zhipu general OpenAI compatible endpoint',
+    // MiniMax plans
+    'channel.preset.minimax.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.minimax.plan.anthropic.description': 'Claude Messages native endpoint',
+    'channel.preset.minimax.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.minimax.plan.openai-chat.description': 'MiniMax OpenAI compatible endpoint',
+    // DashScope plans
+    'channel.preset.dashscope.plan.anthropic.label': 'Pay-as-you-go - Anthropic',
+    'channel.preset.dashscope.plan.anthropic.description': 'Messages native endpoint',
+    'channel.preset.dashscope.plan.openai-chat.label': 'Pay-as-you-go - OpenAI',
+    'channel.preset.dashscope.plan.openai-chat.description': 'Chat / Responses shared endpoint',
+    'channel.preset.dashscope.plan.coding-anthropic.label': 'Coding Plan (Anthropic)',
+    'channel.preset.dashscope.plan.coding-anthropic.description': 'Subscription plan Messages endpoint',
+    'channel.preset.dashscope.plan.coding-openai-chat.label': 'Coding Plan (OpenAI)',
+    'channel.preset.dashscope.plan.coding-openai-chat.description': 'Subscription plan OpenAI compatible endpoint',
+    // OpenCode Zen plans
+    'channel.preset.opencode-zen.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.opencode-zen.plan.anthropic.description': 'Claude Messages native endpoint',
+    'channel.preset.opencode-zen.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.opencode-zen.plan.openai-chat.description': 'OpenCode Zen OpenAI compatible endpoint',
+    // OpenCode Go plans
+    'channel.preset.opencode-go.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.opencode-go.plan.anthropic.description': 'Claude Messages native endpoint',
+    'channel.preset.opencode-go.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.opencode-go.plan.openai-chat.description': 'OpenCode Go OpenAI compatible endpoint',
+    // Targets (shared)
+    'channel.target.messages.label': 'Messages native passthrough',
+    'channel.target.messages.description': 'Claude Code direct connection or CCX messages channel',
+    'channel.target.responses.label': 'Codex Responses',
+    'channel.target.responses.description': 'OpenAI Responses protocol, for Codex',
+    'channel.target.chat.label': 'Chat passthrough',
+    'channel.target.chat.description': 'OpenAI Chat protocol, for Chat clients',
+    // MiMo target override
+    'channel.preset.mimo.target.messages.description': 'Enables reasoning passback compatibility',
     'env.title': 'Environment config',
     'env.pathDetecting': 'Detecting',
     'env.refresh': 'Refresh',
@@ -601,6 +783,97 @@ export const messages: Record<SupportedLocale, Messages> = {
     'channel.addToCCX': '添加到 CCX',
     'channel.badgeDirectAgent': 'Agent 直连',
     'channel.badgeNativeMessages': 'Messages 原生',
+    // Provider labels & descriptions
+    'channel.preset.deepseek.label': 'DeepSeek',
+    'channel.preset.deepseek.description': 'Messages 原生透传、Codex Responses、Chat 渠道透传三种用法。',
+    'channel.preset.mimo.label': 'MiMo',
+    'channel.preset.mimo.description': 'Messages 原生透传、Codex Responses、Chat 渠道透传；内置按量与 token plan 入口。',
+    'channel.preset.compshare.label': '优云智算套餐',
+    'channel.preset.compshare.description': '独立套餐 BaseURL 与 API Key，兼容 Anthropic Messages、OpenAI Chat 与 Codex Responses。',
+    'channel.preset.kimi.label': 'Kimi / Moonshot',
+    'channel.preset.kimi.description': 'Messages 原生透传、Codex Responses、Chat 渠道透传三种用法。',
+    'channel.preset.glm.label': 'GLM / BigModel',
+    'channel.preset.glm.description': 'Messages 原生透传、Codex Responses、Chat 渠道透传三种用法。',
+    'channel.preset.minimax.label': 'MiniMax',
+    'channel.preset.minimax.description': 'Messages 原生透传、Codex Responses、Chat 渠道透传三种用法。',
+    'channel.preset.dashscope.label': '阿里云 DashScope',
+    'channel.preset.dashscope.description': 'Messages 原生透传、Codex Responses、Chat 渠道透传三种用法。',
+    'channel.preset.opencode-zen.label': 'OpenCode Zen',
+    'channel.preset.opencode-zen.description': '按量付费精选模型网关，支持 Messages、Chat、Responses 三种协议。',
+    'channel.preset.opencode-go.label': 'OpenCode Go',
+    'channel.preset.opencode-go.description': '低成本开源编程模型订阅服务（$5/月起），支持 Messages、Chat、Responses 三种协议。',
+    // DeepSeek plans
+    'channel.preset.deepseek.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.deepseek.plan.anthropic.description': 'Claude Messages 原生入口',
+    'channel.preset.deepseek.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.deepseek.plan.openai-chat.description': 'Chat / Responses 通用入口',
+    // MiMo plans
+    'channel.preset.mimo.plan.anthropic.label': '按量 - Anthropic 入口',
+    'channel.preset.mimo.plan.anthropic.description': 'Messages 原生入口',
+    'channel.preset.mimo.plan.openai-chat.label': '按量 - OpenAI 入口',
+    'channel.preset.mimo.plan.openai-chat.description': 'Chat / Responses 通用入口',
+    'channel.preset.mimo.plan.token-cn.label': 'Token Plan - 中国',
+    'channel.preset.mimo.plan.token-cn.description': '中国区订阅套餐',
+    'channel.preset.mimo.plan.token-sgp.label': 'Token Plan - 新加坡',
+    'channel.preset.mimo.plan.token-sgp.description': '新加坡区订阅套餐',
+    'channel.preset.mimo.plan.token-ams.label': 'Token Plan - 欧洲',
+    'channel.preset.mimo.plan.token-ams.description': '欧洲区订阅套餐',
+    'channel.preset.mimo.plan.token-cn-anthropic.label': 'Token Plan - 中国 (Anthropic)',
+    'channel.preset.mimo.plan.token-cn-anthropic.description': '中国区订阅套餐 Anthropic 入口',
+    'channel.preset.mimo.plan.token-sgp-anthropic.label': 'Token Plan - 新加坡 (Anthropic)',
+    'channel.preset.mimo.plan.token-sgp-anthropic.description': '新加坡区订阅套餐 Anthropic 入口',
+    'channel.preset.mimo.plan.token-ams-anthropic.label': 'Token Plan - 欧洲 (Anthropic)',
+    'channel.preset.mimo.plan.token-ams-anthropic.description': '欧洲区订阅套餐 Anthropic 入口',
+    // Compshare plans
+    'channel.preset.compshare.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.compshare.plan.anthropic.description': 'Claude Messages 原生入口',
+    'channel.preset.compshare.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.compshare.plan.openai-chat.description': 'OpenAI Chat / Responses 兼容入口',
+    // Kimi plans
+    'channel.preset.kimi.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.kimi.plan.anthropic.description': 'Claude Messages 原生入口',
+    'channel.preset.kimi.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.kimi.plan.openai-chat.description': 'Moonshot OpenAI 兼容入口',
+    // GLM plans
+    'channel.preset.glm.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.glm.plan.anthropic.description': 'Claude Messages 原生入口',
+    'channel.preset.glm.plan.coding.label': 'OpenAI-compatible (Coding)',
+    'channel.preset.glm.plan.coding.description': '智谱 Coding 套餐入口',
+    'channel.preset.glm.plan.openai-chat.label': 'OpenAI-compatible (通用)',
+    'channel.preset.glm.plan.openai-chat.description': '智谱通用 OpenAI 兼容入口',
+    // MiniMax plans
+    'channel.preset.minimax.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.minimax.plan.anthropic.description': 'Claude Messages 原生入口',
+    'channel.preset.minimax.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.minimax.plan.openai-chat.description': 'MiniMax OpenAI 兼容入口',
+    // DashScope plans
+    'channel.preset.dashscope.plan.anthropic.label': '按量 - Anthropic 入口',
+    'channel.preset.dashscope.plan.anthropic.description': 'Messages 原生入口',
+    'channel.preset.dashscope.plan.openai-chat.label': '按量 - OpenAI 入口',
+    'channel.preset.dashscope.plan.openai-chat.description': 'Chat / Responses 通用入口',
+    'channel.preset.dashscope.plan.coding-anthropic.label': 'Coding Plan (Anthropic)',
+    'channel.preset.dashscope.plan.coding-anthropic.description': '订阅套餐 Messages 入口',
+    'channel.preset.dashscope.plan.coding-openai-chat.label': 'Coding Plan (OpenAI)',
+    'channel.preset.dashscope.plan.coding-openai-chat.description': '订阅套餐 OpenAI 兼容入口',
+    // OpenCode Zen plans
+    'channel.preset.opencode-zen.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.opencode-zen.plan.anthropic.description': 'Claude Messages 原生入口',
+    'channel.preset.opencode-zen.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.opencode-zen.plan.openai-chat.description': 'OpenCode Zen OpenAI 兼容入口',
+    // OpenCode Go plans
+    'channel.preset.opencode-go.plan.anthropic.label': 'Anthropic-compatible',
+    'channel.preset.opencode-go.plan.anthropic.description': 'Claude Messages 原生入口',
+    'channel.preset.opencode-go.plan.openai-chat.label': 'OpenAI-compatible',
+    'channel.preset.opencode-go.plan.openai-chat.description': 'OpenCode Go OpenAI 兼容入口',
+    // Targets (shared)
+    'channel.target.messages.label': 'Messages 原生透传',
+    'channel.target.messages.description': 'Claude Code 直连或 CCX messages 渠道',
+    'channel.target.responses.label': 'Codex Responses',
+    'channel.target.responses.description': 'OpenAI Responses 协议，供 Codex 使用',
+    'channel.target.chat.label': 'Chat 渠道透传',
+    'channel.target.chat.description': 'OpenAI Chat 协议，供 Chat 客户端使用',
+    // MiMo target override
+    'channel.preset.mimo.target.messages.description': '自动开启 reasoning passback 兼容',
     'env.title': '环境配置',
     'env.pathDetecting': '检测中',
     'env.refresh': '刷新',
