@@ -416,25 +416,24 @@
     <UpdateDialog v-model="systemStore.updateDialogOpen" />
 
     <!-- 熔断器配置对话框 -->
-    <v-dialog v-model="circuitBreakerDialogOpen" max-width="520">
-      <v-card rounded="lg">
-        <v-card-title class="d-flex align-center pa-4 pb-2">
-          <v-icon start color="primary">mdi-tune</v-icon>
+    <v-dialog v-model="circuitBreakerDialogOpen" max-width="640">
+      <v-card class="cb-dialog-card">
+        <v-card-title class="cb-dialog-title">
           {{ t('dialog.circuitBreaker.title') }}
         </v-card-title>
         <v-divider />
-        <v-card-text class="pa-4">
-          <div class="text-caption text-medium-emphasis mb-3">
+        <v-card-text class="cb-dialog-body">
+          <div class="cb-dialog-desc">
             {{ t('dialog.circuitBreaker.description') }}
           </div>
 
           <!-- 滑块区域 - 三列并排 -->
-          <div class="d-flex mb-4">
+          <div class="cb-control-grid">
             <!-- 滑动窗口大小 -->
-            <div class="flex-grow-1 px-3">
-              <div class="d-flex align-center mb-1">
-                <span class="text-caption text-medium-emphasis flex-grow-1">{{ t('dialog.circuitBreaker.windowSize') }}</span>
-                <span class="text-caption font-weight-bold">{{ cbForm.windowSize }}</span>
+            <div class="cb-control">
+              <div class="cb-control-header">
+                <span class="cb-slider-label">{{ t('dialog.circuitBreaker.windowSize') }}</span>
+                <span class="cb-slider-value">{{ cbForm.windowSize }}</span>
               </div>
               <input
                 type="range"
@@ -445,18 +444,16 @@
                 class="cb-slider w-100"
                 @input="onSliderChange('windowSize', $event)"
               />
-              <div class="d-flex justify-space-between text-xs text-medium-emphasis">
+              <div class="cb-slider-range">
                 <span>3</span><span>100</span>
               </div>
             </div>
 
-            <v-divider vertical class="mx-1" />
-
             <!-- 失败率阈值 -->
-            <div class="flex-grow-1 px-3">
-              <div class="d-flex align-center mb-1">
-                <span class="text-caption text-medium-emphasis flex-grow-1">{{ t('dialog.circuitBreaker.failureThreshold') }}</span>
-                <span class="text-caption font-weight-bold">{{ cbForm.failureThreshold.toFixed(2) }}</span>
+            <div class="cb-control">
+              <div class="cb-control-header">
+                <span class="cb-slider-label">{{ t('dialog.circuitBreaker.failureThreshold') }}</span>
+                <span class="cb-slider-value">{{ cbForm.failureThreshold.toFixed(2) }}</span>
               </div>
               <input
                 type="range"
@@ -467,18 +464,16 @@
                 class="cb-slider w-100"
                 @input="onSliderChange('failureThreshold', $event)"
               />
-              <div class="d-flex justify-space-between text-xs text-medium-emphasis">
+              <div class="cb-slider-range">
                 <span>0.01</span><span>1.00</span>
               </div>
             </div>
 
-            <v-divider vertical class="mx-1" />
-
             <!-- 连续失败阈值 -->
-            <div class="flex-grow-1 px-3">
-              <div class="d-flex align-center mb-1">
-                <span class="text-caption text-medium-emphasis flex-grow-1">{{ t('dialog.circuitBreaker.consecutiveFailuresThreshold') }}</span>
-                <span class="text-caption font-weight-bold">{{ cbForm.consecutiveFailuresThreshold }}</span>
+            <div class="cb-control">
+              <div class="cb-control-header">
+                <span class="cb-slider-label">{{ t('dialog.circuitBreaker.consecutiveFailuresThreshold') }}</span>
+                <span class="cb-slider-value">{{ cbForm.consecutiveFailuresThreshold }}</span>
               </div>
               <input
                 type="range"
@@ -489,20 +484,22 @@
                 class="cb-slider w-100"
                 @input="onSliderChange('consecutiveFailuresThreshold', $event)"
               />
-              <div class="d-flex justify-space-between text-xs text-medium-emphasis">
+              <div class="cb-slider-range">
                 <span>1</span><span>100</span>
               </div>
             </div>
           </div>
 
           <!-- 预设按钮 -->
-          <div class="d-flex ga-2">
+          <div class="cb-preset-grid">
             <v-btn
               v-for="preset in cbPresets"
               :key="preset.key"
-              :variant="activePreset === preset.key ? 'flat' : 'outlined'"
+              variant="flat"
               :color="activePreset === preset.key ? 'primary' : 'default'"
               size="small"
+              class="cb-preset-btn"
+              :class="{ 'cb-preset-active': activePreset === preset.key }"
               @click="applyPreset(preset)"
             >
               {{ t(preset.labelKey) }}
@@ -510,12 +507,12 @@
           </div>
         </v-card-text>
         <v-divider />
-        <v-card-actions class="pa-4">
+        <v-card-actions class="cb-dialog-actions">
           <v-spacer />
-          <v-btn variant="text" @click="circuitBreakerDialogOpen = false">
+          <v-btn variant="flat" class="cb-dialog-btn" @click="circuitBreakerDialogOpen = false">
             {{ t('app.actions.cancel') }}
           </v-btn>
-          <v-btn color="primary" :loading="cbSaving" @click="saveCircuitBreaker">
+          <v-btn color="primary" variant="flat" class="cb-dialog-btn cb-dialog-btn-primary" :loading="cbSaving" @click="saveCircuitBreaker">
             {{ t('app.actions.confirm') }}
           </v-btn>
         </v-card-actions>
@@ -2090,37 +2087,309 @@ onUnmounted(() => {
    Neo-Brutalism: 直角、粗黑边框、硬阴影、等宽字体
    ===================================================== */
 
-/* 熔断器滑块样式 */
+/* =====================================================
+   熔断器配置弹窗 - Neo-Brutalism 风格
+   ===================================================== */
+
+.cb-dialog-card {
+  background: rgb(var(--v-theme-surface));
+}
+
+.cb-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px 12px !important;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.cb-dialog-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid rgb(var(--v-theme-on-surface));
+  background: rgba(var(--v-theme-primary), 0.15);
+  flex-shrink: 0;
+}
+
+.v-theme--dark .cb-dialog-icon {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.cb-dialog-body {
+  padding: 12px 20px 20px !important;
+}
+
+.cb-dialog-desc {
+  font-size: 0.8125rem;
+  color: rgb(var(--v-theme-on-surface) / 60%);
+  margin-bottom: 12px;
+}
+
+/* 三列滑块网格 */
+.cb-control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  margin-bottom: 16px;
+  border: 2px solid rgb(var(--v-theme-on-surface));
+  background: rgb(var(--v-theme-surface));
+}
+
+.v-theme--dark .cb-control-grid {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.cb-control {
+  padding: 12px 14px;
+  position: relative;
+}
+
+.cb-control:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: rgb(var(--v-theme-on-surface));
+  opacity: 0.18;
+}
+
+.v-theme--dark .cb-control:not(:last-child)::after {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.cb-control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 6px;
+}
+
+.cb-slider-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface) / 70%);
+  text-transform: uppercase;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.cb-slider-value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: rgb(var(--v-theme-primary));
+  padding: 2px 8px;
+  border: 2px solid rgb(var(--v-theme-on-surface));
+  background: rgb(var(--v-theme-surface));
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: center;
+}
+
+.v-theme--dark .cb-slider-value {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* 滑块样式 - Neo-Brutalism 直角轨道 */
 .cb-slider {
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
-  border-radius: 3px;
-  background: rgb(var(--v-theme-on-surface) / 12%);
+  width: 100%;
+  height: 8px;
+  border-radius: 0;
+  border: 2px solid rgb(var(--v-theme-on-surface) / 20%);
+  background: rgb(var(--v-theme-on-surface) / 8%);
   outline: none;
   cursor: pointer;
 }
+
 .cb-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 0;
   background: rgb(var(--v-theme-primary));
   cursor: pointer;
-  border: 2px solid rgb(var(--v-theme-surface));
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-.cb-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgb(var(--v-theme-primary));
-  cursor: pointer;
-  border: 2px solid rgb(var(--v-theme-surface));
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  border: 2px solid rgb(var(--v-theme-on-surface));
+  box-shadow: 2px 2px 0 0 rgb(var(--v-theme-on-surface));
+  transition: box-shadow 0.1s ease;
 }
 
+.cb-slider::-webkit-slider-thumb:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 0 rgb(var(--v-theme-on-surface));
+}
+
+.cb-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 0;
+  background: rgb(var(--v-theme-primary));
+  cursor: pointer;
+  border: 2px solid rgb(var(--v-theme-on-surface));
+  box-shadow: 2px 2px 0 0 rgb(var(--v-theme-on-surface));
+}
+
+.v-theme--dark .cb-slider {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.v-theme--dark .cb-slider::-webkit-slider-thumb {
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 2px 2px 0 0 rgba(255, 255, 255, 0.6);
+}
+
+.v-theme--dark .cb-slider::-moz-range-thumb {
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 2px 2px 0 0 rgba(255, 255, 255, 0.6);
+}
+
+.cb-slider-range {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: rgb(var(--v-theme-on-surface) / 45%);
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+/* 预设按钮网格 */
+.cb-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cb-preset-btn {
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0 !important;
+  font-size: 0.8125rem !important;
+  border: 2px solid rgb(var(--v-theme-on-surface)) !important;
+  box-shadow: 3px 3px 0 0 rgb(var(--v-theme-on-surface)) !important;
+  transition: all 0.1s ease !important;
+}
+
+.cb-preset-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 0 rgb(var(--v-theme-on-surface)) !important;
+}
+
+.cb-preset-btn:active {
+  transform: translate(2px, 2px) !important;
+  box-shadow: none !important;
+}
+
+.v-theme--dark .cb-preset-btn {
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 3px 3px 0 0 rgba(255, 255, 255, 0.5) !important;
+}
+
+.v-theme--dark .cb-preset-btn:hover {
+  box-shadow: 4px 4px 0 0 rgba(255, 255, 255, 0.6) !important;
+}
+
+.cb-preset-active {
+  background: rgb(var(--v-theme-primary)) !important;
+  color: white !important;
+  border-color: rgb(var(--v-theme-on-surface)) !important;
+  box-shadow: 2px 2px 0 0 rgb(var(--v-theme-on-surface)) !important;
+}
+
+.v-theme--dark .cb-preset-active {
+  border-color: rgba(129, 140, 248, 0.5) !important;
+  box-shadow: 2px 2px 0 0 rgba(129, 140, 248, 0.25) !important;
+}
+
+/* 弹窗底部按钮 */
+.cb-dialog-actions {
+  padding: 12px 20px !important;
+  border-top: 2px solid rgb(var(--v-theme-on-surface) / 12%);
+}
+
+.cb-dialog-btn {
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0 !important;
+  border: 2px solid rgb(var(--v-theme-on-surface)) !important;
+  box-shadow: 3px 3px 0 0 rgb(var(--v-theme-on-surface)) !important;
+  transition: all 0.1s ease !important;
+}
+
+.cb-dialog-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 0 rgb(var(--v-theme-on-surface)) !important;
+}
+
+.cb-dialog-btn:active {
+  transform: translate(2px, 2px) !important;
+  box-shadow: none !important;
+}
+
+.cb-dialog-btn-primary {
+  background: rgb(var(--v-theme-primary)) !important;
+  color: white !important;
+}
+
+.v-theme--dark .cb-dialog-actions {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+.v-theme--dark .cb-dialog-btn {
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 3px 3px 0 0 rgba(255, 255, 255, 0.5) !important;
+}
+
+.v-theme--dark .cb-dialog-btn:hover {
+  box-shadow: 4px 4px 0 0 rgba(255, 255, 255, 0.6) !important;
+}
+
+.v-theme--dark .cb-dialog-btn-primary {
+  border-color: rgba(129, 140, 248, 0.5) !important;
+  box-shadow: 3px 3px 0 0 rgba(129, 140, 248, 0.25) !important;
+}
+
+/* 手机端响应式 */
+@media (max-width: 600px) {
+  .cb-control-grid {
+    grid-template-columns: 1fr;
+    border: none;
+  }
+
+  .cb-control:not(:last-child)::after {
+    display: none;
+  }
+
+  .cb-control {
+    padding: 10px 0;
+    border: 2px solid rgb(var(--v-theme-on-surface));
+    margin-bottom: 8px;
+  }
+
+  .v-theme--dark .cb-control {
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+
+  .cb-preset-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ----- 应用栏 - 复古像素风格 ----- */
 /* ----- 应用栏 - 复古像素风格 ----- */
 .app-header {
   background: rgb(var(--v-theme-surface)) !important;
