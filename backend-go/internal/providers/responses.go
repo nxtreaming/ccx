@@ -122,6 +122,21 @@ func (p *ResponsesProvider) buildProviderRequestBody(c *gin.Context, requestPath
 				} else {
 					reqMap["reasoning"] = map[string]interface{}{"effort": effort}
 				}
+			} else if reasoning, hasReasoning := reqMap["reasoning"]; hasReasoning {
+				// 无 ReasoningMapping 配置时，按 ReasoningParamStyle 转换客户端原始 reasoning
+				if upstream.ReasoningParamStyle == "thinking" {
+					delete(reqMap, "reasoning")
+					delete(reqMap, "reasoning_effort")
+					if effort := extractEffortFromReasoning(reasoning); effort != "" && effort != "none" {
+						reqMap["thinking"] = map[string]interface{}{"type": "enabled"}
+					}
+				} else if upstream.ReasoningParamStyle == "reasoning_effort" {
+					delete(reqMap, "reasoning")
+					if effort := extractEffortFromReasoning(reasoning); effort != "" {
+						reqMap["reasoning_effort"] = effort
+					}
+				}
+				// 默认样式保持原样透传（原始 reasoning 对象直接转发）
 			}
 		}
 		if upstream.TextVerbosity != "" {
