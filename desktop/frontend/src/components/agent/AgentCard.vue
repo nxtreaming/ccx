@@ -66,6 +66,12 @@ const codexKeyRequired = computed(() => {
   return p !== 'ccx' && p !== 'openai'
 })
 
+// 支持快捷模式/插件模式切换的 provider 列表
+const codexHasMode = computed(() => {
+  const p = props.selectedCodexProvider
+  return p === 'ccx' || p === 'dashscope' || p === 'opencode-zen' || p === 'opencode-go'
+})
+
 const { t } = useLanguage()
 
 const badgeClass = computed(() => {
@@ -211,7 +217,7 @@ const openFileInEditor = async (editorPath: string, filePath: string) => {
             <option value="opencode-go">{{ t('agent.provider.opencodeGoDirect') }}</option>
           </select>
         </div>
-        <div v-if="selectedCodexProvider === 'ccx'" class="space-y-2">
+        <div v-if="codexHasMode" class="space-y-2">
           <Label class="text-xs text-muted-foreground">{{ t('agent.codexMode') }}</Label>
           <div class="grid grid-cols-2 gap-2 rounded-lg bg-secondary/40 p-1">
             <button

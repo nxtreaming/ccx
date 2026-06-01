@@ -100,6 +100,7 @@ type CodexProxyState struct {
 	InjectedProvider      string  `json:"injectedProvider,omitempty"`
 	InjectedBaseURL       string  `json:"injectedBaseUrl"`
 	InjectedAPIKey        string  `json:"injectedApiKey"`
+	ThirdPartyQuickMode   bool    `json:"thirdPartyQuickMode,omitempty"`
 }
 
 type DiffLine struct {
@@ -173,6 +174,9 @@ func (s *Service) Apply(req ApplyAgentConfigRequest, port int, accessKey string)
 			return s.applyCodexOpenAI(req.APIKey)
 		}
 		if responsesURL, ok := codexResponsesBaseURL(provider); ok {
+			if req.Mode == "quick" {
+				return s.applyCodexThirdPartyQuick(provider, responsesURL, req.APIKey)
+			}
 			return s.applyCodexThirdParty(provider, responsesURL, req.APIKey)
 		}
 		if port == 0 {
@@ -355,6 +359,16 @@ func (s *Service) getCodexStatus(port int) (AgentConfigStatus, error) {
 	}
 	hasBearerToken := strings.Contains(text, "experimental_bearer_token")
 
+	// 检测第三方 provider 快捷模式：model_provider="openai" + 非本地 openai_base_url
+	isThirdPartyQuickMode := false
+	var thirdPartyProvider string
+	if strings.EqualFold(modelProvider, "openai") && openaiBaseURL != "" && !isLocalBaseURL(openaiBaseURL) {
+		if tp, ok := codexThirdPartyQuickBaseURL(openaiBaseURL); ok {
+			isThirdPartyQuickMode = true
+			thirdPartyProvider = tp
+		}
+	}
+
 	// 旧格式优先取 [model_providers.ccx].base_url，新格式取 openai_base_url
 	effectiveBaseURL := ccxBlockBaseURL
 	if effectiveBaseURL == "" {
@@ -369,18 +383,25 @@ func (s *Service) getCodexStatus(port int) (AgentConfigStatus, error) {
 		} else if isOldStyleCCX {
 			status.Mode = "quick"
 		}
+	} else if isThirdPartyQuickMode {
+		status.Provider = thirdPartyProvider
+		status.Mode = "quick"
+		status.TargetProvider = thirdPartyProvider
 	} else {
 		status.Provider = normalized
 	}
-	if status.Provider != ProviderCCX {
+	if status.Provider != ProviderCCX && !isThirdPartyQuickMode {
 		status.TargetProvider = status.Provider
 	}
-	if normalized == ProviderOpenAI && !isNewStyleCCX {
+	if normalized == ProviderOpenAI && !isNewStyleCCX && !isThirdPartyQuickMode {
 		status.TargetBaseURL = ""
+	}
+	if isThirdPartyQuickMode {
+		status.TargetBaseURL = openaiBaseURL
 	}
 	status.CurrentBaseURL = effectiveBaseURL
 	status.MatchesCurrentPort = (isNewStyleCCX || isOldStyleCCX) && effectiveBaseURL == target
-	status.Configured = status.MatchesCurrentPort || (normalized == ProviderOpenAI && !isNewStyleCCX) || isCodexThirdPartyProvider(normalized)
+	status.Configured = status.MatchesCurrentPort || (normalized == ProviderOpenAI && !isNewStyleCCX && !isThirdPartyQuickMode) || isCodexThirdPartyProvider(normalized) || isThirdPartyQuickMode
 	status.NeedsUpdate = (isOldStyleCCX || isLocalBaseURL(effectiveBaseURL)) && !status.MatchesCurrentPort
 	return status, nil
 }
@@ -728,6 +749,88 @@ requires_openai_auth = false
 	authData["OPENAI_API_KEY"] = key
 	return writeJSONAtomic(authPath, authData)
 }
+
+// codexThirdPartyQuickBaseURL 通过 openai_base_url 反查已知第三方 provider。
+func codexThirdPartyQuickBaseURL(baseURL string) (string, bool) {
+	switch {
+	case strings.Contains(baseURL, "dashscope.aliyuncs.com"):
+		return ProviderDashScope, true
+	case strings.Contains(baseURL, "opencode.ai/zen/go"):
+		return ProviderOpenCodeGo, true
+	case strings.Contains(baseURL, "opencode.ai/zen"):
+		return ProviderOpenCodeZen, true
+	default:
+		return "", false
+	}
+}
+
+// applyCodexThirdPartyQuick 以快捷模式配置第三方 provider。
+// 使用 model_provider="openai" + openai_base_url=<第三方 URL>。
+func (s *Service) applyCodexThirdPartyQuick(provider, baseURL, apiKey string) error {
+	configPath := s.codexConfigPath()
+	authPath := s.codexAuthPath()
+	configContent, configExisted, err := readTextFile(configPath)
+	if err != nil {
+		return err
+	}
+	authData, authExisted, err := readJSONMap(authPath)
+	if err != nil {
+		return err
+	}
+	modelProvider, mpOK := extractTopLevelTomlString(configContent, "model_provider")
+	providerBlock, blockOK := extractNamedTomlBlock(configContent, "model_providers.ccx")
+	openaiBaseURL, obOK := extractTopLevelTomlString(configContent, "openai_base_url")
+	openaiKey, keyOK := authData["OPENAI_API_KEY"].(string)
+	state := CodexProxyState{
+		Version:               stateVersion,
+		ConfigPath:            configPath,
+		AuthPath:              authPath,
+		ConfigFileExisted:     configExisted,
+		AuthFileExisted:       authExisted,
+		OriginalModelProvider: optionalString(modelProvider, mpOK),
+		OriginalProviderBlock: optionalString(providerBlock, blockOK),
+		OriginalOpenAIAPIKey:  optionalString(openaiKey, keyOK),
+		OriginalOpenAIBaseURL: optionalString(openaiBaseURL, obOK),
+		ThirdPartyQuickMode:   true,
+		InjectedProvider:      provider,
+		InjectedBaseURL:       baseURL,
+	}
+	if existing, ok := s.readCodexState(); ok {
+		state = existing
+		state.ThirdPartyQuickMode = true
+		state.InjectedProvider = provider
+		state.InjectedBaseURL = baseURL
+	}
+	key := strings.TrimSpace(apiKey)
+	if key == "" {
+		key = s.GetSavedProviderKeys()["codex:"+provider]
+	}
+	if key == "" {
+		return fmt.Errorf("%s API Key 不能为空", provider)
+	}
+	state.InjectedAPIKey = key
+	if err := s.saveProviderKey(PlatformCodex, provider, key); err != nil {
+		return err
+	}
+	if err := writeJSONAtomic(s.codexStatePath(), state); err != nil {
+		return err
+	}
+	// config.toml: model_provider="openai" + openai_base_url=<第三方 URL>
+	updated := upsertTopLevelTomlString(configContent, "model_provider", "openai")
+	updated = upsertTopLevelTomlString(updated, "openai_base_url", baseURL)
+	updated = restoreNamedTomlBlock(updated, "model_providers.ccx", nil)
+	// 清理插件模式残留的第三方 provider 块
+	if isCodexThirdPartyProvider(provider) {
+		updated = restoreNamedTomlBlock(updated, "model_providers."+provider, nil)
+	}
+	if err := writeTextAtomic(configPath, updated); err != nil {
+		return err
+	}
+	authData["OPENAI_API_KEY"] = key
+	delete(authData, "auth_mode")
+	return writeJSONAtomic(authPath, authData)
+}
+
 func (s *Service) restoreCodex() error {
 	var state CodexProxyState
 	if err := readJSONFile(s.codexStatePath(), &state); err != nil {
@@ -1402,6 +1505,9 @@ func (s *Service) PreviewApply(req ApplyAgentConfigRequest, port int, accessKey 
 			return s.previewApplyCodexOpenAI(req.APIKey)
 		}
 		if responsesURL, ok := codexResponsesBaseURL(provider); ok {
+			if req.Mode == "quick" {
+				return s.previewApplyCodexThirdPartyQuick(provider, responsesURL, req.APIKey)
+			}
 			return s.previewApplyCodexThirdParty(provider, responsesURL, req.APIKey)
 		}
 		return s.previewApplyCodex(port, accessKey, req.Mode)
@@ -1634,6 +1740,49 @@ requires_openai_auth = false
 
 	newAuthData := copyJSONMap(authData)
 	newAuthData["OPENAI_API_KEY"] = key
+
+	return ConfigDiffResult{Files: []FileDiff{
+		computeTextDiffWithSeparateMasks(configPath, configContent, updatedConfig, oldKeyValues, newKeyValues),
+		computeJSONDiffWithMask(authPath, authData, newAuthData, "OPENAI_API_KEY"),
+	}}, nil
+}
+
+func (s *Service) previewApplyCodexThirdPartyQuick(provider, baseURL, apiKey string) (ConfigDiffResult, error) {
+	configPath := s.codexConfigPath()
+	authPath := s.codexAuthPath()
+	configContent, _, err := readTextFile(configPath)
+	if err != nil {
+		return ConfigDiffResult{}, err
+	}
+	authData, _, err := readJSONMap(authPath)
+	if err != nil {
+		return ConfigDiffResult{}, err
+	}
+
+	key := strings.TrimSpace(apiKey)
+	if key == "" {
+		key = s.GetSavedProviderKeys()["codex:"+provider]
+	}
+	if key == "" {
+		key = "[未配置]"
+	}
+
+	oldKey, _ := authData["OPENAI_API_KEY"].(string)
+	oldKeyValues := map[string]string{"OPENAI_API_KEY": oldKey}
+	newKeyValues := map[string]string{"OPENAI_API_KEY": key}
+
+	// config.toml: model_provider="openai" + openai_base_url=<第三方 URL>
+	updatedConfig := upsertTopLevelTomlString(configContent, "model_provider", "openai")
+	updatedConfig = upsertTopLevelTomlString(updatedConfig, "openai_base_url", baseURL)
+	updatedConfig = restoreNamedTomlBlock(updatedConfig, "model_providers.ccx", nil)
+	// 清理插件模式残留的第三方 provider 块
+	if isCodexThirdPartyProvider(provider) {
+		updatedConfig = restoreNamedTomlBlock(updatedConfig, "model_providers."+provider, nil)
+	}
+
+	newAuthData := copyJSONMap(authData)
+	newAuthData["OPENAI_API_KEY"] = key
+	delete(newAuthData, "auth_mode")
 
 	return ConfigDiffResult{Files: []FileDiff{
 		computeTextDiffWithSeparateMasks(configPath, configContent, updatedConfig, oldKeyValues, newKeyValues),

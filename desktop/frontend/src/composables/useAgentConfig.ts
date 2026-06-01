@@ -93,6 +93,11 @@ const isClaudeProvider = (value?: string): value is AgentProvider => {
   return value === 'ccx' || value === 'deepseek' || value === 'mimo' || value === 'compshare' || value === 'kimi' || value === 'glm' || value === 'minimax' || value === 'dashscope' || value === 'opencode-zen' || value === 'opencode-go'
 }
 
+// Codex 支持快捷模式/插件模式切换的第三方 provider
+const isCodexThirdPartyWithMode = (provider?: string) => {
+  return provider === 'dashscope' || provider === 'opencode-zen' || provider === 'opencode-go'
+}
+
 const claudeProviderLabel = (value?: string) => {
   if (!value) return t('agent.statusDetecting')
   return claudeProviderLabels[value as AgentProvider | 'custom'] || value
@@ -232,6 +237,9 @@ const loadAgentStatuses = async () => {
       selectedCodexProvider.value = codex.provider as AgentProvider
     } else {
       selectedCodexProvider.value = 'ccx'
+    }
+    // 恢复所有支持 mode 切换的 provider 的 mode 状态
+    if (codex.provider === 'ccx' || codex.provider === 'dashscope' || codex.provider === 'opencode-zen' || codex.provider === 'opencode-go') {
       codexMode.value = codex.mode === 'plugin' ? 'plugin' : 'quick'
     }
     if (opencode.provider && opencode.provider !== 'ccx' && opencode.provider !== '') {
@@ -306,9 +314,10 @@ const applyAgent = async (platform: AgentPlatform) => {
     }
     if (platform === 'codex') {
       request.provider = selectedCodexProvider.value
-      if (selectedCodexProvider.value === 'ccx') {
+      if (selectedCodexProvider.value === 'ccx' || isCodexThirdPartyWithMode(selectedCodexProvider.value)) {
         request.mode = codexMode.value
-      } else {
+      }
+      if (selectedCodexProvider.value !== 'ccx') {
         const inputKey = codexOpenAIKey.value.trim()
         request.apiKey = inputKey || savedProviderKeys.value[`codex:${selectedCodexProvider.value}`] || ''
       }
@@ -344,9 +353,10 @@ const showApplyPreview = async (platform: AgentPlatform) => {
   }
   if (platform === 'codex') {
     request.provider = selectedCodexProvider.value
-    if (selectedCodexProvider.value === 'ccx') {
+    if (selectedCodexProvider.value === 'ccx' || isCodexThirdPartyWithMode(selectedCodexProvider.value)) {
       request.mode = codexMode.value
-    } else {
+    }
+    if (selectedCodexProvider.value !== 'ccx') {
       const inputKey = codexOpenAIKey.value.trim()
       request.apiKey = inputKey || savedProviderKeys.value[`codex:${selectedCodexProvider.value}`] || ''
     }
@@ -358,9 +368,9 @@ const showApplyPreview = async (platform: AgentPlatform) => {
       request.apiKey = inputKey || savedProviderKeys.value[`codex:${selectedOpenCodeProvider.value}`] || ''
     }
   }
-  // 检测 CCX 模式切换，显示会话迁移警告
+  // 检测模式切换，显示会话迁移警告
   diffWarning.value = undefined
-  if (platform === 'codex' && selectedCodexProvider.value === 'ccx') {
+  if (platform === 'codex' && (selectedCodexProvider.value === 'ccx' || isCodexThirdPartyWithMode(selectedCodexProvider.value))) {
     const currentMode = agentStatuses.value.codex?.mode === 'plugin' ? 'plugin' : 'quick'
     if (currentMode !== codexMode.value) {
       diffWarning.value = t('agent.sessionMigrationWarning')
