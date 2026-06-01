@@ -455,9 +455,6 @@ export type MessageKey =
   | 'guide.protocol.body3'
   | 'guide.addChannel.title'
   | 'guide.addChannel.body'
-  | 'guide.addChannel.fieldName'
-  | 'guide.addChannel.fieldBaseUrl'
-  | 'guide.addChannel.fieldApiKey'
   | 'guide.channelList.title'
   | 'guide.channelList.intro'
   | 'guide.channelList.demoNormalName'
@@ -924,9 +921,6 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'guide.protocol.body3': 'Pick the protocol your client speaks first.',
     'guide.addChannel.title': 'Add a channel',
     'guide.addChannel.body': 'Click the Add channel button at the top left to add an upstream for the current protocol. Just paste a Base URL and API key — CCX detects the rest automatically.',
-    'guide.addChannel.fieldName': 'Name',
-    'guide.addChannel.fieldBaseUrl': 'Base URL',
-    'guide.addChannel.fieldApiKey': 'API Key',
     'guide.channelList.title': 'Reading the channel list',
     'guide.channelList.intro': 'Each row is a channel. The example below shows a normal channel and a tripped (circuit-broken) one:',
     'guide.channelList.demoNormalName': 'gpt-5.5 Proxy',
@@ -1392,9 +1386,6 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'guide.protocol.body3': 'Pilih dulu protokol yang dipakai klien Anda.',
     'guide.addChannel.title': 'Tambah channel',
     'guide.addChannel.body': 'Klik tombol Tambah channel di kiri atas untuk menambah upstream bagi protokol saat ini. Cukup tempel Base URL dan API key — CCX akan mendeteksi sisanya secara otomatis.',
-    'guide.addChannel.fieldName': 'Nama',
-    'guide.addChannel.fieldBaseUrl': 'Base URL',
-    'guide.addChannel.fieldApiKey': 'API Key',
     'guide.channelList.title': 'Membaca daftar channel',
     'guide.channelList.intro': 'Setiap baris adalah satu channel. Contoh di bawah menampilkan channel normal dan channel yang terputus (circuit breaker aktif):',
     'guide.channelList.demoNormalName': 'gpt-5.5 Proxy',
@@ -1860,9 +1851,6 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'guide.protocol.body3': '请先选择你的客户端所用的协议。',
     'guide.addChannel.title': '添加渠道',
     'guide.addChannel.body': '点击左上角的”添加渠道”按钮，为当前协议添加上游。只需粘贴 Base URL 和 API 密钥，CCX 会自动识别。',
-    'guide.addChannel.fieldName': '名称',
-    'guide.addChannel.fieldBaseUrl': 'Base URL',
-    'guide.addChannel.fieldApiKey': 'API 密钥',
     'guide.channelList.title': '看懂渠道列表',
     'guide.channelList.intro': '每一行就是一个渠道。下面的示例展示了一个正常渠道和一个被熔断的渠道：',
     'guide.channelList.demoNormalName': 'gpt-5.5 中转',

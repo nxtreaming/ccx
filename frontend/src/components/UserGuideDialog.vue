@@ -78,20 +78,6 @@
             </v-btn>
           </div>
           <p class="guide-section-body mb-3">{{ t('guide.addChannel.body') }}</p>
-          <div class="guide-form-demo">
-            <div class="guide-form-field">
-              <span class="guide-form-label">{{ t('guide.addChannel.fieldName') }}</span>
-              <span class="guide-form-value">DeepSeek 中转</span>
-            </div>
-            <div class="guide-form-field">
-              <span class="guide-form-label">{{ t('guide.addChannel.fieldBaseUrl') }}</span>
-              <span class="guide-form-value guide-form-mono">https://api.deepseek.com/anthropic</span>
-            </div>
-            <div class="guide-form-field">
-              <span class="guide-form-label">{{ t('guide.addChannel.fieldApiKey') }}</span>
-              <span class="guide-form-value guide-form-mono">sk-••••••••</span>
-            </div>
-          </div>
         </section>
 
         <!-- 4. 看懂渠道列表（自绘两渠道示意） -->
@@ -291,46 +277,6 @@ function close() {
 
 .demo-add-btn {
   pointer-events: none;
-}
-
-/* 添加渠道表单示意 */
-.guide-form-demo {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 8px;
-}
-
-.guide-form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.guide-form-label {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: rgba(var(--v-theme-on-surface), 0.55);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.guide-form-value {
-  font-size: 0.88rem;
-  padding: 7px 10px;
-  background: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.15);
-  border-radius: 6px;
-  color: rgba(var(--v-theme-on-surface), 0.85);
-}
-
-.guide-form-mono {
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 0.82rem;
-  letter-spacing: -0.01em;
 }
 
 /* 渠道列表示意行 */
