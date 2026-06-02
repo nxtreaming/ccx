@@ -443,6 +443,7 @@ export type MessageKey =
   | 'console.form.historicalKeys'
   | 'addChannel.oneClickSetup'
   | 'addChannel.expectedRequest'
+  | 'console.form.reasoningEffort'
   | 'console.form.fetchModels'
   | 'console.form.fetchingModels'
   | 'console.form.modelFetchNeedsConfig'
@@ -993,6 +994,7 @@ export const messages: Record<SupportedLocale, Messages> = {
     'console.form.historicalKeys': 'historical keys recorded',
     'addChannel.oneClickSetup': 'One-click setup',
     'addChannel.expectedRequest': 'Expected request',
+    'console.form.reasoningEffort': 'Reasoning effort',
     'console.form.fetchModels': 'Fetch models',
     'console.form.fetchingModels': 'Fetching...',
     'console.form.modelFetchNeedsConfig': 'Base URL and API Key required to fetch models',
@@ -1540,6 +1542,7 @@ export const messages: Record<SupportedLocale, Messages> = {
     'console.form.historicalKeys': '历史密钥记录',
     'addChannel.oneClickSetup': '一键配置',
     'addChannel.expectedRequest': '预期请求',
+    'console.form.reasoningEffort': '思考强度',
     'console.form.fetchModels': '获取模型列表',
     'console.form.fetchingModels': '拉取中...',
     'console.form.modelFetchNeedsConfig': '需要 Base URL 和 API Key 才能获取模型列表',

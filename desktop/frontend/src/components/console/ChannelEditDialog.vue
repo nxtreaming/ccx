@@ -88,6 +88,17 @@ const reasoningParamStyleOptions = [
   { label: 'thinking (JD/GLM)', value: 'thinking' },
 ]
 
+// 思考强度（effort）—— 模型映射第三列使用
+const reasoningEffortOptions = [
+  { label: 'Default', value: '' },
+  { label: 'None', value: 'none' },
+  { label: 'Low', value: 'low' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'High', value: 'high' },
+  { label: 'XHigh', value: 'xhigh' },
+  { label: 'Max', value: 'max' },
+]
+
 const textVerbosityOptions = [
   { label: 'Default', value: '' },
   { label: 'Low', value: 'low' },
@@ -1194,9 +1205,9 @@ function buildCurrentPayload() {
                         <option v-for="m in targetModelOptions" :key="m" :value="m" />
                       </datalist>
                       <Select v-model="row.reasoning">
-                        <SelectTrigger class="h-7 w-28 text-xs"><SelectValue :placeholder="'推理'" /></SelectTrigger>
+                        <SelectTrigger class="h-7 w-28 text-xs"><SelectValue :placeholder="tf('console.form.reasoningEffort', '思考强度')" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem v-for="opt in reasoningParamStyleOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
+                          <SelectItem v-for="opt in reasoningEffortOptions" :key="opt.value || 'default'" :value="opt.value">{{ opt.label }}</SelectItem>
                         </SelectContent>
                       </Select>
                       <Button type="button" size="icon-sm" variant="ghost" :class="row.noVision ? 'text-amber-500' : 'text-muted-foreground'" :title="tf('console.form.noVision', '禁用视觉')" @click="row.noVision = !row.noVision">
