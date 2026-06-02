@@ -441,6 +441,13 @@ export type MessageKey =
   | 'console.form.disabledKeys'
   | 'console.form.restoreKey'
   | 'console.form.historicalKeys'
+  | 'addChannel.oneClickSetup'
+  | 'addChannel.expectedRequest'
+  | 'console.form.fetchModels'
+  | 'console.form.fetchingModels'
+  | 'console.form.modelFetchNeedsConfig'
+  | 'console.form.visionEnabled'
+  | 'console.form.visionDisabled'
   | 'console.form.models'
   | 'console.form.modelMapping'
   | 'console.form.supportedModels'
@@ -984,6 +991,13 @@ export const messages: Record<SupportedLocale, Messages> = {
     'console.form.disabledKeys': 'Disabled keys',
     'console.form.restoreKey': 'Restore',
     'console.form.historicalKeys': 'historical keys recorded',
+    'addChannel.oneClickSetup': 'One-click setup',
+    'addChannel.expectedRequest': 'Expected request',
+    'console.form.fetchModels': 'Fetch models',
+    'console.form.fetchingModels': 'Fetching...',
+    'console.form.modelFetchNeedsConfig': 'Base URL and API Key required to fetch models',
+    'console.form.visionEnabled': 'Vision enabled',
+    'console.form.visionDisabled': 'Vision disabled',
     'console.form.models': 'Models',
     'console.form.modelMapping': 'Model mapping (JSON)',
     'console.form.supportedModels': 'Supported models (one per line, empty=all)',
@@ -1524,6 +1538,13 @@ export const messages: Record<SupportedLocale, Messages> = {
     'console.form.disabledKeys': '已禁用密钥',
     'console.form.restoreKey': '恢复',
     'console.form.historicalKeys': '历史密钥记录',
+    'addChannel.oneClickSetup': '一键配置',
+    'addChannel.expectedRequest': '预期请求',
+    'console.form.fetchModels': '获取模型列表',
+    'console.form.fetchingModels': '拉取中...',
+    'console.form.modelFetchNeedsConfig': '需要 Base URL 和 API Key 才能获取模型列表',
+    'console.form.visionEnabled': '视觉已启用',
+    'console.form.visionDisabled': '视觉已禁用',
     'console.form.models': '模型',
     'console.form.modelMapping': '模型映射（JSON）',
     'console.form.supportedModels': '支持的模型（每行一个，留空=全部）',
