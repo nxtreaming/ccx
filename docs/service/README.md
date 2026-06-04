@@ -32,6 +32,8 @@ LOG_LEVEL=warn
 
 ```ini
 ExecStart=/opt/ccx/ccx-linux-amd64 --config /etc/ccx/config.json --statedir /var/lib/ccx --logdir /var/log/ccx
+# 或使用 --logdir none 禁用日志文件写入，完全交由 journald 管理日志
+# ExecStart=/opt/ccx/ccx-linux-amd64 --config /etc/ccx/config.json --statedir /var/lib/ccx --logdir none
 ```
 
 普通用户服务也可以使用用户目录，例如 `--config ~/.config/ccx/config.json --statedir ~/.local/state/ccx --logdir ~/.local/state/ccx/logs`。`--config` 只改变配置文件位置；`--statedir` 统一指定 `metrics.db`、`conversation_state.json`、`scheduled_recovery_state.json` 的目录，未指定时保持默认 `.config`；`--logdir` 只影响应用日志目录。

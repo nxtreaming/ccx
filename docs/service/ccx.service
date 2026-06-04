@@ -7,6 +7,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/ccx
 ExecStart=/opt/ccx/ccx-linux-amd64
+# 使用 --logdir none 禁用日志文件写入，完全交由 journald 管理日志
+# ExecStart=/opt/ccx/ccx-linux-amd64 --logdir none
 EnvironmentFile=/opt/ccx/.env
 Restart=always
 RestartSec=5

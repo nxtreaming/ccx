@@ -80,7 +80,7 @@ ccx --config ~/.config/ccx/config.json --statedir ~/.local/state/ccx --logdir ~/
 
 - `--config PATH`：指定配置文件路径。
 - `--statedir DIR`：指定运行时状态目录；`metrics.db`、`conversation_state.json`、`scheduled_recovery_state.json` 会写入该目录，未指定时保持默认 `.config`。
-- `--logdir DIR`：指定日志目录；优先级高于 `LOG_DIR` 环境变量。
+- `--logdir DIR`：指定日志目录；优先级高于 `LOG_DIR` 环境变量。使用 `none` 或 `null` 可禁用日志文件写入（仅输出到控制台），适合 systemd/journald 等环境。
 - `--help`：查看完整命令行参数说明。
 - 路径中的 `~` / `~/...` 会按当前用户主目录展开。
 
@@ -579,6 +579,7 @@ QUIET_POLLING_LOGS=true                # 静默轮询日志
 
 # 轮转与存储定制
 LOG_DIR=logs                           # 自定义日志存储目录 (默认 logs，可被 --logdir 覆盖)
+# LOG_DIR=none                           # 禁用日志文件写入，仅输出到控制台 (none/null 均可，不区分大小写)
 LOG_FILE=app.log                       # 自定义日志文件名 (默认 app.log)
 LOG_MAX_SIZE=100                       # 单个日志文件最大大小 (MB) (默认 100)
 LOG_MAX_BACKUPS=10                     # 保留的旧日志文件最大数量 (默认 10)

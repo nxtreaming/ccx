@@ -16,7 +16,7 @@ services:
     volumes:
       # 配置目录持久化
       - ./.config:/app/.config
-      # 可选：日志持久化
+      # 可选：日志持久化（使用 LOG_DIR=none 可禁用日志文件写入，完全依赖 docker logs）
       - ./logs:/app/logs
     environment:
       # 基础配置

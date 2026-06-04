@@ -80,7 +80,7 @@ ccx --config ~/.config/ccx/config.json --statedir ~/.local/state/ccx --logdir ~/
 
 - `--config PATH`: sets the runtime config file path.
 - `--statedir DIR`: sets the runtime state directory. `metrics.db`, `conversation_state.json`, and `scheduled_recovery_state.json` are written there; without this flag, CCX keeps the default `.config` directory.
-- `--logdir DIR`: sets the log directory. It has higher priority than the `LOG_DIR` environment variable.
+- `--logdir DIR`: sets the log directory. It has higher priority than the `LOG_DIR` environment variable. Use `none` or `null` to disable log file writing (console output only), suitable for systemd/journald environments.
 - `--help`: prints the complete CLI usage.
 - `~` / `~/...` paths are expanded to the current user's home directory.
 
