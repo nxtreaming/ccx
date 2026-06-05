@@ -1026,6 +1026,15 @@ func handleStreamSuccess(
 	keepaliveTicker := time.NewTicker(15 * time.Second)
 	defer keepaliveTicker.Stop()
 
+	// post-commit：Header 已发送后的语义活动 watchdog，只由有效输出重置
+	var postCommitTimer *time.Timer
+	var postCommitChan <-chan time.Time
+	if timeouts.InactivityTimeoutMs > 0 {
+		postCommitTimer = time.NewTimer(time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond)
+		postCommitChan = postCommitTimer.C
+		defer postCommitTimer.Stop()
+	}
+
 	for {
 		select {
 		case sl, ok := <-lineChan:
@@ -1034,6 +1043,19 @@ func handleStreamSuccess(
 			}
 			processLine(sl.text)
 			keepaliveTicker.Reset(15 * time.Second)
+			if postCommitTimer != nil && common.HasResponsesSemanticContent("data: "+sl.text+"\n\n") {
+				if !postCommitTimer.Stop() {
+					select {
+					case <-postCommitTimer.C:
+					default:
+					}
+				}
+				postCommitTimer.Reset(time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond)
+			}
+		case <-postCommitChan:
+			log.Printf("[Responses-StreamStalled] 流式断流: 首字后 %dms 无有效输出（Header 已发送）", timeouts.InactivityTimeoutMs)
+			close(scanDone)
+			return nil, common.ErrStreamPostCommitStalled
 		case <-keepaliveTicker.C:
 			if !clientGone {
 				_, err := c.Writer.Write([]byte(": keepalive\n\n"))

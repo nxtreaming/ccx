@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"io"
+	"time"
 )
 
 // ChunkChannelReadCloser exposes chunks read by a background goroutine as an io.ReadCloser.
@@ -38,6 +39,36 @@ func (r *ChunkChannelReadCloser) Read(p []byte) (int, error) {
 	n := copy(p, r.current)
 	r.current = r.current[n:]
 	return n, nil
+}
+
+func (r *ChunkChannelReadCloser) ReadWithTimeout(p []byte, timeout time.Duration) (int, error, bool) {
+	if timeout <= 0 {
+		n, err := r.Read(p)
+		return n, err, false
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for len(r.current) == 0 {
+		select {
+		case chunk, ok := <-r.chunks:
+			if !ok {
+				select {
+				case err := <-r.errs:
+					if err != nil {
+						return 0, err, false
+					}
+				default:
+				}
+				return 0, io.EOF, false
+			}
+			r.current = chunk
+		case <-timer.C:
+			return 0, nil, true
+		}
+	}
+	n := copy(p, r.current)
+	r.current = r.current[n:]
+	return n, nil, false
 }
 
 func (r *ChunkChannelReadCloser) Close() error {

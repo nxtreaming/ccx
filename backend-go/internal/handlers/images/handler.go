@@ -567,7 +567,6 @@ func passthroughStreamingResponseWithLog(c *gin.Context, resp *http.Response, en
 		}
 		return err
 	}
-	resp.Body = common.NewPrefixedReadCloser(bufferedBytes, common.NewChunkChannelReadCloser(chunkChan, bodyErrChan, resp.Body))
 
 	utils.ForwardResponseHeaders(resp.Header, c.Writer)
 	c.Status(resp.StatusCode)
@@ -588,37 +587,75 @@ func passthroughStreamingResponseWithLog(c *gin.Context, resp *http.Response, en
 		return err
 	}
 
-	buffer := make([]byte, 4*1024)
+	// 回放缓冲的首个 chunk
+	if len(bufferedBytes) > 0 {
+		if _, writeErr := c.Writer.Write(bufferedBytes); writeErr != nil {
+			if common.IsClientDisconnectError(writeErr) || writeErr == io.ErrClosedPipe || strings.Contains(strings.ToLower(writeErr.Error()), "closed pipe") {
+				return context.Canceled
+			}
+			return writeErr
+		}
+		flusher.Flush()
+	}
+
+	// post-commit：Header 已发送后的 chunk 活动 watchdog，Images 无语义结构，任何有效 chunk 均视为活动
 	logBuffer := common.NewLimitedLogBuffer(common.MaxUpstreamResponseLogBytes)
 	streamLoggingEnabled := envCfg.EnableResponseLogs && envCfg.IsDevelopment()
+	var postCommitTimer *time.Timer
+	var postCommitChan <-chan time.Time
+	if timeouts.InactivityTimeoutMs > 0 {
+		postCommitTimer = time.NewTimer(time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond)
+		postCommitChan = postCommitTimer.C
+		defer postCommitTimer.Stop()
+	}
+
 	for {
-		n, err := resp.Body.Read(buffer)
-		if n > 0 {
-			if streamLoggingEnabled {
-				logBuffer.Write(buffer[:n])
+		select {
+		case chunk, ok := <-chunkChan:
+			if !ok {
+				goto streamEnd
 			}
-			if _, writeErr := c.Writer.Write(buffer[:n]); writeErr != nil {
-				if common.IsClientDisconnectError(writeErr) || writeErr == io.ErrClosedPipe || strings.Contains(strings.ToLower(writeErr.Error()), "closed pipe") {
-					return context.Canceled
+			if len(chunk) > 0 {
+				if streamLoggingEnabled {
+					logBuffer.Write(chunk)
 				}
-				return writeErr
+				if _, writeErr := c.Writer.Write(chunk); writeErr != nil {
+					if common.IsClientDisconnectError(writeErr) || writeErr == io.ErrClosedPipe || strings.Contains(strings.ToLower(writeErr.Error()), "closed pipe") {
+						return context.Canceled
+					}
+					return writeErr
+				}
+				flusher.Flush()
 			}
-			flusher.Flush()
-		}
-		if err == io.EOF {
-			if logBuffer.Len() > 0 {
-				common.LogUpstreamResponseBody(logBuffer.Bytes(), envCfg, "Images")
+			if postCommitTimer != nil {
+				if !postCommitTimer.Stop() {
+					select {
+					case <-postCommitTimer.C:
+					default:
+					}
+				}
+				postCommitTimer.Reset(time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond)
 			}
-			if envCfg.EnableResponseLogs {
-				responseTime := time.Since(startTime).Milliseconds()
-				log.Printf("[Images-Stream] 流式响应完成: %dms", responseTime)
+		case bodyErr, ok := <-bodyErrChan:
+			if ok && bodyErr != nil {
+				return bodyErr
 			}
-			return nil
-		}
-		if err != nil {
-			return err
+			goto streamEnd
+		case <-postCommitChan:
+			log.Printf("[Images-StreamStalled] 流式断流: 首字后 %dms 无上游 chunk 到达", timeouts.InactivityTimeoutMs)
+			return common.ErrStreamPostCommitStalled
 		}
 	}
+streamEnd:
+
+	if logBuffer.Len() > 0 {
+		common.LogUpstreamResponseBody(logBuffer.Bytes(), envCfg, "Images")
+	}
+	if envCfg.EnableResponseLogs {
+		responseTime := time.Since(startTime).Milliseconds()
+		log.Printf("[Images-Stream] 流式响应完成: %dms", responseTime)
+	}
+	return nil
 }
 
 func imagesErrorResponse(c *gin.Context, statusCode int, message, errorType, code string) {

@@ -1,7 +1,6 @@
 package gemini
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +15,96 @@ import (
 	"github.com/BenedictKing/ccx/internal/types"
 	"github.com/gin-gonic/gin"
 )
+
+// streamLineReader 从 chunk channel 逐行读取，支持超时，用于替换阻塞的 bufio.Scanner。
+// 转换函数通过 NextLine 获取 SSE 行，调用方每次成功读到行后重置 deadline。
+type streamLineReader struct {
+	chunkChan <-chan []byte
+	errChan   <-chan error
+	remainder string
+	err       error
+	eof       bool
+}
+
+func newStreamLineReader(chunkChan <-chan []byte, errChan <-chan error) *streamLineReader {
+	return &streamLineReader{chunkChan: chunkChan, errChan: errChan}
+}
+
+// NextLine 返回下一行 SSE 数据（不含末尾 \n）。
+// 返回 timedOut=true 时调用方应立即返回 ErrStreamPostCommitStalled。
+// 返回 eof=true 时流正常结束。
+func (r *streamLineReader) NextLine(deadline time.Duration) (line string, eof bool, err error, timedOut bool) {
+	for {
+		// 优先返回已缓冲的完整行（包括 preflight 阶段缓存的行）
+		if idx := strings.IndexByte(r.remainder, '\n'); idx >= 0 {
+			line = r.remainder[:idx]
+			r.remainder = r.remainder[idx+1:]
+			return line, false, nil, false
+		}
+		if r.err != nil {
+			if r.remainder != "" {
+				line = r.remainder
+				r.remainder = ""
+				return line, false, r.err, false
+			}
+			return "", true, r.err, false
+		}
+		if r.eof {
+			// 补发剩余数据
+			if r.remainder != "" {
+				line = r.remainder
+				r.remainder = ""
+				return line, false, nil, false
+			}
+			return "", true, nil, false
+		}
+
+		timer := time.NewTimer(deadline)
+		select {
+		case chunk, ok := <-r.chunkChan:
+			timer.Stop()
+			if !ok {
+				r.eof = true
+				// 查看 errChan 是否有错误
+				select {
+				case e := <-r.errChan:
+					r.err = e
+				default:
+				}
+				if r.remainder != "" {
+					line = r.remainder
+					r.remainder = ""
+					return line, false, r.err, false
+				}
+				return "", true, r.err, false
+			}
+			r.remainder += string(chunk)
+			// 提取整行
+			if idx := strings.IndexByte(r.remainder, '\n'); idx >= 0 {
+				line = r.remainder[:idx]
+				r.remainder = r.remainder[idx+1:]
+				return line, false, nil, false
+			}
+			// 还没凑够一行，继续等下一块
+		case e, ok := <-r.errChan:
+			timer.Stop()
+			if ok {
+				r.err = e
+			} else {
+				r.err = errors.New("errChan closed unexpectedly")
+			}
+			// 返回已有数据
+			if r.remainder != "" {
+				line = r.remainder
+				r.remainder = ""
+				return line, false, r.err, false
+			}
+			return "", true, r.err, false
+		case <-timer.C:
+			return "", false, nil, true
+		}
+	}
+}
 
 // preflightGeminiStream Gemini 流式预检测（两阶段：首字等待 + 首字后断流检测）
 func preflightGeminiStream(resp *http.Response, upstreamType string, timeouts common.StreamPreflightTimeouts) (bufferedLines []string, chunkChan <-chan []byte, bodyErrChan <-chan error, err error) {
@@ -268,6 +357,7 @@ func handleStreamSuccess(
 	}
 
 	var totalUsage *types.Usage
+	var streamErr error
 	logBuffer := common.NewLimitedLogBuffer(common.MaxUpstreamResponseLogBytes)
 	streamLoggingEnabled := envCfg.EnableResponseLogs && envCfg.IsDevelopment()
 
@@ -278,21 +368,24 @@ func handleStreamSuccess(
 	if bufferedBody != "" && !strings.HasSuffix(bufferedBody, "\n") {
 		bufferedBody += "\n"
 	}
-	channelBody := common.NewChunkChannelReadCloser(chunkChan, bodyErrChan, resp.Body)
-	resp.Body = common.NewPrefixedReadCloser([]byte(bufferedBody), channelBody)
+	reader := newStreamLineReader(chunkChan, bodyErrChan)
+	reader.remainder = bufferedBody
 
 	switch upstreamType {
 	case "gemini":
-		totalUsage = streamGeminiToGemini(c, resp, flusher, envCfg, logBuffer, streamLoggingEnabled)
+		totalUsage, streamErr = streamGeminiToGemini(c, reader, flusher, logBuffer, streamLoggingEnabled, timeouts)
 	case "claude":
-		totalUsage = streamClaudeToGemini(c, resp, flusher, envCfg, model, logBuffer, streamLoggingEnabled)
+		totalUsage, streamErr = streamClaudeToGemini(c, reader, flusher, model, logBuffer, streamLoggingEnabled, timeouts)
 	case "openai":
-		totalUsage = streamOpenAIToGemini(c, resp, flusher, envCfg, model, logBuffer, streamLoggingEnabled)
+		totalUsage, streamErr = streamOpenAIToGemini(c, reader, flusher, model, logBuffer, streamLoggingEnabled, timeouts)
 	case "responses":
-		totalUsage = streamResponsesToGemini(c, resp, flusher, envCfg, model, logBuffer, streamLoggingEnabled)
+		totalUsage, streamErr = streamResponsesToGemini(c, reader, flusher, model, logBuffer, streamLoggingEnabled, timeouts)
 	default:
-		// 默认透传
-		totalUsage = streamGeminiToGemini(c, resp, flusher, envCfg, logBuffer, streamLoggingEnabled)
+		// 默认按 Gemini 直通处理
+		totalUsage, streamErr = streamGeminiToGemini(c, reader, flusher, logBuffer, streamLoggingEnabled, timeouts)
+	}
+	if streamErr != nil {
+		return nil, streamErr
 	}
 
 	if envCfg.EnableResponseLogs {
@@ -309,19 +402,26 @@ func handleStreamSuccess(
 // streamGeminiToGemini Gemini 上游直接透传
 func streamGeminiToGemini(
 	c *gin.Context,
-	resp *http.Response,
+	reader *streamLineReader,
 	flusher http.Flusher,
-	envCfg *config.EnvConfig,
 	logBuffer *common.LimitedLogBuffer,
 	loggingEnabled bool,
-) *types.Usage {
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
-
+	timeouts common.StreamPreflightTimeouts,
+) (*types.Usage, error) {
 	var totalUsage *types.Usage
+	inactivityTimeout := time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, eof, err, timedOut := reader.NextLine(inactivityTimeout)
+		if timedOut {
+			return nil, common.ErrStreamPostCommitStalled
+		}
+		if eof {
+			if err != nil {
+				return totalUsage, err
+			}
+			return totalUsage, nil
+		}
 		if loggingEnabled {
 			logBuffer.WriteString(line + "\n")
 		}
@@ -352,28 +452,33 @@ func streamGeminiToGemini(
 			flusher.Flush()
 		}
 	}
-
-	return totalUsage
 }
 
 // streamClaudeToGemini Claude 流式响应转换为 Gemini 格式
 func streamClaudeToGemini(
 	c *gin.Context,
-	resp *http.Response,
+	reader *streamLineReader,
 	flusher http.Flusher,
-	envCfg *config.EnvConfig,
 	model string,
 	logBuffer *common.LimitedLogBuffer,
 	loggingEnabled bool,
-) *types.Usage {
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
+	timeouts common.StreamPreflightTimeouts,
+) (*types.Usage, error) {
 	var totalUsage *types.Usage
 	var currentText strings.Builder
+	inactivityTimeout := time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, eof, err, timedOut := reader.NextLine(inactivityTimeout)
+		if timedOut {
+			return nil, common.ErrStreamPostCommitStalled
+		}
+		if eof {
+			if err != nil {
+				return totalUsage, err
+			}
+			return totalUsage, nil
+		}
 		if loggingEnabled {
 			logBuffer.WriteString(line + "\n")
 		}
@@ -487,28 +592,34 @@ func streamClaudeToGemini(
 			}
 		}
 	}
-
-	return totalUsage
+	return totalUsage, nil
 }
 
 // streamOpenAIToGemini OpenAI 流式响应转换为 Gemini 格式
 func streamOpenAIToGemini(
 	c *gin.Context,
-	resp *http.Response,
+	reader *streamLineReader,
 	flusher http.Flusher,
-	envCfg *config.EnvConfig,
 	model string,
 	logBuffer *common.LimitedLogBuffer,
 	loggingEnabled bool,
-) *types.Usage {
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
+	timeouts common.StreamPreflightTimeouts,
+) (*types.Usage, error) {
 	var totalUsage *types.Usage
 	var currentText strings.Builder
+	inactivityTimeout := time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, eof, err, timedOut := reader.NextLine(inactivityTimeout)
+		if timedOut {
+			return nil, common.ErrStreamPostCommitStalled
+		}
+		if eof {
+			if err != nil {
+				return totalUsage, err
+			}
+			return totalUsage, nil
+		}
 		if loggingEnabled {
 			logBuffer.WriteString(line + "\n")
 		}
@@ -654,8 +765,7 @@ func streamOpenAIToGemini(
 			}
 		}
 	}
-
-	return totalUsage
+	return totalUsage, nil
 }
 
 // openaiFinishReasonToGemini 将 OpenAI 停止原因转换为 Gemini 格式
@@ -677,21 +787,28 @@ func openaiFinishReasonToGemini(finishReason string) string {
 // streamResponsesToGemini Responses 流式响应转换为 Gemini 格式
 func streamResponsesToGemini(
 	c *gin.Context,
-	resp *http.Response,
+	reader *streamLineReader,
 	flusher http.Flusher,
-	envCfg *config.EnvConfig,
 	model string,
 	logBuffer *common.LimitedLogBuffer,
 	loggingEnabled bool,
-) *types.Usage {
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
+	timeouts common.StreamPreflightTimeouts,
+) (*types.Usage, error) {
 	var totalUsage *types.Usage
 	var converterState any
+	inactivityTimeout := time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, eof, err, timedOut := reader.NextLine(inactivityTimeout)
+		if timedOut {
+			return nil, common.ErrStreamPostCommitStalled
+		}
+		if eof {
+			if err != nil {
+				return totalUsage, err
+			}
+			return totalUsage, nil
+		}
 		if loggingEnabled {
 			logBuffer.WriteString(line + "\n")
 		}
@@ -729,10 +846,4 @@ func streamResponsesToGemini(
 			}
 		}
 	}
-
-	if err := scanner.Err(); err != nil {
-		log.Printf("[Gemini-Stream] Responses流式转换读取错误: %v", err)
-	}
-
-	return totalUsage
 }

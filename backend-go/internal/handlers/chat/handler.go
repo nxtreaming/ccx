@@ -948,12 +948,24 @@ func handleStreamSuccess(
 
 	switch upstreamType {
 	case "claude":
-		totalUsage = streamClaudeToChat(c, resp, flusher, model, logBuffer, streamLoggingEnabled, preflight.buffered)
+		var streamErr error
+		totalUsage, streamErr = streamClaudeToChat(c, resp, flusher, model, logBuffer, streamLoggingEnabled, preflight.buffered, timeouts)
+		if streamErr != nil {
+			return nil, streamErr
+		}
 	case "responses":
-		totalUsage = streamResponsesToChat(c, resp, flusher, model, logBuffer, streamLoggingEnabled, preflight.buffered)
+		var streamErr error
+		totalUsage, streamErr = streamResponsesToChat(c, resp, flusher, model, logBuffer, streamLoggingEnabled, preflight.buffered, timeouts)
+		if streamErr != nil {
+			return nil, streamErr
+		}
 	default:
 		// OpenAI / Gemini / Responses 等：直接透传 SSE 流
-		totalUsage = streamPassthrough(c, resp, flusher, logBuffer, streamLoggingEnabled, preflight.buffered)
+		var streamErr error
+		totalUsage, streamErr = streamPassthrough(c, resp, flusher, logBuffer, streamLoggingEnabled, preflight.buffered, timeouts)
+		if streamErr != nil {
+			return nil, streamErr
+		}
 	}
 
 	if envCfg.EnableResponseLogs {
@@ -1333,11 +1345,14 @@ func streamPassthrough(
 	logBuffer *common.LimitedLogBuffer,
 	loggingEnabled bool,
 	prefetched []byte,
-) *types.Usage {
+	timeouts common.StreamPreflightTimeouts,
+) (*types.Usage, error) {
 	var totalUsage *types.Usage
 	buf := make([]byte, 32*1024)
 	var remainder string
 	pending := prefetched
+	inactivityTimeout := time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond
+	lastActivity := time.Now()
 
 	for {
 		var chunk []byte
@@ -1346,10 +1361,18 @@ func streamPassthrough(
 			chunk = pending
 			pending = nil
 		} else {
-			n, err := resp.Body.Read(buf)
+			remaining := inactivityTimeout - time.Since(lastActivity)
+			if remaining <= 0 {
+				return nil, common.ErrStreamPostCommitStalled
+			}
+			n, err, timedOut := readChunkWithTimeout(resp, buf, remaining)
+			if timedOut {
+				return nil, common.ErrStreamPostCommitStalled
+			}
 			readErr = err
 			if n > 0 {
 				chunk = buf[:n]
+				lastActivity = time.Now()
 			}
 		}
 
@@ -1399,7 +1422,7 @@ func streamPassthrough(
 		}
 	}
 
-	return totalUsage
+	return totalUsage, nil
 }
 
 func flushCompletePassthroughRemainder(c *gin.Context, flusher http.Flusher, remainder string) {
@@ -1417,6 +1440,17 @@ func flushCompletePassthroughRemainder(c *gin.Context, flusher http.Flusher, rem
 	}
 }
 
+func readChunkWithTimeout(resp *http.Response, buf []byte, timeout time.Duration) (int, error, bool) {
+	type timeoutReader interface {
+		ReadWithTimeout(p []byte, timeout time.Duration) (int, error, bool)
+	}
+	if tr, ok := resp.Body.(timeoutReader); ok {
+		return tr.ReadWithTimeout(buf, timeout)
+	}
+	n, err := resp.Body.Read(buf)
+	return n, err, false
+}
+
 // streamClaudeToChat Claude 流式响应转换为 OpenAI Chat 格式
 func streamClaudeToChat(
 	c *gin.Context,
@@ -1426,12 +1460,15 @@ func streamClaudeToChat(
 	logBuffer *common.LimitedLogBuffer,
 	loggingEnabled bool,
 	prefetched []byte,
-) *types.Usage {
+	timeouts common.StreamPreflightTimeouts,
+) (*types.Usage, error) {
 	var totalUsage *types.Usage
 	var doneSent bool
 	buf := make([]byte, 32*1024)
 	var remainder string
 	pending := prefetched
+	inactivityTimeout := time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond
+	lastActivity := time.Now()
 
 	for {
 		var chunk []byte
@@ -1440,10 +1477,18 @@ func streamClaudeToChat(
 			chunk = pending
 			pending = nil
 		} else {
-			n, err := resp.Body.Read(buf)
+			remaining := inactivityTimeout - time.Since(lastActivity)
+			if remaining <= 0 {
+				return nil, common.ErrStreamPostCommitStalled
+			}
+			n, err, timedOut := readChunkWithTimeout(resp, buf, remaining)
+			if timedOut {
+				return nil, common.ErrStreamPostCommitStalled
+			}
 			readErr = err
 			if n > 0 {
 				chunk = buf[:n]
+				lastActivity = time.Now()
 			}
 		}
 
@@ -1476,7 +1521,7 @@ func streamClaudeToChat(
 		}
 	}
 
-	return totalUsage
+	return totalUsage, nil
 }
 
 // flushResponsesSSEEvent 处理缓存的 Responses SSE data 行，生成对应的 Chat chunk。
@@ -1656,13 +1701,16 @@ func streamResponsesToChat(
 	logBuffer *common.LimitedLogBuffer,
 	loggingEnabled bool,
 	prefetched []byte,
-) *types.Usage {
+	timeouts common.StreamPreflightTimeouts,
+) (*types.Usage, error) {
 	var totalUsage *types.Usage
 	var doneSent bool
 	var roleSent bool
 	buf := make([]byte, 32*1024)
 	var remainder string
 	pending := prefetched
+	inactivityTimeout := time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond
+	lastActivity := time.Now()
 	// 工具调用状态追踪
 	var currentToolIndex int
 	var currentToolCallID string
@@ -1677,10 +1725,18 @@ func streamResponsesToChat(
 			chunk = pending
 			pending = nil
 		} else {
-			n, err := resp.Body.Read(buf)
+			remaining := inactivityTimeout - time.Since(lastActivity)
+			if remaining <= 0 {
+				return nil, common.ErrStreamPostCommitStalled
+			}
+			n, err, timedOut := readChunkWithTimeout(resp, buf, remaining)
+			if timedOut {
+				return nil, common.ErrStreamPostCommitStalled
+			}
 			readErr = err
 			if n > 0 {
 				chunk = buf[:n]
+				lastActivity = time.Now()
 			}
 		}
 
@@ -1873,7 +1929,7 @@ func streamResponsesToChat(
 		}
 	}
 
-	return totalUsage
+	return totalUsage, nil
 }
 
 // writeChatSSEChunk 将 Chat chunk 写为 SSE 格式并 flush。
