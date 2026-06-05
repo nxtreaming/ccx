@@ -158,7 +158,8 @@ func handleMultiChannel(
 						responsesReq.TransformerMetadata = make(map[string]interface{})
 					}
 					responsesReq.TransformerMetadata["codex_tool_compat_enabled"] = upstreamCopy.IsCodexToolCompatEnabled() || upstreamCopy.CodexNativeToolPassthrough
-					return handleSuccess(c, resp, provider, upstream.ServiceType, envCfg, sessionManager, startTime, &responsesReq, actualRequestBody, cfgManager.GetFuzzyModeEnabled())
+					timeouts := common.ResolveStreamPreflightTimeouts(upstreamCopy, metricsManager.GetCircuitBreakerConfig())
+					return handleSuccess(c, resp, provider, upstream.ServiceType, envCfg, sessionManager, startTime, &responsesReq, actualRequestBody, cfgManager.GetFuzzyModeEnabled(), timeouts)
 				},
 				responsesReq.Model,
 				"",
@@ -251,7 +252,8 @@ func handleSingleChannel(
 				responsesReq.TransformerMetadata = make(map[string]interface{})
 			}
 			responsesReq.TransformerMetadata["codex_tool_compat_enabled"] = upstreamCopy.IsCodexToolCompatEnabled() || upstreamCopy.CodexNativeToolPassthrough
-			return handleSuccess(c, resp, provider, upstream.ServiceType, envCfg, sessionManager, startTime, &responsesReq, actualRequestBody, cfgManager.GetFuzzyModeEnabled())
+			timeouts := common.ResolveStreamPreflightTimeouts(upstreamCopy, metricsManager.GetCircuitBreakerConfig())
+					return handleSuccess(c, resp, provider, upstream.ServiceType, envCfg, sessionManager, startTime, &responsesReq, actualRequestBody, cfgManager.GetFuzzyModeEnabled(), timeouts)
 		},
 		responsesReq.Model,
 		"",
@@ -304,6 +306,7 @@ func handleSuccess(
 	originalReq *types.ResponsesRequest,
 	originalRequestJSON []byte,
 	fuzzyMode bool,
+	timeouts common.StreamPreflightTimeouts,
 ) (*types.Usage, error) {
 	defer resp.Body.Close()
 
@@ -320,7 +323,7 @@ func handleSuccess(
 	}
 
 	if isStream {
-		return handleStreamSuccess(c, resp, upstreamType, envCfg, startTime, originalReq, originalRequestJSON)
+		return handleStreamSuccess(c, resp, upstreamType, envCfg, startTime, originalReq, originalRequestJSON, timeouts)
 	}
 
 	// 非流式响应处理
@@ -599,6 +602,7 @@ func handleStreamSuccess(
 	startTime time.Time,
 	originalReq *types.ResponsesRequest,
 	originalRequestJSON []byte,
+	timeouts common.StreamPreflightTimeouts,
 ) (*types.Usage, error) {
 	if envCfg.EnableResponseLogs {
 		responseTime := time.Since(startTime).Milliseconds()
@@ -651,7 +655,13 @@ func handleStreamSuccess(
 	preflightHasNonTextContent := false
 	preflightEmpty := false
 	preflightDiagnostic := ""
-	preflightTimeout := time.NewTimer(30 * time.Second)
+	// 阶段A：首个有效内容等待超时
+	firstContentTimeout := time.NewTimer(time.Duration(max(timeouts.FirstContentTimeoutMs, 0)) * time.Millisecond)
+	defer firstContentTimeout.Stop()
+	// 阶段B：首字后不活动超时（初始为 nil，阶段B 时激活）
+	var inactivityTimer *time.Timer
+	inactivityChan := (<-chan time.Time)(nil)
+	hasFirstContent := false
 	preflightDone := false
 	var blacklistReason, blacklistMessage string
 	seenConvertedEvent := false
@@ -659,6 +669,31 @@ func handleStreamSuccess(
 	seenUsageOnlyEvent := false
 	seenUnknownEvent := false
 	unknownEventType := ""
+
+	// enterPhaseB 进入阶段B（首字后连续性确认）
+	enterPhaseB := func() {
+		if !hasFirstContent {
+			hasFirstContent = true
+			firstContentTimeout.Stop()
+			if timeouts.InactivityTimeoutMs > 0 {
+				inactivityTimer = time.NewTimer(time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond)
+				inactivityChan = inactivityTimer.C
+			}
+		}
+	}
+
+	// resetInactivityTimer 重置阶段B不活动定时器
+	resetInactivityTimer := func() {
+		if hasFirstContent && inactivityTimer != nil {
+			if !inactivityTimer.Stop() {
+				select {
+				case <-inactivityTimer.C:
+				default:
+				}
+			}
+			inactivityTimer.Reset(time.Duration(timeouts.InactivityTimeoutMs) * time.Millisecond)
+		}
+	}
 
 	for !preflightDone {
 		select {
@@ -741,16 +776,34 @@ func handleStreamSuccess(
 				if !preflightHasNonTextContent && common.HasResponsesSemanticContent(event) && !preflightToolTracker.HasPendingToolCall() {
 					preflightHasNonTextContent = true
 					preflightEmpty = false
-					preflightDone = true
-					break
+					// 进入阶段B，不立即放行
+					enterPhaseB()
+					if timeouts.InactivityTimeoutMs <= 0 {
+						preflightDone = true
+						break
+					}
+					resetInactivityTimer()
+					continue
 				}
 
 				extractResponsesTextFromEvent(event, &preflightTextBuf)
 
 				// 检查是否有有效内容 delta 事件
 				if !common.IsEffectivelyEmptyStreamText(preflightTextBuf.String()) {
-					preflightDone = true
-					break
+					if !hasFirstContent {
+						// 阶段A→阶段B：首次检测到有效文本内容
+						enterPhaseB()
+						if timeouts.InactivityTimeoutMs <= 0 {
+							preflightDone = true
+							break
+						}
+						resetInactivityTimer()
+					} else {
+						// 阶段B中收到第二个有效内容：健康流，放行
+						preflightDone = true
+						break
+					}
+					continue
 				}
 
 				// 检查是否为 response.completed 事件（流正常结束）
@@ -767,11 +820,29 @@ func handleStreamSuccess(
 				}
 			}
 
-		case <-preflightTimeout.C:
-			preflightDone = true // 超时保守放行
+			// 阶段B中重置不活动定时器
+			resetInactivityTimer()
+
+		case <-firstContentTimeout.C:
+			// 阶段A超时：首个有效内容等待超时
+			if timeouts.FirstContentTimeoutMs > 0 {
+				log.Printf("[Responses-FirstContentTimeout] 流式首字超时: %dms，触发重试", timeouts.FirstContentTimeoutMs)
+				close(scanDone)
+				return nil, common.ErrStreamFirstContentTimeout
+			}
+			// 超时被禁用（0），保守放行
+			preflightDone = true
+
+		case <-inactivityChan:
+			// 阶段B超时：首字后断流
+			log.Printf("[Responses-StreamStalled] 流式断流: 首字后 %dms 无活动，触发重试", timeouts.InactivityTimeoutMs)
+			close(scanDone)
+			return nil, common.ErrStreamStalled
 		}
 	}
-	preflightTimeout.Stop()
+	if inactivityTimer != nil {
+		inactivityTimer.Stop()
+	}
 
 	// 空响应：Header 未发送，可安全重试
 	if preflightEmpty {
