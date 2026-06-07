@@ -84,6 +84,7 @@ export interface Channel {
   codexToolCompat?: boolean
   normalizeNonstandardChatRoles?: boolean
   stripCodexClientTools?: boolean
+  stripImageGenerationTool?: boolean
   latency?: number
   status?: ChannelStatus | 'healthy' | 'error' | 'unknown' | ''
   index: number

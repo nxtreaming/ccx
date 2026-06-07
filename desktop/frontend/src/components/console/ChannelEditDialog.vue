@@ -156,6 +156,7 @@ const form = reactive({
   codexNativeToolPassthrough: false,
   codexToolCompat: false,
   stripCodexClientTools: false,
+  stripImageGenerationTool: false,
 })
 
 const disabledApiKeys = computed<DisabledKeyInfo[]>(() => props.channel?.disabledApiKeys ?? [])
@@ -206,6 +207,7 @@ function resetForm() {
   form.codexNativeToolPassthrough = false
   form.codexToolCompat = false
   form.stripCodexClientTools = false
+  form.stripImageGenerationTool = false
   quickInput.value = ''
   existingApiKeys.value = []
   newApiKeysText.value = ''
@@ -272,6 +274,7 @@ function populateFromChannel(ch: Channel) {
   form.codexNativeToolPassthrough = ch.codexNativeToolPassthrough ?? false
   form.codexToolCompat = ch.codexToolCompat ?? ch.stripCodexClientTools ?? false
   form.stripCodexClientTools = ch.stripCodexClientTools ?? ch.codexToolCompat ?? false
+  form.stripImageGenerationTool = ch.stripImageGenerationTool ?? false
 }
 
 watch(() => props.channel, (ch) => {
@@ -400,6 +403,7 @@ function buildSubmitPayload() {
         codexToolCompat: form.codexToolCompat,
         normalizeNonstandardChatRoles: form.normalizeNonstandardChatRoles,
         stripCodexClientTools: form.stripCodexClientTools,
+        stripImageGenerationTool: form.stripImageGenerationTool,
         noVision: form.noVision,
         noVisionModels: parseLines(form.noVisionModelsText),
         visionFallbackModel: form.visionFallbackModel,
@@ -645,6 +649,7 @@ const codexResponsesPresets: Record<string, {
   codexNativeToolPassthrough: boolean
   codexToolCompat: boolean
   stripCodexClientTools: boolean
+  stripImageGenerationTool: boolean
   normalizeNonstandardChatRoles: boolean
   noVision: boolean
   noVisionModels: string[]
@@ -659,6 +664,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: false,
     codexToolCompat: false,
     stripCodexClientTools: false,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: false,
     noVision: false,
     noVisionModels: ['mimo-v2.5-pro'],
@@ -674,6 +680,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: true,
     codexToolCompat: false,
     stripCodexClientTools: false,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: true,
     noVision: true,
     noVisionModels: [],
@@ -689,6 +696,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: true,
     codexToolCompat: false,
     stripCodexClientTools: false,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: true,
     noVision: false,
     noVisionModels: ['deepseek-v4-flash'],
@@ -703,6 +711,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: true,
     codexToolCompat: false,
     stripCodexClientTools: false,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: true,
     noVision: false,
     noVisionModels: [],
@@ -719,6 +728,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: false,
     codexToolCompat: true,
     stripCodexClientTools: true,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: false,
     noVision: false,
     noVisionModels: [],
@@ -733,6 +743,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: false,
     codexToolCompat: true,
     stripCodexClientTools: true,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: false,
     noVision: false,
     noVisionModels: [],
@@ -747,6 +758,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: false,
     codexToolCompat: true,
     stripCodexClientTools: true,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: false,
     noVision: false,
     noVisionModels: [],
@@ -761,6 +773,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: false,
     codexToolCompat: true,
     stripCodexClientTools: true,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: false,
     noVision: false,
     noVisionModels: [],
@@ -775,6 +788,7 @@ const codexResponsesPresets: Record<string, {
     codexNativeToolPassthrough: false,
     codexToolCompat: true,
     stripCodexClientTools: true,
+    stripImageGenerationTool: false,
     normalizeNonstandardChatRoles: false,
     noVision: false,
     noVisionModels: [],
@@ -841,6 +855,7 @@ function applyCodexResponsesPreset(name: string) {
   form.codexNativeToolPassthrough = preset.codexNativeToolPassthrough
   form.codexToolCompat = preset.codexToolCompat
   form.stripCodexClientTools = preset.stripCodexClientTools
+  form.stripImageGenerationTool = preset.stripImageGenerationTool
   form.normalizeNonstandardChatRoles = preset.normalizeNonstandardChatRoles
   form.noVision = preset.noVision
   form.noVisionModelsText = preset.noVisionModels.join('\n')
@@ -1074,6 +1089,7 @@ function buildCurrentPayload() {
     codexToolCompat: form.codexToolCompat,
     normalizeNonstandardChatRoles: form.normalizeNonstandardChatRoles,
     stripCodexClientTools: form.stripCodexClientTools,
+    stripImageGenerationTool: form.stripImageGenerationTool,
     noVision: form.noVision,
     noVisionModels: getNoVisionModelsFromRows(),
     visionFallbackModel: form.visionFallbackModel,
@@ -1538,6 +1554,13 @@ function buildCurrentPayload() {
                           <div class="min-w-0 space-y-0.5">
                             <Label class="text-xs">{{ tf('console.form.codexCompat', 'Codex 工具兼容') }}</Label>
                             <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.codexCompatHint', '启用 Codex CLI 兼容：Responses 透传上游会剥离客户端专属工具，Chat/Claude/Gemini 上游会转换为 function 代理工具。') }}</p>
+                          </div>
+                        </div>
+                        <div v-if="channelType === 'responses' || channelType === 'chat'" class="flex flex-row-reverse items-center justify-between gap-3">
+                          <Switch v-model="form.stripImageGenerationTool" class="shrink-0" />
+                          <div class="min-w-0 space-y-0.5">
+                            <Label class="text-xs">{{ tf('console.form.stripImageGenTool', '去除 image_generation 工具') }}</Label>
+                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.stripImageGenToolHint', '从请求的 tools 数组中移除 image_generation 类型，避免未开通图片生成权限的上游返回权限错误。') }}</p>
                           </div>
                         </div>
                       </div>
