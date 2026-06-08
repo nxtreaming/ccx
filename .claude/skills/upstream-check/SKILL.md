@@ -20,13 +20,13 @@ context: fork
 ### 1. 运行检查脚本
 
 ```bash
-bash scripts/upstream-check.sh
+bash .claude/skills/upstream-check/scripts/upstream-check.sh
 ```
 
 ### 2. 读取当前状态
 
 ```bash
-cat scripts/upstream-state.json
+cat .claude/skills/upstream-check/scripts/upstream-state.json
 ```
 
 ### 3. 分析结果
@@ -52,7 +52,7 @@ cat scripts/upstream-state.json
 
 **去重检查（必须）**：
 
-1. 读取 `scripts/upstream-state.json`，检查远程 tag 是否已在 `seen_tags` 中
+1. 读取 `.claude/skills/upstream-check/scripts/upstream-state.json`，检查远程 tag 是否已在 `seen_tags` 中
 2. 如已在，跳过 TODO 追加
 3. 追加后，将 tag 加入 `seen_tags`（上限 20 条，超出时删除最早的）
 
@@ -68,7 +68,7 @@ cat scripts/upstream-state.json
 
 ### 6. 更新状态文件
 
-将新的远程 tag 追加到 `scripts/upstream-state.json` 的 `seen_tags` 数组中：
+将新的远程 tag 追加到 `.claude/skills/upstream-check/scripts/upstream-state.json` 的 `seen_tags` 数组中：
 
 ```json
 {

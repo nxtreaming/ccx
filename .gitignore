@@ -3,8 +3,6 @@
 logs/
 scripts/*
 !scripts/install-wails3.sh
-!scripts/upstream-check.sh
-!scripts/upstream-state.json
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -211,6 +209,7 @@ vite.config.ts.timestamp-*
 !.claude/skills/codex-review/
 !.claude/skills/github-release/
 !.claude/skills/upstream-check/
+.claude/skills/upstream-check/scripts/upstream-state.json
 
 .aider*
 *.log
