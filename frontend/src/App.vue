@@ -364,23 +364,6 @@
               <span>{{ t('tooltip.circuitBreakerSettings') }}</span>
             </v-tooltip>
 
-            <!-- 历史图片轮次限制按钮 -->
-            <v-tooltip location="bottom" content-class="ccx-tooltip">
-              <template #activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  variant="tonal"
-                  size="large"
-                  color="default"
-                  class="action-btn"
-                  @click="openHistoricalImageDialog"
-                >
-                  <v-icon start size="20">mdi-image-sync</v-icon>
-                  HL
-                </v-btn>
-              </template>
-              <span>{{ t('tooltip.historicalImageTurnLimit') }}</span>
-            </v-tooltip>
           </div>
         </div>
         <router-view
@@ -579,6 +562,27 @@
               {{ t(preset.labelKey) }}
             </v-btn>
           </div>
+
+          <!-- 历史图片轮次限制 -->
+          <v-divider class="my-3" />
+          <div class="cb-hl-section">
+            <div class="cb-hl-header">
+              <v-icon size="18" class="mr-2">mdi-image-sync</v-icon>
+              <span class="cb-hl-title">{{ t('dialog.historicalImageTurnLimit.title') }}</span>
+            </div>
+            <v-text-field
+              v-model.number="historicalImageForm.limit"
+              :label="t('dialog.historicalImageTurnLimit.label')"
+              :hint="t('dialog.historicalImageTurnLimit.hint')"
+              type="number"
+              min="3"
+              variant="outlined"
+              density="compact"
+              persistent-hint
+              hide-details="auto"
+              class="cb-hl-input"
+            />
+          </div>
         </v-card-text>
         <v-divider />
         <v-card-actions class="cb-dialog-actions">
@@ -587,38 +591,6 @@
             {{ t('app.actions.cancel') }}
           </v-btn>
           <v-btn color="primary" variant="flat" class="cb-dialog-btn cb-dialog-btn-primary" :loading="cbSaving" @click="saveCircuitBreaker">
-            {{ t('app.actions.confirm') }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- 历史图片轮次限制设置对话框 -->
-    <v-dialog v-model="historicalImageDialogOpen" max-width="400">
-      <v-card rounded="lg">
-        <v-card-title class="d-flex align-center">
-          <v-icon class="mr-3">mdi-image-sync</v-icon>
-          {{ t('dialog.historicalImageTurnLimit.title') }}
-        </v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model.number="historicalImageForm.limit"
-            :label="t('dialog.historicalImageTurnLimit.label')"
-            :hint="t('dialog.historicalImageTurnLimit.hint')"
-            type="number"
-            min="3"
-            variant="outlined"
-            density="comfortable"
-            persistent-hint
-          />
-        </v-card-text>
-        <v-divider />
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="flat" @click="historicalImageDialogOpen = false">
-            {{ t('app.actions.cancel') }}
-          </v-btn>
-          <v-btn color="primary" variant="flat" :loading="systemStore.historicalImageTurnLimitLoading" @click="saveHistoricalImageTurnLimit">
             {{ t('app.actions.confirm') }}
           </v-btn>
         </v-card-actions>
@@ -1738,8 +1710,7 @@ const toggleFuzzyMode = async () => {
   }
 }
 
-// 历史图片轮次限制
-const historicalImageDialogOpen = ref(false)
+// 历史图片轮次限制（已合并到熔断器对话框中）
 const historicalImageForm = ref({ limit: 0 })
 
 const loadHistoricalImageTurnLimit = async () => {
@@ -1751,25 +1722,6 @@ const loadHistoricalImageTurnLimit = async () => {
     console.error('Failed to load historical image turn limit:', e)
     systemStore.setHistoricalImageTurnLimitLoadError(true)
     showToast(t('toast.loadHistoricalImageTurnLimitFailed'), 'warning')
-  }
-}
-
-const openHistoricalImageDialog = async () => {
-  historicalImageForm.value.limit = preferencesStore.historicalImageTurnLimit
-  historicalImageDialogOpen.value = true
-}
-
-const saveHistoricalImageTurnLimit = async () => {
-  systemStore.setHistoricalImageTurnLimitLoading(true)
-  try {
-    await api.setHistoricalImageTurnLimit(historicalImageForm.value.limit)
-    preferencesStore.setHistoricalImageTurnLimit(historicalImageForm.value.limit)
-    historicalImageDialogOpen.value = false
-    showToast(t('toast.historicalImageTurnLimitSaved'), 'success')
-  } catch (e) {
-    showToast(t('toast.historicalImageTurnLimitFailed', { message: e instanceof Error ? e.message : t('system.unknown') }), 'error')
-  } finally {
-    systemStore.setHistoricalImageTurnLimitLoading(false)
   }
 }
 
@@ -1856,6 +1808,7 @@ const onSliderChange = (field: string, event: Event) => {
 }
 
 const openCircuitBreakerDialog = async () => {
+  historicalImageForm.value.limit = preferencesStore.historicalImageTurnLimit
   try {
     const params = await api.getCircuitBreaker()
     cbForm.windowSize = params.windowSize
@@ -1874,14 +1827,18 @@ const openCircuitBreakerDialog = async () => {
 const saveCircuitBreaker = async () => {
   cbSaving.value = true
   try {
-    await api.setCircuitBreaker({
-      windowSize: cbForm.windowSize,
-      failureThreshold: cbForm.failureThreshold,
-      consecutiveFailuresThreshold: cbForm.consecutiveFailuresThreshold,
-      streamFirstContentTimeoutMs: cbForm.streamFirstContentTimeoutMs,
-      streamInactivityTimeoutMs: cbForm.streamInactivityTimeoutMs,
-      streamToolCallIdleTimeoutMs: cbForm.streamToolCallIdleTimeoutMs,
-    })
+    await Promise.all([
+      api.setCircuitBreaker({
+        windowSize: cbForm.windowSize,
+        failureThreshold: cbForm.failureThreshold,
+        consecutiveFailuresThreshold: cbForm.consecutiveFailuresThreshold,
+        streamFirstContentTimeoutMs: cbForm.streamFirstContentTimeoutMs,
+        streamInactivityTimeoutMs: cbForm.streamInactivityTimeoutMs,
+        streamToolCallIdleTimeoutMs: cbForm.streamToolCallIdleTimeoutMs,
+      }),
+      api.setHistoricalImageTurnLimit(historicalImageForm.value.limit),
+    ])
+    preferencesStore.setHistoricalImageTurnLimit(historicalImageForm.value.limit)
     circuitBreakerDialogOpen.value = false
     showToast(t('toast.circuitBreakerSaved'), 'success')
   } catch (e) {
@@ -2499,6 +2456,22 @@ onUnmounted(() => {
 .v-theme--dark .cb-preset-active {
   border-color: rgba(129, 140, 248, 0.5) !important;
   box-shadow: 2px 2px 0 0 rgba(129, 140, 248, 0.25) !important;
+}
+
+/* 历史图片轮次限制 */
+.cb-hl-section {
+  padding-top: 8px;
+}
+.cb-hl-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+.cb-hl-input {
+  max-width: 320px;
 }
 
 /* 弹窗底部按钮 */
