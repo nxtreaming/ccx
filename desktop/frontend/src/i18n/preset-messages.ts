@@ -26,13 +26,13 @@ export const presetMessages: Record<SupportedLocale, Record<string, string>> = {
 
     // DeepSeek
     'channel.preset.deepseek.description':
-      'Messages native passthrough, Codex Responses, and Chat passthrough — three usage modes.',
+      'V4-Pro / V4-Flash dual-flagship reasoning models at breakthrough costs. Fully open-source (MIT), delivering frontier-level performance at unbeatable prices.',
     'channel.preset.deepseek.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.deepseek.plan.openai-chat.description': 'Common Chat / Responses endpoint',
 
     // MiMo
     'channel.preset.mimo.description':
-      'Messages native, Codex Responses, and Chat passthrough; includes pay-as-you-go and Token Plan endpoints.',
+      "Xiaomi's in-house AI platform for the Agent era. Flagship MiMo-V2.5-Pro with trillion parameters and 1M context, powering Xiaomi's smart ecosystem across devices, vehicles, and homes.",
     'channel.preset.mimo.plan.anthropic.label': 'Pay-as-you-go (Anthropic)',
     'channel.preset.mimo.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.mimo.plan.openai-chat.label': 'Pay-as-you-go (OpenAI)',
@@ -71,7 +71,7 @@ export const presetMessages: Record<SupportedLocale, Record<string, string>> = {
 
     // Kimi
     'channel.preset.kimi.description':
-      'Messages native passthrough, Codex Responses, and Chat passthrough; includes pay-as-you-go and Coding Plan endpoints.',
+      "Moonshot AI's intelligent assistant platform. Flagship Kimi K2.6 with native multimodal, renowned for ultra-long context and Agent Swarm capabilities.",
     'channel.preset.kimi.plan.anthropic.label': 'Pay-as-you-go (Anthropic)',
     'channel.preset.kimi.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.kimi.plan.openai-chat.label': 'Pay-as-you-go (OpenAI)',
@@ -83,7 +83,7 @@ export const presetMessages: Record<SupportedLocale, Record<string, string>> = {
 
     // GLM
     'channel.preset.glm.description':
-      'Messages native passthrough, Codex Responses, and Chat passthrough — three usage modes.',
+      "Zhipu AI's model-as-a-service platform from Tsinghua. Flagship GLM-5.1 rivals frontier models in coding. Hong Kong-listed, trained entirely on Huawei Ascend chips.",
     'channel.preset.glm.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.glm.plan.coding.label': 'Coding Plan (OpenAI)',
     'channel.preset.glm.plan.coding.description': 'Coding Plan Chat / Responses shared endpoint',
@@ -92,14 +92,14 @@ export const presetMessages: Record<SupportedLocale, Record<string, string>> = {
 
     // MiniMax
     'channel.preset.minimax.description':
-      'Messages native passthrough, Codex Responses, and Chat passthrough — three usage modes.',
+      'Global multimodal AI leader (HK-listed). Flagship M2.7 with Agent self-evolution. Hailuo video/audio models in global top tier. Over 70% revenue from international markets.',
     'channel.preset.minimax.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.minimax.plan.openai-chat.description': 'Common Chat / Responses endpoint',
 
     // DashScope
     'channel.preset.dashscope.label': 'Alibaba Cloud DashScope',
     'channel.preset.dashscope.description':
-      'Messages native passthrough, Codex Responses, and Chat passthrough — three usage modes.',
+      "Alibaba Cloud's one-stop LLM platform integrating Qwen and third-party models. Full-modality coverage with pay-as-you-go, Coding Plan, and Token Plan options.",
     'channel.preset.dashscope.plan.anthropic.label': 'Pay-as-you-go (Anthropic)',
     'channel.preset.dashscope.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.dashscope.plan.openai-chat.label': 'Pay-as-you-go (OpenAI)',
@@ -127,27 +127,27 @@ export const presetMessages: Record<SupportedLocale, Record<string, string>> = {
 
     // OpenCode Zen
     'channel.preset.opencode-zen.description':
-      'Pay-as-you-go curated-model gateway, supports Messages, Chat, and Responses protocols.',
+      "OpenCode's curated gateway for AI coding models, benchmarked and optimized for coding agents. Zero-markup pay-per-request pricing.",
     'channel.preset.opencode-zen.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.opencode-zen.plan.openai-chat.description':
       'Common Chat / Responses endpoint',
 
     // OpenCode Go
     'channel.preset.opencode-go.description':
-      'Low-cost open-source coding model subscription (from $5/month), supports Messages, Chat, and Responses protocols.',
+      "OpenCode's low-cost open-source coding model subscription (from $5/month), optimized for coding agent scenarios.",
     'channel.preset.opencode-go.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.opencode-go.plan.openai-chat.description': 'Common Chat / Responses endpoint',
 
     // OpenRouter
     'channel.preset.openrouter.description':
-      "The world's largest model aggregation platform — 300+ models with a single API Key, supports Messages, Chat, and Responses protocols.",
+      "The largest AI model aggregator — access hundreds of models with a single API key. OpenAI-compatible with built-in guardrails for security, governance, and cost control.",
     'channel.preset.openrouter.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.openrouter.plan.openai-chat.description': 'Common Chat / Responses endpoint',
 
     // ModelScope
     'channel.preset.modelscope.label': 'ModelScope',
     'channel.preset.modelscope.description':
-      "Alibaba DAMO Academy's open-source model community, providing free inference API for Qwen, DeepSeek, Llama and more; supports Messages, Chat, and Responses protocols.",
+      "Alibaba DAMO Academy's open-source model community with 10,000+ models across text, image, and speech. Full-lifecycle support for model exploration, inference, and training.",
     'channel.preset.modelscope.plan.anthropic.description': 'Claude Messages native endpoint',
     'channel.preset.modelscope.plan.openai-chat.description': 'Common Chat / Responses endpoint',
   },
