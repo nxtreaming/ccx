@@ -24,15 +24,19 @@ const form = reactive({
   consecutiveFailuresThreshold: 3,
   streamFirstContentTimeoutMs: 30000,
   streamInactivityTimeoutMs: 20000,
-  streamToolCallIdleTimeoutMs: 30000,
+  streamToolCallIdleTimeoutMs: 120000,
 })
 
+// 工具调用 idle 预设按低速 5 TPS 粗估：60/120/300s 分别预留约 300/600/1500 token 的参数生成窗口。
 const presets = [
-  { key: 'gentle', labelKey: 'env.runtimeCbPresetGentle' as const, windowSize: 20, failureThreshold: 0.70, consecutiveFailuresThreshold: 5, streamFirstContentTimeoutMs: 60000, streamInactivityTimeoutMs: 45000, streamToolCallIdleTimeoutMs: 45000 },
-  { key: 'balanced', labelKey: 'env.runtimeCbPresetBalanced' as const, windowSize: 10, failureThreshold: 0.50, consecutiveFailuresThreshold: 3, streamFirstContentTimeoutMs: 30000, streamInactivityTimeoutMs: 20000, streamToolCallIdleTimeoutMs: 30000 },
-  { key: 'aggressive', labelKey: 'env.runtimeCbPresetAggressive' as const, windowSize: 5, failureThreshold: 0.30, consecutiveFailuresThreshold: 2, streamFirstContentTimeoutMs: 15000, streamInactivityTimeoutMs: 10000, streamToolCallIdleTimeoutMs: 15000 },
-  { key: 'custom', labelKey: 'env.runtimeCbPresetCustom' as const, windowSize: 10, failureThreshold: 0.50, consecutiveFailuresThreshold: 3, streamFirstContentTimeoutMs: 30000, streamInactivityTimeoutMs: 20000, streamToolCallIdleTimeoutMs: 30000 },
+  { key: 'gentle', labelKey: 'env.runtimeCbPresetGentle' as const, windowSize: 20, failureThreshold: 0.70, consecutiveFailuresThreshold: 5, streamFirstContentTimeoutMs: 90000, streamInactivityTimeoutMs: 90000, streamToolCallIdleTimeoutMs: 300000 },
+  { key: 'balanced', labelKey: 'env.runtimeCbPresetBalanced' as const, windowSize: 10, failureThreshold: 0.50, consecutiveFailuresThreshold: 3, streamFirstContentTimeoutMs: 60000, streamInactivityTimeoutMs: 60000, streamToolCallIdleTimeoutMs: 180000 },
+  { key: 'aggressive', labelKey: 'env.runtimeCbPresetAggressive' as const, windowSize: 5, failureThreshold: 0.30, consecutiveFailuresThreshold: 2, streamFirstContentTimeoutMs: 30000, streamInactivityTimeoutMs: 30000, streamToolCallIdleTimeoutMs: 60000 },
+  { key: 'custom', labelKey: 'env.runtimeCbPresetCustom' as const, windowSize: 10, failureThreshold: 0.50, consecutiveFailuresThreshold: 3, streamFirstContentTimeoutMs: 60000, streamInactivityTimeoutMs: 60000, streamToolCallIdleTimeoutMs: 180000 },
 ]
+
+// 历史图片轮次限制
+const historicalImageLimit = ref(0)
 
 const matchPreset = () => {
   for (const p of presets) {
@@ -114,9 +118,9 @@ const fetchConfig = async () => {
     form.windowSize = data.windowSize ?? 10
     form.failureThreshold = data.failureThreshold ?? 0.5
     form.consecutiveFailuresThreshold = data.consecutiveFailuresThreshold ?? 3
-    form.streamFirstContentTimeoutMs = data.streamFirstContentTimeoutMs && data.streamFirstContentTimeoutMs >= 5000 ? data.streamFirstContentTimeoutMs : 30000
-    form.streamInactivityTimeoutMs = data.streamInactivityTimeoutMs && data.streamInactivityTimeoutMs >= 1000 ? data.streamInactivityTimeoutMs : 20000
-    form.streamToolCallIdleTimeoutMs = data.streamToolCallIdleTimeoutMs && data.streamToolCallIdleTimeoutMs >= 1000 ? data.streamToolCallIdleTimeoutMs : 30000
+    form.streamFirstContentTimeoutMs = data.streamFirstContentTimeoutMs && data.streamFirstContentTimeoutMs >= 5000 ? data.streamFirstContentTimeoutMs : 60000
+    form.streamInactivityTimeoutMs = data.streamInactivityTimeoutMs && data.streamInactivityTimeoutMs >= 1000 ? data.streamInactivityTimeoutMs : 60000
+    form.streamToolCallIdleTimeoutMs = data.streamToolCallIdleTimeoutMs && data.streamToolCallIdleTimeoutMs >= 30000 ? data.streamToolCallIdleTimeoutMs : 180000
     matchPreset()
   } catch (e) {
     showMessage(t('env.runtimeCbLoadFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
@@ -125,9 +129,28 @@ const fetchConfig = async () => {
   }
 }
 
+const fetchHistoricalImageLimit = async () => {
+  const url = await buildApiUrl('/api/settings/historical-image-turn-limit')
+  if (!url) return
+
+  try {
+    const adminKey = await GetAdminAccessKey()
+    const resp = await fetch(url, {
+      headers: { 'x-api-key': adminKey },
+    })
+    if (resp.ok) {
+      const data = await resp.json()
+      historicalImageLimit.value = data.historicalImageTurnLimit ?? 0
+    }
+  } catch {
+    // 非关键功能，静默忽略
+  }
+}
+
 const saveConfig = async () => {
-  const url = await buildApiUrl('/api/settings/circuit-breaker')
-  if (!url) {
+  const cbUrl = await buildApiUrl('/api/settings/circuit-breaker')
+  const imgUrl = await buildApiUrl('/api/settings/historical-image-turn-limit')
+  if (!cbUrl) {
     showMessage(t('env.runtimeCbNoBackend'), 'error')
     return
   }
@@ -136,21 +159,35 @@ const saveConfig = async () => {
   clearMessages()
   try {
     const adminKey = await GetAdminAccessKey()
-    const resp = await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': adminKey },
-      body: JSON.stringify({
-        windowSize: form.windowSize,
-        failureThreshold: form.failureThreshold,
-        consecutiveFailuresThreshold: form.consecutiveFailuresThreshold,
-        streamFirstContentTimeoutMs: form.streamFirstContentTimeoutMs,
-        streamInactivityTimeoutMs: form.streamInactivityTimeoutMs,
-        streamToolCallIdleTimeoutMs: form.streamToolCallIdleTimeoutMs,
+    const promises: Promise<Response>[] = [
+      fetch(cbUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': adminKey },
+        body: JSON.stringify({
+          windowSize: form.windowSize,
+          failureThreshold: form.failureThreshold,
+          consecutiveFailuresThreshold: form.consecutiveFailuresThreshold,
+          streamFirstContentTimeoutMs: form.streamFirstContentTimeoutMs,
+          streamInactivityTimeoutMs: form.streamInactivityTimeoutMs,
+          streamToolCallIdleTimeoutMs: form.streamToolCallIdleTimeoutMs,
+        }),
       }),
-    })
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({}))
-      throw new Error(body.error || `HTTP ${resp.status}`)
+    ]
+    if (imgUrl) {
+      promises.push(
+        fetch(imgUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': adminKey },
+          body: JSON.stringify({ limit: historicalImageLimit.value }),
+        }),
+      )
+    }
+    const results = await Promise.all(promises)
+    for (const resp of results) {
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${resp.status}`)
+      }
     }
     showMessage(t('env.runtimeCbSaved'), 'success')
   } catch (e) {
@@ -161,7 +198,10 @@ const saveConfig = async () => {
 }
 
 onMounted(() => {
-  if (status.value.running) fetchConfig()
+  if (status.value.running) {
+    fetchConfig()
+    fetchHistoricalImageLimit()
+  }
 })
 </script>
 
@@ -200,7 +240,7 @@ onMounted(() => {
     </CardHeader>
 
     <CardContent class="space-y-4">
-      <!-- Sliders - 三列并排 -->
+      <!-- Sliders - 三列并排：基础参数 -->
       <div class="flex mb-4">
         <!-- 滑动窗口大小 -->
         <div class="flex-1 px-3">
@@ -317,14 +357,14 @@ onMounted(() => {
           <input
             type="range"
             :value="form.streamToolCallIdleTimeoutMs"
-            :min="1000"
-            :max="180000"
+            :min="30000"
+            :max="300000"
             step="1000"
             class="cb-slider w-full"
             :disabled="!status.running"
             @input="onSliderChange('streamToolCallIdleTimeoutMs', $event)"
           />
-          <div class="flex justify-between text-xs text-muted-foreground"><span>1s</span><span>180s</span></div>
+          <div class="flex justify-between text-xs text-muted-foreground"><span>30s</span><span>300s</span></div>
         </div>
       </div>
 
@@ -340,6 +380,26 @@ onMounted(() => {
         >
           {{ t(p.labelKey) }}
         </Button>
+      </div>
+
+      <!-- 历史图片轮次限制 -->
+      <div class="border-t border-border pt-4 mt-4">
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <p class="text-sm font-medium">{{ t('env.historicalImageTurnLimitTitle') }}</p>
+            <p class="text-xs text-muted-foreground mt-0.5">{{ t('env.historicalImageTurnLimitHint') }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-muted-foreground">{{ t('env.historicalImageTurnLimitLabel') }}</span>
+            <input
+              v-model.number="historicalImageLimit"
+              type="number"
+              min="0"
+              class="w-20 h-8 rounded border border-input bg-background px-2 text-sm text-center"
+              :disabled="!status.running"
+            />
+          </div>
+        </div>
       </div>
     </CardContent>
   </Card>

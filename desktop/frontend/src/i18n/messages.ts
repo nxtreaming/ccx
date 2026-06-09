@@ -427,6 +427,10 @@ export type MessageKey =
   | 'env.runtimeCbLoadFailed'
   | 'env.runtimeCbNoBackend'
   | 'env.runtimeCbServiceStopped'
+  | 'env.historicalImageTurnLimitTitle'
+  | 'env.historicalImageTurnLimitLabel'
+  | 'env.historicalImageTurnLimitHint'
+  | 'env.historicalImageTurnLimitSaved'
   | 'env.groupMetricsPersistence'
   | 'env.groupMetricsPersistenceDesc'
   | 'env.fieldMetricsPersistenceEnabled'
@@ -1131,6 +1135,10 @@ export const messages: Record<SupportedLocale, Messages> = {
     'env.runtimeCbLoadFailed': 'Failed to load: {error}',
     'env.runtimeCbNoBackend': 'Backend service not running. Start the service first.',
     'env.runtimeCbServiceStopped': 'Service is stopped. Start it to configure runtime parameters.',
+    'env.historicalImageTurnLimitTitle': 'Historical Image Turn Limit',
+    'env.historicalImageTurnLimitLabel': 'Max history turns for image context',
+    'env.historicalImageTurnLimitHint': 'Limit the number of previous conversation turns included when sending image context to upstream. 0 = no limit.',
+    'env.historicalImageTurnLimitSaved': 'Historical image turn limit saved.',
     'env.groupMetricsPersistence': 'Metrics persistence config',
     'env.groupMetricsPersistenceDesc': 'Control SQLite metrics persistence and data retention.',
     'env.fieldMetricsPersistenceEnabled': 'Enable metrics persistence',
@@ -1832,6 +1840,10 @@ export const messages: Record<SupportedLocale, Messages> = {
     'env.runtimeCbLoadFailed': '加载失败：{error}',
     'env.runtimeCbNoBackend': '后端服务未运行，请先启动服务',
     'env.runtimeCbServiceStopped': '服务已停止，启动后可配置运行时参数',
+    'env.historicalImageTurnLimitTitle': '历史图片轮次限制',
+    'env.historicalImageTurnLimitLabel': '图片上下文最大历史轮次',
+    'env.historicalImageTurnLimitHint': '发送图片上下文时包含的历史对话轮次上限。0 = 不限制。',
+    'env.historicalImageTurnLimitSaved': '历史图片轮次限制已保存',
     'env.groupMetricsPersistence': '指标持久化配置',
     'env.groupMetricsPersistenceDesc': '控制 SQLite 指标持久化与数据保留。',
     'env.fieldMetricsPersistenceEnabled': '启用指标持久化',
