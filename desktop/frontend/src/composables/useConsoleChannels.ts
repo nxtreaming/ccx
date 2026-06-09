@@ -95,7 +95,11 @@ async function doRefresh(tab: ChannelType) {
     }
     refreshError.value = ''
   } catch (e) {
-    refreshError.value = e instanceof Error ? e.message : String(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    // 网络层 TypeError 包装为友好提示
+    refreshError.value = msg.includes('Failed to fetch')
+      ? '服务未运行或网络不可达，请检查后端是否已启动'
+      : msg
   }
 }
 

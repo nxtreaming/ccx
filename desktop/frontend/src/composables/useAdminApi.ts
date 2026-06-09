@@ -64,7 +64,16 @@ async function request<T = unknown>(
     init.body = JSON.stringify(body)
   }
 
-  const resp = await fetch(url, init)
+  let resp: Response
+  try {
+    resp = await fetch(url, init)
+  } catch (e) {
+    throw new AdminApiError(
+      '服务未运行或网络不可达，请检查后端是否已启动',
+      0,
+      e,
+    )
+  }
 
   if (!resp.ok) {
     let errBody: unknown
