@@ -105,7 +105,6 @@ const handleMigrate = () => {
 const handleTroubleshoot = async () => {
   actionError.value = ''
   try {
-    await loadAgentStatuses()
     await runCodexTroubleshooting()
   } catch (error) {
     actionError.value = error instanceof Error ? error.message : String(error)
