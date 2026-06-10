@@ -39,6 +39,7 @@
 
             <v-btn type="submit" color="primary" block size="large" class="mt-4" :loading="authStore.authLoading">
               {{ t('app.auth.submit') }}
+              <span class="ml-1.5 text-xs opacity-60">Enter</span>
             </v-btn>
           </v-form>
 
@@ -619,8 +620,8 @@
         </v-card-text>
         <v-card-actions>
           <v-spacer/>
-          <v-btn variant="text" @click="dialogStore.closeAddKeyModal()">{{ t('app.actions.cancel') }}</v-btn>
-          <v-btn :disabled="!dialogStore.newApiKey.trim()" color="primary" variant="elevated" @click="addApiKey">{{ t('app.actions.add') }}</v-btn>
+          <v-btn variant="text" @click="dialogStore.closeAddKeyModal()">{{ t('app.actions.cancel') }} <span class="ml-1.5 text-xs opacity-60">Esc</span></v-btn>
+          <v-btn :disabled="!dialogStore.newApiKey.trim()" color="primary" variant="elevated" @click="addApiKey">{{ t('app.actions.add') }} <span class="ml-1.5 text-xs opacity-60">Enter</span></v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -637,9 +638,11 @@
           <v-spacer/>
           <v-btn variant="text" @click="dialogStore.resolveConfirm(false)">
             {{ dialogStore.confirmDialogCancelText || t('app.actions.cancel') }}
+            <span class="ml-1.5 text-xs opacity-60">Esc</span>
           </v-btn>
           <v-btn :color="dialogStore.confirmDialogColor" variant="elevated" @click="dialogStore.resolveConfirm(true)">
             {{ dialogStore.confirmDialogConfirmText || t('app.actions.confirm') }}
+            <span class="ml-1.5 text-xs opacity-60">{{ isMac ? '⌘Enter' : 'Ctrl+Enter' }}</span>
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -1871,6 +1874,40 @@ const handleCircuitBreakerKeydown = (event: KeyboardEvent) => {
   }
 }
 
+// 添加API密钥弹窗键盘快捷键
+const handleAddKeyKeydown = (event: KeyboardEvent) => {
+  if (!dialogStore.showAddKeyModal) return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    dialogStore.closeAddKeyModal()
+    return
+  }
+
+  // Enter 确认添加
+  if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+    event.preventDefault()
+    addApiKey()
+  }
+}
+
+// 通用确认弹窗键盘快捷键
+const handleConfirmKeydown = (event: KeyboardEvent) => {
+  if (!dialogStore.showConfirmDialog) return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    dialogStore.resolveConfirm(false)
+    return
+  }
+
+  // Cmd/Ctrl+Enter 确认
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+    event.preventDefault()
+    dialogStore.resolveConfirm(true)
+  }
+}
+
 // 主题管理
 const toggleDarkMode = () => {
   const newMode = preferencesStore.darkModePreference === 'dark' ? 'light' : 'dark'
@@ -2119,9 +2156,11 @@ const handlePref = () => {
 }
 mediaQuery?.addEventListener('change', handlePref)
 
-// 注册调校台键盘快捷键（setup 阶段注册，onUnmounted 清理）
+// 注册弹窗键盘快捷键（setup 阶段注册，onUnmounted 清理）
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', handleCircuitBreakerKeydown)
+  window.addEventListener('keydown', handleAddKeyKeydown)
+  window.addEventListener('keydown', handleConfirmKeydown)
 }
 
 // 初始化
@@ -2251,6 +2290,8 @@ onUnmounted(() => {
   mediaQuery?.removeEventListener('change', handlePref)
   if (typeof window !== 'undefined') {
     window.removeEventListener('keydown', handleCircuitBreakerKeydown)
+    window.removeEventListener('keydown', handleAddKeyKeydown)
+    window.removeEventListener('keydown', handleConfirmKeydown)
   }
 })
 </script>

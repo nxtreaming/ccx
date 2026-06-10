@@ -133,9 +133,11 @@
         <v-spacer />
         <v-btn v-if="step < STEP_COUNT - 1" color="primary" variant="flat" append-icon="mdi-arrow-right" @click="next">
           {{ t('guide.next') }}
+          <span class="ml-1.5 text-xs opacity-60">Enter</span>
         </v-btn>
         <v-btn v-else color="primary" variant="flat" prepend-icon="mdi-check" @click="close">
           {{ t('guide.gotIt') }}
+          <span class="ml-1.5 text-xs opacity-60">Enter</span>
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -143,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 
 import ChannelStatusBadge from './ChannelStatusBadge.vue'
 import { useI18n } from '../i18n'
@@ -187,6 +189,34 @@ function next() {
 function close() {
   emit('update:modelValue', false)
 }
+
+// 键盘快捷键：ESC 关闭，Enter 下一步/完成
+const handleKeydown = (event: KeyboardEvent) => {
+  if (!props.modelValue) return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    close()
+    return
+  }
+
+  if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+    event.preventDefault()
+    if (step.value < STEP_COUNT - 1) {
+      next()
+    } else {
+      close()
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <style scoped>
