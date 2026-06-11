@@ -133,7 +133,7 @@ const conversations = ref<ConversationInfo[]>([])
 const overrides = ref<Record<string, SequenceOverrideInfo>>({})
 const kindFilter = ref('')
 const searchQuery = ref('')
-const overrideDuration = ref(0) // 0=系统默认, -1=永不恢复, >0=秒数
+const overrideDuration = ref(1800) // 默认 30min（对齐 OVERRIDE_TTL_MINUTES=30）
 const nowMs = ref(Date.now())
 const masonryEl = ref<HTMLElement | null>(null)
 const masonryColumnCount = ref(1)
@@ -207,11 +207,14 @@ const visibleConversations = computed(() => {
 const overrideCount = computed(() => Object.keys(overrides.value).length)
 
 const durationOptions = computed(() => [
-  { title: t('cockpit.durationDefault'), value: 0 },
+  { title: t('cockpit.durationDefault'), value: 1800 },
   { title: '15 min', value: 900 },
-  { title: '30 min', value: 1800 },
   { title: '1 hour', value: 3600 },
   { title: '2 hours', value: 7200 },
+  { title: '4 hours', value: 14400 },
+  { title: '8 hours', value: 28800 },
+  { title: '12 hours', value: 43200 },
+  { title: '24 hours', value: 86400 },
   { title: t('cockpit.durationNever'), value: -1 },
 ])
 
@@ -349,8 +352,7 @@ function toggleExpand(id: string) {
 
 async function handleSetOverride(convId: string, sequence: ChannelSequenceEntry[]) {
   try {
-    const duration = overrideDuration.value || undefined
-    await api.setConversationOverride(convId, sequence, duration)
+    await api.setConversationOverride(convId, sequence, overrideDuration.value)
     await fetchConversations()
   } catch (e) {
     console.error('[ConversationDashboard] set override error:', e)

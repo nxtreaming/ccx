@@ -22,7 +22,7 @@ export const idMessages: Record<MessageKey, string> = {
     'cockpit.overrideActivePerpetual': 'Urutan channel kustom aktif (tidak akan otomatis berakhir sampai dipulihkan manual)',
     'cockpit.restoreDefault': 'Pulihkan urutan default',
     'cockpit.overrideDuration': 'Durasi override',
-    'cockpit.durationDefault': 'Default sistem',
+    'cockpit.durationDefault': '30 min (default)',
     'cockpit.durationNever': 'Tidak pernah',
     'cockpit.empty': 'Belum ada sesi aktif. Percakapan akan muncul di radar saat request melewati gateway.',
     'cockpit.noMatches': 'Tidak ada percakapan yang cocok dengan filter.',

@@ -22,7 +22,7 @@ export const enMessages: Record<MessageKey, string> = {
     'cockpit.overrideActivePerpetual': 'Custom channel order active (will not expire until manually restored)',
     'cockpit.restoreDefault': 'Restore default order',
     'cockpit.overrideDuration': 'Override duration',
-    'cockpit.durationDefault': 'System default',
+    'cockpit.durationDefault': '30 min (default)',
     'cockpit.durationNever': 'Never',
     'cockpit.empty': 'No active flights. Conversations will appear on radar when requests pass through the gateway.',
     'cockpit.noMatches': 'No conversations match the current filter.',
