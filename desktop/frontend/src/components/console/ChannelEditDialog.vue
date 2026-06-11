@@ -1720,7 +1720,7 @@ function buildCurrentPayload() {
                         <div class="space-y-1">
                           <p class="text-[10px] font-medium text-foreground">{{ tf('console.form.rateLimitSectionLabel', '主动限速') }}</p>
                           <p class="text-[10px] leading-4 text-muted-foreground mb-2">{{ tf('console.form.rateLimitSectionHint', '在请求发往上游前主动限流，避免触发上游 429。') }}</p>
-                          <div class="grid grid-cols-2 gap-2">
+                          <div class="grid grid-cols-3 gap-2 mb-3">
                             <div class="space-y-1">
                               <Label class="text-[10px]">{{ tf('console.form.rateLimitRpmLabel', 'RPM') }}</Label>
                               <Input v-model="form.rateLimitRpm" type="number" class="h-7 text-xs" placeholder="留空=不限" />
@@ -1736,12 +1736,12 @@ function buildCurrentPayload() {
                               <Input v-model="form.rateLimitMaxConcurrent" type="number" class="h-7 text-xs" placeholder="留空=不限" />
                               <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitMaxConcurrentHint', '并发上限') }}</p>
                             </div>
-                            <div class="flex items-center gap-2 pt-4">
-                              <Switch v-model="form.rateLimitAutoFromHeaders" />
-                              <div class="space-y-0.5">
-                                <Label class="text-[10px]">{{ tf('console.form.rateLimitAutoFromHeadersLabel', '自动学习') }}</Label>
-                                <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitAutoFromHeadersHint', '解析上游限流头') }}</p>
-                              </div>
+                          </div>
+                          <div class="flex items-center gap-2">
+                            <Switch v-model="form.rateLimitAutoFromHeaders" />
+                            <div class="space-y-0.5">
+                              <Label class="text-[10px]">{{ tf('console.form.rateLimitAutoFromHeadersLabel', '自动学习上游限速') }}</Label>
+                              <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitAutoFromHeadersHint', '解析 Retry-After / x-ratelimit-* 响应头动态调整 cooldown。') }}</p>
                             </div>
                           </div>
                         </div>
