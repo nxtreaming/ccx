@@ -124,12 +124,12 @@ const migrateResult = ref<MigrateCodexSessionsResult | null>(null)
 const migrateError = ref('')
 
 const isClaudeProvider = (value?: string): value is AgentProvider => {
-  return value === 'ccx' || value === 'deepseek' || value === 'mimo' || value === 'compshare' || value === 'runapi' || value === 'tencent-lkeap' || value === 'kimi' || value === 'glm' || value === 'minimax' || value === 'dashscope' || value === 'openrouter' || value === 'modelscope' || value === 'opencode-zen' || value === 'opencode-go' || value === 'xfyun'
+  return value === 'ccx' || value === 'deepseek' || value === 'mimo' || value === 'compshare' || value === 'runapi' || value === 'tencent-lkeap' || value === 'kimi' || value === 'glm' || value === 'minimax' || value === 'dashscope' || value === 'openrouter' || value === 'modelscope' || value === 'opencode-zen' || value === 'opencode-go' || value === 'xfyun' || value === 'volc-ark' || value === 'qianfan'
 }
 
 // Codex 支持快捷模式/插件模式切换的第三方 provider
 const isCodexThirdPartyWithMode = (provider?: string) => {
-  return provider === 'dashscope' || provider === 'runapi' || provider === 'opencode-zen' || provider === 'opencode-go' || provider === 'xfyun'
+  return provider === 'deepseek' || provider === 'mimo' || provider === 'compshare' || provider === 'runapi' || provider === 'kimi' || provider === 'glm' || provider === 'minimax' || provider === 'dashscope' || provider === 'openrouter' || provider === 'modelscope' || provider === 'opencode-zen' || provider === 'opencode-go' || provider === 'xfyun' || provider === 'tencent-lkeap' || provider === 'volc-ark' || provider === 'qianfan'
 }
 
 const claudeProviderLabel = (value?: string) => {
@@ -177,6 +177,12 @@ const claudeTargetBaseUrl = () => {
       return 'https://opencode.ai/zen/go'
     case 'xfyun':
       return 'https://maas-api.cn-huabei-1.xf-yun.com/anthropic'
+    case 'tencent-lkeap':
+      return 'https://api.lkeap.cloud.tencent.com/plan/anthropic'
+    case 'volc-ark':
+      return 'https://ark.cn-beijing.volces.com/api/coding'
+    case 'qianfan':
+      return 'https://qianfan.baidubce.com/anthropic/coding'
     default:
       return ''
   }
@@ -188,18 +194,38 @@ const codexTargetBaseUrl = () => {
       return agentStatuses.value.codex?.targetBaseUrl || t('agent.localGateway')
     case 'openai':
       return 'https://api.openai.com/v1'
+    case 'deepseek':
+      return 'https://api.deepseek.com/v1'
+    case 'mimo':
+      return 'https://api.xiaomimimo.com/v1'
+    case 'compshare':
+      return 'https://cp.compshare.cn/v1'
+    case 'kimi':
+      return 'https://api.moonshot.cn/v1'
+    case 'glm':
+      return 'https://open.bigmodel.cn/api/paas/v4'
+    case 'minimax':
+      return 'https://api.minimax.chat/v1'
     case 'dashscope':
       return 'https://dashscope.aliyuncs.com/compatible-mode/v1'
     case 'runapi':
       return 'https://runapi.co/v1'
     case 'openrouter':
       return 'https://openrouter.ai/api/v1'
+    case 'modelscope':
+      return 'https://api-inference.modelscope.cn/v1'
     case 'opencode-zen':
       return 'https://opencode.ai/zen/v1'
     case 'opencode-go':
       return 'https://opencode.ai/zen/go/v1'
     case 'xfyun':
       return 'https://maas-api.cn-huabei-1.xf-yun.com/v2'
+    case 'tencent-lkeap':
+      return 'https://api.lkeap.cloud.tencent.com/plan/v3'
+    case 'volc-ark':
+      return 'https://ark.cn-beijing.volces.com/api/coding/v3'
+    case 'qianfan':
+      return 'https://qianfan.baidubce.com/v2/coding'
     default:
       return ''
   }
@@ -211,14 +237,22 @@ const openCodeTargetBaseUrl = () => {
       return agentStatuses.value.opencode?.targetBaseUrl || t('agent.localGateway')
     case 'deepseek':
       return 'https://api.deepseek.com/v1'
+    case 'mimo':
+      return 'https://api.xiaomimimo.com/v1'
+    case 'compshare':
+      return 'https://cp.compshare.cn/v1'
     case 'kimi':
       return 'https://api.moonshot.cn/v1'
     case 'glm':
       return 'https://open.bigmodel.cn/api/paas/v4'
     case 'minimax':
-      return 'https://api.minimaxi.com/v1'
+      return 'https://api.minimax.chat/v1'
     case 'runapi':
       return 'https://runapi.co/v1'
+    case 'dashscope':
+      return 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    case 'xfyun':
+      return 'https://maas-api.cn-huabei-1.xf-yun.com/v2'
     case 'openrouter':
       return 'https://openrouter.ai/api/v1'
     case 'modelscope':
@@ -227,6 +261,12 @@ const openCodeTargetBaseUrl = () => {
       return 'https://opencode.ai/zen/v1'
     case 'opencode-go':
       return 'https://opencode.ai/zen/go/v1'
+    case 'tencent-lkeap':
+      return 'https://api.lkeap.cloud.tencent.com/plan/v3'
+    case 'volc-ark':
+      return 'https://ark.cn-beijing.volces.com/api/coding/v3'
+    case 'qianfan':
+      return 'https://qianfan.baidubce.com/v2/coding'
     default:
       return ''
   }

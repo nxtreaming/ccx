@@ -94,6 +94,9 @@ const keyPlaceholder = (provider: AgentProvider) => {
         <option value="minimax">{{ t('agent.provider.minimaxDirect') }}</option>
         <option value="dashscope">{{ t('agent.provider.dashscopeDirect') }}</option>
         <option value="xfyun">{{ t('agent.provider.xfyunDirect') }}</option>
+        <option value="tencent-lkeap">{{ t('agent.provider.tencentLkeapDirect') }}</option>
+        <option value="volc-ark">{{ t('agent.provider.volcArkDirect') }}</option>
+        <option value="qianfan">{{ t('agent.provider.qianfanDirect') }}</option>
         <option value="openrouter">{{ t('agent.provider.openrouterDirect') }}</option>
         <option value="modelscope">{{ t('agent.provider.modelscopeDirect') }}</option>
         <option value="opencode-zen">{{ t('agent.provider.opencodeZenDirect') }}</option>

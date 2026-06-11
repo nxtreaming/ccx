@@ -34,6 +34,10 @@ const (
 	ProviderCustom      = "custom"
 	ProviderOpenAI      = "openai"
 	ProviderXFyun       = "xfyun"
+	ProviderTencentLkeap = "tencent-lkeap"
+	ProviderVolcArk      = "volc-ark"
+	ProviderQianfan      = "qianfan"
+	ProviderModelScope   = "modelscope"
 
 	deepSeekClaudeBaseURL            = "https://api.deepseek.com/anthropic"
 	defaultMiMoBaseURL               = "https://api.xiaomimimo.com/anthropic"
@@ -48,6 +52,13 @@ const (
 	openCodeGoClaudeBaseURL          = "https://opencode.ai/zen/go"
 	xfyunClaudeBaseURL               = "https://maas-api.cn-huabei-1.xf-yun.com/anthropic"
 	xfyunCodexBaseURL                = "https://maas-api.cn-huabei-1.xf-yun.com/v2"
+	tencentLkeapClaudeBaseURL        = "https://api.lkeap.cloud.tencent.com/plan/anthropic"
+	volcArkClaudeBaseURL             = "https://ark.cn-beijing.volces.com/api/coding"
+	qianfanClaudeBaseURL             = "https://qianfan.baidubce.com/anthropic/coding"
+	tencentLkeapCodexBaseURL         = "https://api.lkeap.cloud.tencent.com/plan/v3"
+	volcArkCodexBaseURL              = "https://ark.cn-beijing.volces.com/api/coding/v3"
+	qianfanCodexBaseURL              = "https://qianfan.baidubce.com/v2/coding"
+	modelScopeCodexBaseURL           = "https://api-inference.modelscope.cn/v1"
 	stateVersion                     = 1
 
 	openCodeZenBaseURL = "https://opencode.ai/zen/v1"
@@ -819,6 +830,18 @@ func (s *Service) applyCodexOpenAI(apiKey string) error {
 
 func codexResponsesBaseURL(provider string) (string, bool) {
 	switch provider {
+	case ProviderDeepSeek:
+		return "https://api.deepseek.com/v1", true
+	case ProviderMiMo:
+		return "https://api.xiaomimimo.com/v1", true
+	case ProviderCompshare:
+		return "https://cp.compshare.cn/v1", true
+	case ProviderKimi:
+		return "https://api.moonshot.cn/v1", true
+	case ProviderGLM:
+		return "https://open.bigmodel.cn/api/paas/v4", true
+	case ProviderMiniMax:
+		return "https://api.minimax.chat/v1", true
 	case ProviderDashScope:
 		return "https://dashscope.aliyuncs.com/compatible-mode/v1", true
 	case ProviderRunAPI:
@@ -829,6 +852,14 @@ func codexResponsesBaseURL(provider string) (string, bool) {
 		return "https://opencode.ai/zen/go/v1", true
 	case ProviderXFyun:
 		return xfyunCodexBaseURL, true
+	case ProviderTencentLkeap:
+		return tencentLkeapCodexBaseURL, true
+	case ProviderVolcArk:
+		return volcArkCodexBaseURL, true
+	case ProviderQianfan:
+		return qianfanCodexBaseURL, true
+	case ProviderModelScope:
+		return modelScopeCodexBaseURL, true
 	default:
 		return "", false
 	}
@@ -902,6 +933,18 @@ experimental_bearer_token = %q
 // codexThirdPartyQuickBaseURL 通过 openai_base_url 反查已知第三方 provider。
 func codexThirdPartyQuickBaseURL(baseURL string) (string, bool) {
 	switch {
+	case strings.Contains(baseURL, "deepseek.com"):
+		return ProviderDeepSeek, true
+	case strings.Contains(baseURL, "xiaomimimo.com"):
+		return ProviderMiMo, true
+	case strings.Contains(baseURL, "cp.compshare.cn"):
+		return ProviderCompshare, true
+	case strings.Contains(baseURL, "moonshot.cn"):
+		return ProviderKimi, true
+	case strings.Contains(baseURL, "bigmodel.cn"):
+		return ProviderGLM, true
+	case strings.Contains(baseURL, "minimax.chat") || strings.Contains(baseURL, "minimaxi.com"):
+		return ProviderMiniMax, true
 	case strings.Contains(baseURL, "dashscope.aliyuncs.com"):
 		return ProviderDashScope, true
 	case strings.Contains(baseURL, "runapi.co"):
@@ -912,6 +955,14 @@ func codexThirdPartyQuickBaseURL(baseURL string) (string, bool) {
 		return ProviderOpenCodeZen, true
 	case strings.Contains(baseURL, "xf-yun.com"):
 		return ProviderXFyun, true
+	case strings.Contains(baseURL, "lkeap.cloud.tencent.com"):
+		return ProviderTencentLkeap, true
+	case strings.Contains(baseURL, "volces.com"):
+		return ProviderVolcArk, true
+	case strings.Contains(baseURL, "baidubce.com"):
+		return ProviderQianfan, true
+	case strings.Contains(baseURL, "modelscope.cn"):
+		return ProviderModelScope, true
 	default:
 		return "", false
 	}
@@ -1396,6 +1447,12 @@ func normalizeClaudeProvider(provider string) string {
 		return ProviderOpenCodeGo
 	case ProviderXFyun:
 		return ProviderXFyun
+	case ProviderTencentLkeap:
+		return ProviderTencentLkeap
+	case ProviderVolcArk:
+		return ProviderVolcArk
+	case ProviderQianfan:
+		return ProviderQianfan
 	default:
 		return provider
 	}
@@ -1407,23 +1464,43 @@ func normalizeCodexProvider(provider string) string {
 		return ProviderOpenAI
 	case ProviderCCX:
 		return ProviderCCX
-	case ProviderDashScope:
-		return ProviderDashScope
+	case ProviderDeepSeek:
+		return ProviderDeepSeek
+	case ProviderMiMo:
+		return ProviderMiMo
+	case ProviderCompshare:
+		return ProviderCompshare
 	case ProviderRunAPI:
 		return ProviderRunAPI
+	case ProviderKimi:
+		return ProviderKimi
+	case ProviderGLM:
+		return ProviderGLM
+	case ProviderMiniMax:
+		return ProviderMiniMax
+	case ProviderDashScope:
+		return ProviderDashScope
 	case ProviderOpenCodeZen:
 		return ProviderOpenCodeZen
 	case ProviderOpenCodeGo:
 		return ProviderOpenCodeGo
 	case ProviderXFyun:
 		return ProviderXFyun
+	case ProviderTencentLkeap:
+		return ProviderTencentLkeap
+	case ProviderVolcArk:
+		return ProviderVolcArk
+	case ProviderQianfan:
+		return ProviderQianfan
+	case ProviderModelScope:
+		return ProviderModelScope
 	default:
 		return ProviderCustom
 	}
 }
 
 func isCodexThirdPartyProvider(provider string) bool {
-	return provider == ProviderDashScope || provider == ProviderRunAPI || provider == ProviderOpenCodeZen || provider == ProviderOpenCodeGo || provider == ProviderXFyun
+	return provider == ProviderDeepSeek || provider == ProviderMiMo || provider == ProviderCompshare || provider == ProviderRunAPI || provider == ProviderKimi || provider == ProviderGLM || provider == ProviderMiniMax || provider == ProviderDashScope || provider == ProviderOpenCodeZen || provider == ProviderOpenCodeGo || provider == ProviderXFyun || provider == ProviderTencentLkeap || provider == ProviderVolcArk || provider == ProviderQianfan || provider == ProviderModelScope
 }
 
 func resolveClaudeProvider(req ApplyAgentConfigRequest, port int, accessKey string) (string, string, string, error) {
@@ -1535,6 +1612,36 @@ func resolveClaudeProvider(req ApplyAgentConfigRequest, port int, accessKey stri
 			return "", "", "", fmt.Errorf("讯飞星辰 API Key 不能为空")
 		}
 		return xfyunClaudeBaseURL, apiKey, "", nil
+	case ProviderTencentLkeap:
+		apiKey := strings.TrimSpace(req.APIKey)
+		if apiKey == "" {
+			return "", "", "", fmt.Errorf("腾讯云 TokenHub API Key 不能为空")
+		}
+		baseURL := strings.TrimSpace(req.BaseURL)
+		if baseURL == "" {
+			baseURL = tencentLkeapClaudeBaseURL
+		}
+		return baseURL, apiKey, "", nil
+	case ProviderVolcArk:
+		apiKey := strings.TrimSpace(req.APIKey)
+		if apiKey == "" {
+			return "", "", "", fmt.Errorf("火山方舟 API Key 不能为空")
+		}
+		baseURL := strings.TrimSpace(req.BaseURL)
+		if baseURL == "" {
+			baseURL = volcArkClaudeBaseURL
+		}
+		return baseURL, apiKey, "", nil
+	case ProviderQianfan:
+		apiKey := strings.TrimSpace(req.APIKey)
+		if apiKey == "" {
+			return "", "", "", fmt.Errorf("百度千帆 API Key 不能为空")
+		}
+		baseURL := strings.TrimSpace(req.BaseURL)
+		if baseURL == "" {
+			baseURL = qianfanClaudeBaseURL
+		}
+		return baseURL, apiKey, "", nil
 	default:
 		return "", "", "", fmt.Errorf("不支持的 Claude Code provider: %s", provider)
 	}
@@ -1569,6 +1676,12 @@ func detectClaudeProvider(baseURL string) string {
 		return ProviderOpenCodeZen
 	case strings.Contains(value, "xf-yun.com"):
 		return ProviderXFyun
+	case strings.Contains(value, "lkeap.cloud.tencent.com"):
+		return ProviderTencentLkeap
+	case strings.Contains(value, "volces.com"):
+		return ProviderVolcArk
+	case strings.Contains(value, "baidubce.com"):
+		return ProviderQianfan
 	default:
 		return ProviderCustom
 	}
@@ -2510,10 +2623,18 @@ func normalizeOpenCodeProvider(provider string) string {
 		return ProviderMiniMax
 	case ProviderDashScope:
 		return ProviderDashScope
+	case ProviderXFyun:
+		return ProviderXFyun
 	case ProviderOpenCodeZen:
 		return ProviderOpenCodeZen
 	case ProviderOpenCodeGo:
 		return ProviderOpenCodeGo
+	case ProviderTencentLkeap:
+		return ProviderTencentLkeap
+	case ProviderVolcArk:
+		return ProviderVolcArk
+	case ProviderQianfan:
+		return ProviderQianfan
 	default:
 		return provider
 	}
@@ -2521,7 +2642,7 @@ func normalizeOpenCodeProvider(provider string) string {
 
 func isOpenCodeDirectProvider(provider string) bool {
 	switch provider {
-	case ProviderDeepSeek, ProviderMiMo, ProviderCompshare, ProviderRunAPI, ProviderKimi, ProviderGLM, ProviderMiniMax, ProviderDashScope, ProviderOpenCodeZen, ProviderOpenCodeGo:
+	case ProviderDeepSeek, ProviderMiMo, ProviderCompshare, ProviderRunAPI, ProviderKimi, ProviderGLM, ProviderMiniMax, ProviderDashScope, ProviderXFyun, ProviderOpenCodeZen, ProviderOpenCodeGo, ProviderTencentLkeap, ProviderVolcArk, ProviderQianfan:
 		return true
 	default:
 		return false
@@ -2543,13 +2664,21 @@ func openCodeDirectBaseURL(provider string) (string, bool) {
 	case ProviderGLM:
 		return "https://open.bigmodel.cn/api/paas/v4", true
 	case ProviderMiniMax:
-		return "https://api.minimaxi.com/v1", true
+		return "https://api.minimax.chat/v1", true
 	case ProviderDashScope:
 		return "https://dashscope.aliyuncs.com/compatible-mode/v1", true
+	case ProviderXFyun:
+		return xfyunCodexBaseURL, true
 	case ProviderOpenCodeZen:
 		return openCodeZenBaseURL, true
 	case ProviderOpenCodeGo:
 		return openCodeGoBaseURL, true
+	case ProviderTencentLkeap:
+		return tencentLkeapCodexBaseURL, true
+	case ProviderVolcArk:
+		return volcArkCodexBaseURL, true
+	case ProviderQianfan:
+		return qianfanCodexBaseURL, true
 	default:
 		return "", false
 	}
@@ -2573,10 +2702,18 @@ func openCodeDirectLabel(provider string) string {
 		return "MiniMax"
 	case ProviderDashScope:
 		return "DashScope"
+	case ProviderXFyun:
+		return "讯飞星辰"
 	case ProviderOpenCodeZen:
 		return "OpenCode Zen"
 	case ProviderOpenCodeGo:
 		return "OpenCode Go"
+	case ProviderTencentLkeap:
+		return "腾讯云 TokenHub"
+	case ProviderVolcArk:
+		return "火山方舟"
+	case ProviderQianfan:
+		return "百度千帆"
 	default:
 		return provider
 	}

@@ -321,6 +321,9 @@ export type MessageKey =
   | 'agent.provider.openrouterDirect'
   | 'agent.provider.modelscopeDirect'
   | 'agent.provider.xfyunDirect'
+  | 'agent.provider.tencentLkeapDirect'
+  | 'agent.provider.volcArkDirect'
+  | 'agent.provider.qianfanDirect'
   | 'agent.hasOwnApiKey'
   | 'agent.promo'
   | 'agent.planPayAsYouGo'
@@ -1059,6 +1062,9 @@ export const messages: Record<SupportedLocale, Messages> = {
     'agent.provider.openrouterDirect': 'OpenRouter direct',
     'agent.provider.modelscopeDirect': 'ModelScope direct',
     'agent.provider.xfyunDirect': 'iFlytek Xinghuo MAAS direct',
+    'agent.provider.tencentLkeapDirect': 'Tencent TokenHub direct',
+    'agent.provider.volcArkDirect': 'Volc Ark direct',
+    'agent.provider.qianfanDirect': 'Qianfan direct',
     'agent.hasOwnApiKey': 'I have my own API key',
     'agent.promo': 'Register via promotion link to claim the exclusive perk',
     'agent.planPayAsYouGo': 'Pay-as-you-go',
@@ -1794,6 +1800,9 @@ export const messages: Record<SupportedLocale, Messages> = {
     'agent.provider.openrouterDirect': 'OpenRouter 直连',
     'agent.provider.modelscopeDirect': 'ModelScope 直连',
     'agent.provider.xfyunDirect': '讯飞星辰直连',
+    'agent.provider.tencentLkeapDirect': '腾讯云 TokenHub 直连',
+    'agent.provider.volcArkDirect': '火山方舟直连',
+    'agent.provider.qianfanDirect': '百度千帆直连',
     'agent.hasOwnApiKey': '我有自己的 API Key',
     'agent.promo': '通过推广链接注册领取专属福利',
     'agent.planPayAsYouGo': '按量',
