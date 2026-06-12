@@ -622,3 +622,49 @@ func (cm *ConfigManager) GetPromotedImagesChannel() (int, bool) {
 	}
 	return -1, false
 }
+
+// UpdateImagesModelMapping 更新指定 Images 上游的单个模型映射
+func (cm *ConfigManager) UpdateImagesModelMapping(index int, sourcePattern, targetModel, reasoning string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if index < 0 || index >= len(cm.config.ImagesUpstream) {
+		return fmt.Errorf("无效的上游索引: %d", index)
+	}
+
+	upstream := &cm.config.ImagesUpstream[index]
+
+	// 检查 sourcePattern 是否存在
+	if upstream.ModelMapping == nil {
+		return fmt.Errorf("源模型匹配模式 '%s' 不存在", sourcePattern)
+	}
+	if _, exists := upstream.ModelMapping[sourcePattern]; !exists {
+		return fmt.Errorf("源模型匹配模式 '%s' 不存在", sourcePattern)
+	}
+
+	// 验证 reasoning 值（Images 一般不使用 reasoning，但为了接口一致性保留）
+	if reasoning != "" && reasoning != "off" && reasoning != "low" && reasoning != "medium" && reasoning != "high" && reasoning != "xhigh" {
+		return fmt.Errorf("无效的 reasoning 级别: %s", reasoning)
+	}
+
+	// 更新 ModelMapping
+	upstream.ModelMapping[sourcePattern] = targetModel
+
+	// 更新 ReasoningMapping
+	if reasoning != "" {
+		if upstream.ReasoningMapping == nil {
+			upstream.ReasoningMapping = make(map[string]string)
+		}
+		upstream.ReasoningMapping[sourcePattern] = reasoning
+	} else if upstream.ReasoningMapping != nil {
+		delete(upstream.ReasoningMapping, sourcePattern)
+	}
+
+	if err := cm.saveConfigLocked(cm.config); err != nil {
+		return err
+	}
+
+	log.Printf("[Config-Images] 已更新上游 [%d] %s 的模型映射: %s -> %s (reasoning: %s)",
+		index, upstream.Name, sourcePattern, targetModel, reasoning)
+	return nil
+}

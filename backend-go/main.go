@@ -568,6 +568,7 @@ func main() {
 		apiGroup.POST("/messages/channels/:id/keys/:apiKey/top", messages.MoveApiKeyToTop(cfgManager))
 		apiGroup.POST("/messages/channels/:id/keys/:apiKey/bottom", messages.MoveApiKeyToBottom(cfgManager))
 		apiGroup.POST("/messages/channels/:id/keys/restore", handlers.RestoreBlacklistedKey(cfgManager, "Messages"))
+		apiGroup.PUT("/messages/channels/:id/mappings", messages.UpdateModelMapping(cfgManager))
 
 		// Messages 多渠道调度 API
 		apiGroup.POST("/messages/channels/reorder", messages.ReorderChannels(cfgManager))
@@ -601,6 +602,7 @@ func main() {
 		apiGroup.POST("/responses/channels/:id/keys/:apiKey/top", responses.MoveApiKeyToTop(cfgManager))
 		apiGroup.POST("/responses/channels/:id/keys/:apiKey/bottom", responses.MoveApiKeyToBottom(cfgManager))
 		apiGroup.POST("/responses/channels/:id/keys/restore", handlers.RestoreBlacklistedKey(cfgManager, "Responses"))
+		apiGroup.PUT("/responses/channels/:id/mappings", responses.UpdateModelMapping(cfgManager))
 
 		// Responses 多渠道调度 API
 		apiGroup.POST("/responses/channels/reorder", responses.ReorderChannels(cfgManager))
@@ -632,6 +634,7 @@ func main() {
 		apiGroup.POST("/gemini/channels/:id/keys/:apiKey/top", gemini.MoveApiKeyToTop(cfgManager))
 		apiGroup.POST("/gemini/channels/:id/keys/:apiKey/bottom", gemini.MoveApiKeyToBottom(cfgManager))
 		apiGroup.POST("/gemini/channels/:id/keys/restore", handlers.RestoreBlacklistedKey(cfgManager, "Gemini"))
+		apiGroup.PUT("/gemini/channels/:id/mappings", gemini.UpdateModelMapping(cfgManager))
 
 		// Gemini 多渠道调度 API
 		apiGroup.POST("/gemini/channels/reorder", gemini.ReorderChannels(cfgManager))
@@ -663,6 +666,7 @@ func main() {
 		apiGroup.POST("/chat/channels/:id/keys/:apiKey/top", chat.MoveApiKeyToTop(cfgManager))
 		apiGroup.POST("/chat/channels/:id/keys/:apiKey/bottom", chat.MoveApiKeyToBottom(cfgManager))
 		apiGroup.POST("/chat/channels/:id/keys/restore", handlers.RestoreBlacklistedKey(cfgManager, "Chat"))
+		apiGroup.PUT("/chat/channels/:id/mappings", chat.UpdateModelMapping(cfgManager))
 
 		// Chat 多渠道调度 API
 		apiGroup.POST("/chat/channels/reorder", chat.ReorderChannels(cfgManager))
@@ -695,6 +699,7 @@ func main() {
 		apiGroup.POST("/images/channels/:id/keys/:apiKey/top", images.MoveApiKeyToTop(cfgManager))
 		apiGroup.POST("/images/channels/:id/keys/:apiKey/bottom", images.MoveApiKeyToBottom(cfgManager))
 		apiGroup.POST("/images/channels/:id/keys/restore", handlers.RestoreBlacklistedKey(cfgManager, "Images"))
+		apiGroup.PUT("/images/channels/:id/mappings", images.UpdateModelMapping(cfgManager))
 
 		// Images 多渠道调度 API
 		apiGroup.POST("/images/channels/reorder", images.ReorderChannels(cfgManager))
