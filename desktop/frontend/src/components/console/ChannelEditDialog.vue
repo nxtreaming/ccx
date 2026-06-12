@@ -131,7 +131,6 @@ const form = reactive({
   streamToolCallIdleTimeoutEnabled: false,
   streamToolCallIdleTimeoutMs: 30000,
   rateLimitRpm: '' as string | number,
-  rateLimitBurst: '' as string | number,
   rateLimitMaxConcurrent: '' as string | number,
   rateLimitAutoFromHeaders: false,
   routePrefix: '',
@@ -188,7 +187,6 @@ function resetForm() {
   form.streamToolCallIdleTimeoutEnabled = false
   form.streamToolCallIdleTimeoutMs = 30000
   form.rateLimitRpm = ''
-  form.rateLimitBurst = ''
   form.rateLimitMaxConcurrent = ''
   form.rateLimitAutoFromHeaders = false
   form.routePrefix = ''
@@ -253,7 +251,6 @@ function populateFromChannel(ch: Channel) {
   form.streamToolCallIdleTimeoutEnabled = !!(ch.streamToolCallIdleTimeoutMs && ch.streamToolCallIdleTimeoutMs > 0)
   form.streamToolCallIdleTimeoutMs = ch.streamToolCallIdleTimeoutMs && ch.streamToolCallIdleTimeoutMs > 0 ? ch.streamToolCallIdleTimeoutMs : 30000
   form.rateLimitRpm = ch.rateLimitRpm || ''
-  form.rateLimitBurst = ch.rateLimitBurst || ''
   form.rateLimitMaxConcurrent = ch.rateLimitMaxConcurrent || ''
   form.rateLimitAutoFromHeaders = !!ch.rateLimitAutoFromHeaders
   form.routePrefix = ch.routePrefix || ''
@@ -444,8 +441,6 @@ function buildSubmitPayload() {
   if (isEditMode.value && props.channel?.rateLimitRpm && !payload.rateLimitRpm) {
     payload.rateLimitRpm = 0
   }
-  if (isEditMode.value && props.channel?.rateLimitBurst && !payload.rateLimitBurst) {
-    payload.rateLimitBurst = 0
   }
   if (isEditMode.value && props.channel?.rateLimitMaxConcurrent && !payload.rateLimitMaxConcurrent) {
     payload.rateLimitMaxConcurrent = 0
@@ -1128,7 +1123,6 @@ function buildCurrentPayload() {
     streamInactivityTimeoutMs: form.streamInactivityTimeoutEnabled ? form.streamInactivityTimeoutMs : undefined,
     streamToolCallIdleTimeoutMs: form.streamToolCallIdleTimeoutEnabled ? form.streamToolCallIdleTimeoutMs : undefined,
     rateLimitRpm: form.rateLimitRpm,
-    rateLimitBurst: form.rateLimitBurst,
     rateLimitMaxConcurrent: form.rateLimitMaxConcurrent,
     rateLimitAutoFromHeaders: form.rateLimitAutoFromHeaders,
     routePrefix: form.routePrefix,
@@ -1720,16 +1714,11 @@ function buildCurrentPayload() {
                         <div class="space-y-1">
                           <p class="text-[10px] font-medium text-foreground">{{ tf('console.form.rateLimitSectionLabel', '主动限速') }}</p>
                           <p class="text-[10px] leading-4 text-muted-foreground mb-2">{{ tf('console.form.rateLimitSectionHint', '在请求发往上游前主动限流，避免触发上游 429。') }}</p>
-                          <div class="grid grid-cols-3 gap-2 mb-3">
+                          <div class="grid grid-cols-2 gap-2 mb-3">
                             <div class="space-y-1">
                               <Label class="text-[10px]">{{ tf('console.form.rateLimitRpmLabel', 'RPM') }}</Label>
                               <Input v-model="form.rateLimitRpm" type="number" class="h-7 text-xs" placeholder="留空=不限" />
                               <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitRpmHint', '每分钟请求数上限') }}</p>
-                            </div>
-                            <div class="space-y-1">
-                              <Label class="text-[10px]">{{ tf('console.form.rateLimitBurstLabel', '突发容量') }}</Label>
-                              <Input v-model="form.rateLimitBurst" type="number" class="h-7 text-xs" placeholder="留空=自动" />
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitBurstHint', '令牌桶容量') }}</p>
                             </div>
                             <div class="space-y-1">
                               <Label class="text-[10px]">{{ tf('console.form.rateLimitMaxConcurrentLabel', '最大并发') }}</Label>
