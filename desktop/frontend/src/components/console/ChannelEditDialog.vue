@@ -1071,7 +1071,11 @@ async function fetchTargetModels() {
     console.log('[fetchTargetModels] 成功获取模型', targetModelOptions.value.length)
   } catch (e) {
     console.error('[fetchTargetModels] 请求失败', e)
-    fetchedModelsError.value = e instanceof Error ? e.message : String(e)
+    fetchedModelsError.value = e instanceof Error 
+      ? e.message 
+      : typeof e === 'object' && e !== null 
+        ? JSON.stringify(e, null, 2) 
+        : String(e)
   } finally {
     fetchingModels.value = false
   }
