@@ -176,6 +176,15 @@ function fromSelectValue(value: string): string {
             <Label class="text-xs font-medium">自动熔断/黑名单余额异常 Key</Label>
             <Switch :model-value="form.autoBlacklistBalance" @update:model-value="updateField('autoBlacklistBalance', $event)" />
           </div>
+          <div class="flex items-center justify-between">
+            <div class="space-y-0.5">
+              <Label class="text-xs font-medium">自动学习上游限速</Label>
+              <p class="text-[10px] leading-4 text-muted-foreground">
+                解析 Retry-After / x-ratelimit-* 响应头动态调整 cooldown
+              </p>
+            </div>
+            <Switch :model-value="form.rateLimitAutoFromHeaders" @update:model-value="updateField('rateLimitAutoFromHeaders', $event)" />
+          </div>
         </div>
       </div>
 
@@ -242,15 +251,6 @@ function fromSelectValue(value: string): string {
               placeholder="不设限制"
               @update:model-value="updateField('rateLimitMaxConcurrent', $event)"
             />
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <Switch :model-value="form.rateLimitAutoFromHeaders" @update:model-value="updateField('rateLimitAutoFromHeaders', $event)" />
-          <div class="space-y-0.5">
-            <Label class="text-[10px]">自动学习上游限速</Label>
-            <p class="text-[10px] leading-4 text-muted-foreground">
-              解析 Retry-After / x-ratelimit-* 响应头动态调整 cooldown。
-            </p>
           </div>
         </div>
       </div>
