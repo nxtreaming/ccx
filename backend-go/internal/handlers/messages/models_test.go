@@ -337,7 +337,10 @@ func TestModelsHandler_MergesChatModels(t *testing.T) {
 		ids = append(ids, model.ID)
 	}
 
-	want := []string{"model-messages", "model-shared", "model-responses", "model-chat"}
+	// 合并后的模型按智能规则排序：
+	// model-messages、model-responses、model-chat 都不匹配特殊规则，按字母序
+	// model-shared 去重后只出现一次
+	want := []string{"model-chat", "model-messages", "model-responses", "model-shared"}
 	if len(ids) != len(want) {
 		t.Fatalf("ids len = %d, want %d, ids=%v", len(ids), len(want), ids)
 	}
@@ -345,6 +348,61 @@ func TestModelsHandler_MergesChatModels(t *testing.T) {
 		if ids[i] != want[i] {
 			t.Fatalf("ids[%d] = %q, want %q, ids=%v", i, ids[i], want[i], ids)
 		}
+	}
+}
+
+func TestModelSortKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		models   []string
+		expected []string
+	}{
+		{
+			name:     "Claude 系列按能力排序",
+			models:   []string{"claude-haiku-4-5-20251001", "claude-opus-4-8", "claude-fable-5", "claude-sonnet-4-6"},
+			expected: []string{"claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"},
+		},
+		{
+			name:     "Kimi 系列按能力排序",
+			models:   []string{"kimi-k2.6", "kimi-for-coding", "kimi-k2.7", "kimi-k2.5"},
+			expected: []string{"kimi-for-coding", "kimi-k2.7", "kimi-k2.6", "kimi-k2.5"},
+		},
+		{
+			name:     "DeepSeek 系列排序",
+			models:   []string{"deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v3"},
+			expected: []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v3"},
+		},
+		{
+			name:     "混合模型智能排序",
+			models:   []string{"gpt-4", "claude-opus-4-8", "kimi-k2.7", "claude-fable-5", "deepseek-v4-pro"},
+			expected: []string{"claude-fable-5", "claude-opus-4-8", "kimi-k2.7", "deepseek-v4-pro", "gpt-4"},
+		},
+		{
+			name:     "通用模型按字母序",
+			models:   []string{"model-z", "model-a", "model-m"},
+			expected: []string{"model-a", "model-m", "model-z"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entries := make([]ModelEntry, len(tt.models))
+			for i, id := range tt.models {
+				entries[i] = ModelEntry{ID: id, Object: "model"}
+			}
+
+			result := mergeModels(entries)
+
+			if len(result) != len(tt.expected) {
+				t.Fatalf("结果数量 = %d, want %d", len(result), len(tt.expected))
+			}
+
+			for i, expected := range tt.expected {
+				if result[i].ID != expected {
+					t.Errorf("result[%d] = %q, want %q", i, result[i].ID, expected)
+				}
+			}
+		})
 	}
 }
 

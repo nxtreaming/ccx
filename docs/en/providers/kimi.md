@@ -33,15 +33,27 @@ For Claude Code CLI and other tools using Claude Messages protocol.
 
 | Request Model | Redirects To |
 |---------------|--------------|
-| `opus` | `kimi-k2.6` |
-| `sonnet` | `kimi-k2.6` |
-| `haiku` | `kimi-k2.5` |
+| `opus` | `kimi-k2.7` |
+| `sonnet` | `kimi-k2.7` |
+| `haiku` | `kimi-k2.7` |
+
+#### Model Mapping (Coding Plan)
+
+Coding Plan endpoint uses `kimi-for-coding` model:
+
+| Request Model | Redirects To |
+|---------------|--------------|
+| `opus` | `kimi-for-coding` |
+| `sonnet` | `kimi-for-coding` |
+| `haiku` | `kimi-for-coding` |
 
 ## Available Models
 
 | Model | Description |
 |-------|-------------|
-| `kimi-k2.6` | Latest, native multimodal Agentic model, 1T total / 32B active |
+| `kimi-k2.7` | Latest pay-as-you-go model, native multimodal Agentic model |
+| `kimi-for-coding` | Coding Plan specialized model, optimized for programming tasks |
+| `kimi-k2.6` | Multimodal Agentic model, 1T total / 32B active |
 | `kimi-k2.5` | Multimodal Agentic model |
 | `moonshot-v1-auto` | Auto-selects context length (legacy) |
 | `moonshot-v1-128k` | 128K context (legacy) |
@@ -54,4 +66,5 @@ For Claude Code CLI and other tools using Claude Messages protocol.
 
 - Kimi OpenAI-compatible Base URL is `https://api.moonshot.ai/v1` (note: `moonshot.ai` not `moonshot.cn`)
 - Coding endpoint is `https://api.kimi.com/coding/`, suitable for Claude Code CLI
-- `kimi-k2.6` is the latest recommended model with long-context coding support
+- `kimi-k2.7` is the latest pay-as-you-go model with long-context coding support
+- `kimi-for-coding` is the Coding Plan specialized model, optimized for programming tasks

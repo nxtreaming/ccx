@@ -196,6 +196,27 @@ func TestBuildPayload(t *testing.T) {
 			wantStripCodex: true,
 		},
 		{
+			name:           "kimi coding plan responses",
+			req:            CreateChannelRequest{Provider: ProviderKimi, Target: TargetResponses, PlanID: "coding-openai-chat", APIKey: "sk-test"},
+			wantBaseURL:    "https://api.kimi.com/coding/v1",
+			wantService:    "openai",
+			wantCodex:      true,
+			wantStripCodex: true,
+			wantModelMap:   map[string]string{"codex": "kimi-for-coding", "gpt": "kimi-for-coding"},
+		},
+		{
+			name:        "kimi coding plan messages",
+			req:         CreateChannelRequest{Provider: ProviderKimi, Target: TargetMessages, PlanID: "coding-anthropic", APIKey: "sk-test"},
+			wantBaseURL: "https://api.kimi.com/coding",
+			wantService: "claude",
+			wantModelMap: map[string]string{
+				"fable":  "kimi-for-coding",
+				"haiku":  "kimi-for-coding",
+				"opus":   "kimi-for-coding",
+				"sonnet": "kimi-for-coding",
+			},
+		},
+		{
 			name:          "glm chat",
 			req:           CreateChannelRequest{Provider: ProviderGLM, Target: TargetChat, APIKey: "sk-test"},
 			wantBaseURL:   "https://open.bigmodel.cn/api/coding/paas/v4#",
@@ -348,7 +369,7 @@ func TestBuildPayload(t *testing.T) {
 			wantService:    "openai",
 			wantCodex:      true,
 			wantStripCodex: true,
-			wantModelMap:   map[string]string{"codex": "kimi-k2.6", "gpt": "kimi-k2.6"},
+			wantModelMap:   map[string]string{"codex": "kimi-k2.7", "gpt": "kimi-k2.7"},
 		},
 		{
 			name:           "glm responses auto-review redirect",

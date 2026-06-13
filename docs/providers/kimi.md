@@ -44,13 +44,25 @@
 
 | 请求模型 | 重定向到 |
 |----------|----------|
-| `opus` | `kimi-k2.6` |
-| `sonnet` | `kimi-k2.6` |
-| `haiku` | `kimi-k2.5` |
+| `opus` | `kimi-k2.7` |
+| `sonnet` | `kimi-k2.7` |
+| `haiku` | `kimi-k2.7` |
+
+#### 模型映射（Coding Plan）
+
+Coding Plan 专用端点使用 `kimi-for-coding` 模型：
+
+| 请求模型 | 重定向到 |
+|----------|----------|
+| `opus` | `kimi-for-coding` |
+| `sonnet` | `kimi-for-coding` |
+| `haiku` | `kimi-for-coding` |
 
 ### 模型白名单（可选）
 
 ```
+kimi-k2.7
+kimi-for-coding
 kimi-k2.6
 kimi-k2.5
 moonshot-v1-auto
@@ -61,7 +73,9 @@ moonshot-v1-128k
 
 | 模型 | 说明 |
 |------|------|
-| `kimi-k2.6` | 最新推荐，原生多模态 Agentic 模型，1T 总参 / 32B 激活 |
+| `kimi-k2.7` | 最新按量计费模型，原生多模态 Agentic 模型 |
+| `kimi-for-coding` | Coding Plan 专用模型，针对编程场景优化 |
+| `kimi-k2.6` | 多模态 Agentic 模型，1T 总参 / 32B 激活 |
 | `kimi-k2.5` | 多模态 Agentic 模型 |
 | `moonshot-v1-auto` | 自动选择上下文长度（旧一代） |
 | `moonshot-v1-128k` | 128K 上下文（旧一代） |
@@ -74,5 +88,6 @@ moonshot-v1-128k
 
 - Kimi OpenAI 兼容 API 的 Base URL 为 `https://api.moonshot.ai/v1`（注意是 `moonshot.ai` 不是 `moonshot.cn`）
 - 编码专用端点为 `https://api.kimi.com/coding/`，适合 Claude Code CLI 场景
-- `kimi-k2.6` 是当前最新推荐模型，支持长上下文编码
+- `kimi-k2.7` 是当前最新按量计费模型，支持长上下文编码
+- `kimi-for-coding` 是 Coding Plan 专用模型，针对编程任务优化
 - Kimi 支持联网搜索等扩展功能

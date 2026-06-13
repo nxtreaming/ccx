@@ -168,7 +168,101 @@ func parseGeminiModelsResponse(body []byte) []ModelEntry {
 	return entries
 }
 
-// mergeModels 合并多个模型列表并去重（按 ID）
+// modelSortKey 返回模型的排序键，用于智能排序
+// Claude 系列模型按能力排序，其他模型按字母序
+func modelSortKey(id string) string {
+	lowerID := strings.ToLower(id)
+
+	// Claude 原生模型排序（按能力从高到低）
+	claudeModels := map[string]string{
+		"claude-fable-5":                "001-fable",
+		"claude-mythos-5":               "002-mythos",
+		"claude-opus-4-8":               "003-opus-4-8",
+		"claude-opus-4-7":               "004-opus-4-7",
+		"claude-opus-4-6":               "005-opus-4-6",
+		"claude-sonnet-4-6":             "006-sonnet-4-6",
+		"claude-haiku-4-5-20251001":     "007-haiku-4-5",
+		"claude-3-5-sonnet-20241022":    "008-sonnet-3-5",
+		"claude-3-5-haiku-20241022":     "009-haiku-3-5",
+		"claude-3-opus-20240229":        "010-opus-3",
+		"claude-3-sonnet-20240229":      "011-sonnet-3",
+		"claude-3-haiku-20240307":       "012-haiku-3",
+	}
+	if key, ok := claudeModels[lowerID]; ok {
+		return key
+	}
+
+	// 通用 Claude tier 匹配（用于自定义名称）
+	if strings.Contains(lowerID, "fable") {
+		return "001-fable-" + lowerID
+	}
+	if strings.Contains(lowerID, "mythos") {
+		return "002-mythos-" + lowerID
+	}
+	if strings.Contains(lowerID, "opus") {
+		return "003-opus-" + lowerID
+	}
+	if strings.Contains(lowerID, "sonnet") {
+		return "006-sonnet-" + lowerID
+	}
+	if strings.Contains(lowerID, "haiku") {
+		return "007-haiku-" + lowerID
+	}
+
+	// Kimi 系列排序（按能力从高到低）
+	kimiModels := map[string]string{
+		"kimi-for-coding": "100-kimi-for-coding",
+		"kimi-k2.7":       "101-kimi-k2.7",
+		"kimi-k2.6":       "102-kimi-k2.6",
+		"kimi-k2.5":       "103-kimi-k2.5",
+		"kimi-k2":         "104-kimi-k2",
+	}
+	if key, ok := kimiModels[lowerID]; ok {
+		return key
+	}
+
+	// DeepSeek 系列排序
+	deepseekModels := map[string]string{
+		"deepseek-v4-pro":   "200-deepseek-v4-pro",
+		"deepseek-v4-flash": "201-deepseek-v4-flash",
+		"deepseek-v3":       "202-deepseek-v3",
+	}
+	if key, ok := deepseekModels[lowerID]; ok {
+		return key
+	}
+
+	// GLM 系列排序
+	if strings.HasPrefix(lowerID, "glm-5") {
+		return "300-glm-5-" + lowerID
+	}
+	if strings.HasPrefix(lowerID, "glm-4") {
+		return "301-glm-4-" + lowerID
+	}
+
+	// MiMo 系列排序
+	if strings.HasPrefix(lowerID, "mimo-v2.5-pro") {
+		return "400-mimo-v2.5-pro"
+	}
+	if strings.HasPrefix(lowerID, "mimo-v2.5") {
+		return "401-mimo-v2.5"
+	}
+
+	// GPT 系列排序
+	gptModels := map[string]string{
+		"gpt-4o":      "500-gpt-4o",
+		"gpt-4-turbo": "501-gpt-4-turbo",
+		"gpt-4":       "502-gpt-4",
+		"gpt-3.5":     "503-gpt-3.5",
+	}
+	if key, ok := gptModels[lowerID]; ok {
+		return key
+	}
+
+	// 其他模型按原始 ID 字母序
+	return "999-" + lowerID
+}
+
+// mergeModels 合并多个模型列表并去重（按 ID），然后按智能规则排序
 func mergeModels(modelLists ...[]ModelEntry) []ModelEntry {
 	seen := make(map[string]bool)
 	var result []ModelEntry
@@ -181,6 +275,11 @@ func mergeModels(modelLists ...[]ModelEntry) []ModelEntry {
 			}
 		}
 	}
+
+	// 按智能排序键排序
+	sort.Slice(result, func(i, j int) bool {
+		return modelSortKey(result[i].ID) < modelSortKey(result[j].ID)
+	})
 
 	return result
 }

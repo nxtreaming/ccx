@@ -826,8 +826,8 @@ const codexResponsesPresets: Record<string, {
   },
   kimi: {
     mapping: [
-      { source: 'codex', target: 'kimi-k2.6' },
-      { source: 'gpt', target: 'kimi-k2.6' },
+      { source: 'codex', target: 'kimi-k2.7' },
+      { source: 'gpt', target: 'kimi-k2.7' },
     ],
     reasoningParamStyle: '',
     codexNativeToolPassthrough: false,

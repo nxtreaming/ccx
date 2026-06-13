@@ -520,7 +520,7 @@ func BuildPayload(req CreateChannelRequest) (ChannelPayload, error) {
 		Priority:    1,
 		Status:      "active",
 	}
-	applyTargetDefaults(&payload, preset.ID, target)
+	applyTargetDefaults(&payload, preset.ID, target, planID)
 	return payload, nil
 }
 
@@ -921,6 +921,49 @@ func boolRef(value bool) *bool {
 	return &value
 }
 
+// applyKimiPlanOverrides 根据 Kimi planID 覆盖模型映射。
+// coding plan 使用 kimi-for-coding，普通按量使用 kimi-k2.7。
+func applyKimiPlanOverrides(config channelTargetConfig, target string, planID string) channelTargetConfig {
+	isCodingPlan := strings.HasPrefix(planID, "coding-")
+
+	if target == TargetMessages {
+		if isCodingPlan {
+			// Coding Plan: 使用 kimi-for-coding
+			config.ModelMapping = map[string]string{
+				"fable":  "kimi-for-coding",
+				"haiku":  "kimi-for-coding",
+				"opus":   "kimi-for-coding",
+				"sonnet": "kimi-for-coding",
+			}
+		} else {
+			// 普通按量: 使用 kimi-k2.7
+			config.ModelMapping = map[string]string{
+				"fable":  "kimi-k2.7",
+				"haiku":  "kimi-k2.7",
+				"opus":   "kimi-k2.7",
+				"sonnet": "kimi-k2.7",
+			}
+		}
+	} else if target == TargetResponses {
+		if isCodingPlan {
+			// Coding Plan: 使用 kimi-for-coding
+			config.ModelMapping = map[string]string{
+				"codex": "kimi-for-coding",
+				"gpt":   "kimi-for-coding",
+			}
+		} else {
+			// 普通按量: 使用 kimi-k2.7
+			config.ModelMapping = map[string]string{
+				"codex": "kimi-k2.7",
+				"gpt":   "kimi-k2.7",
+			}
+		}
+	}
+
+	return config
+}
+
+
 func applyChannelTargetConfig(payload *ChannelPayload, config channelTargetConfig) {
 	payload.ModelMapping = maps.Clone(config.ModelMapping)
 	payload.ReasoningMapping = maps.Clone(config.ReasoningMapping)
@@ -944,7 +987,7 @@ func applyChannelTargetConfig(payload *ChannelPayload, config channelTargetConfi
 	}
 }
 
-func applyTargetDefaults(payload *ChannelPayload, provider string, target string) {
+func applyTargetDefaults(payload *ChannelPayload, provider string, target string, planID string) {
 	switch target {
 	case TargetMessages:
 		payload.ServiceType = "claude"
@@ -975,5 +1018,11 @@ func applyTargetDefaults(payload *ChannelPayload, provider string, target string
 	if !ok {
 		return
 	}
+
+	// Kimi 根据 planID 选择不同的模型映射
+	if provider == ProviderKimi {
+		config = applyKimiPlanOverrides(config, target, planID)
+	}
+
 	applyChannelTargetConfig(payload, config)
 }
