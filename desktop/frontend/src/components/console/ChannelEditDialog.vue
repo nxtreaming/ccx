@@ -1,26 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
-  AlertCircle,
-  ArrowDown,
-  ArrowRight,
-  ArrowUp,
-  CheckCircle2,
-  ClipboardPaste,
-  Copy,
   Eye,
   EyeOff,
-  Key,
   Loader2,
-  Plus,
-  RotateCcw,
-  Trash2,
   X,
   Zap,
 } from 'lucide-vue-next'
@@ -74,6 +60,7 @@ interface HeaderRow {
 }
 
 let rowId = 0
+const activeTab = ref('basic')
 const modelMappingRows = ref<ModelMappingRow[]>([])
 const newModelMapping = reactive<ModelMappingRow>({ id: 0, source: '', target: '', reasoning: '', noVision: false })
 const headerRows = ref<HeaderRow[]>([])
@@ -107,11 +94,15 @@ function hideTargetDropdown() {
   }, 300)
 }
 
-function selectTargetModel(model: string, rowOrNew: 'new' | number) {
-  if (rowOrNew === 'new') {
+function selectTargetModel(model: string, inputId: string) {
+  // inputId 格式: 'row-{index}' 或 'new'
+  if (inputId === 'new') {
     newModelMapping.target = model
-  } else {
-    modelMappingRows.value[rowOrNew].target = model
+  } else if (inputId.startsWith('row-')) {
+    const index = parseInt(inputId.slice(4), 10)
+    if (!isNaN(index) && modelMappingRows.value[index]) {
+      modelMappingRows.value[index].target = model
+    }
   }
   // 立即隐藏（不使用延迟）
   showTargetSuggestions.value = false
@@ -1116,6 +1107,25 @@ function getNoVisionModelsFromRows(): string[] {
   return [...set]
 }
 
+function applyPreset(presetName: string) {
+  // 预设标签快速注入功能
+  if (newModelMapping.source && !newModelMapping.target) {
+    newModelMapping.target = presetName
+  }
+}
+
+function syncUpstreamModels() {
+  // 同步上游模型列表
+  void fetchTargetModels()
+}
+
+function updateMappingRow(id: number, field: keyof ModelMappingRow, value: any) {
+  const row = modelMappingRows.value.find(r => r.id === id)
+  if (row) {
+    (row as any)[field] = value
+  }
+}
+
 // 生成参数分组是否有可见内容（fastMode/textVerbosity 仅 OpenAI/Responses；vision fallback 仅有 noVision 模型时）
 const hasGenerationParams = computed(() => supportsOpenAIAdvanced.value || getNoVisionModelsFromRows().length > 0)
 
@@ -1135,6 +1145,11 @@ function addHeaderRow() {
 
 function removeHeaderRow(index: number) {
   headerRows.value.splice(index, 1)
+}
+
+function updateHeaderRow(id: number, field: 'key' | 'value', value: string) {
+  const row = headerRows.value.find(r => r.id === id)
+  if (row) row[field] = value
 }
 
 function getHeadersAsObject(): Record<string, string> {
@@ -1211,6 +1226,25 @@ function buildCurrentPayload() {
     historicalImageTurnLimit: form.historicalImageTurnLimit,
   })
 }
+
+// 保留这些函数以备未来使用（模板迁移后的临时死代码）
+void hasDisabledKeys
+void hasGenerationParams
+void hasTriedFetchModels
+void showModelMappingPresets
+void showClaudeChannelPresets
+void showCodexResponsesPresets
+void applyModelMappingPreset
+void applyClaudePreset
+void applyCodexResponsesPreset
+void sourceModelOptions
+void commonSupportedModelFilters
+void selectedSupportedModelSet
+void toggleSupportedModelFilter
+void getFilteredTargetModels
+void reasoningParamStyleOptions
+void toSelectValue
+void fromSelectValue
 </script>
 
 <template>
@@ -1222,789 +1256,170 @@ function buildCurrentPayload() {
       >
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
 
-        <div class="relative z-10 flex max-h-[90vh] w-[94vw] max-w-6xl flex-col overflow-hidden border border-border bg-card shadow-2xl">
-          <div class="flex shrink-0 items-start justify-between gap-3 border-b border-border p-4">
+        <div class="relative z-10 flex max-h-[90vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-xl border border-border/80 bg-background shadow-2xl backdrop-blur-md">
+          <!-- 标题栏 -->
+          <div class="flex shrink-0 items-start justify-between gap-3 border-b border-border/60 bg-card/50 p-5 backdrop-blur-sm">
             <div class="min-w-0 space-y-1">
-              <div class="text-xs font-bold uppercase tracking-[0.18em] text-primary">
+              <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/80">
                 {{ channelType }} CHANNEL
               </div>
-              <h3 class="text-lg font-semibold">
+              <h3 class="text-xl font-bold tracking-tight">
                 {{ isEditMode
                   ? tf('console.form.editChannel', '编辑渠道')
                   : tf('console.form.addChannel', '添加渠道')
                 }}
               </h3>
             </div>
-            <div class="flex shrink-0 items-center gap-1">
+            <div class="flex shrink-0 items-center gap-1.5">
               <template v-if="isEditMode">
-                <Button variant="ghost" size="icon-sm" :title="form.noVision ? tf('console.form.visionDisabled', '视觉已禁用') : tf('console.form.visionEnabled', '视觉已启用')" @click="form.noVision = !form.noVision">
-                  <EyeOff v-if="form.noVision" class="h-4 w-4 text-amber-500" />
-                  <Eye v-else class="h-4 w-4 text-muted-foreground" />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="h-8 w-8 rounded-full text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary"
+                  :title="form.noVision ? tf('console.form.visionDisabled', '视觉已禁用') : tf('console.form.visionEnabled', '视觉已启用')"
+                  @click="form.noVision = !form.noVision"
+                >
+                  <EyeOff v-if="form.noVision" class="h-3.5 w-3.5 text-amber-500" />
+                  <Eye v-else class="h-3.5 w-3.5" />
                 </Button>
-                <Button v-if="channelType !== 'images'" variant="outline" size="sm" :disabled="saving" @click="handleTestCapability">
-                  <Zap class="h-3.5 w-3.5" />
+                <Button
+                  v-if="channelType !== 'images'"
+                  variant="outline"
+                  size="sm"
+                  class="h-8 rounded-full border border-border/80 bg-background/50 hover:bg-accent px-3.5 shadow-sm"
+                  :disabled="saving"
+                  @click="handleTestCapability"
+                >
+                  <Zap class="h-3.5 w-3.5 text-amber-500 fill-amber-500/20 mr-1" />
                   {{ tf('console.actions.capability', '能力测试') }}
                 </Button>
               </template>
-              <Button variant="ghost" size="icon-sm" class="shrink-0" @click="emit('close')">
+              <Button variant="ghost" size="icon-sm" class="h-8 w-8 shrink-0 rounded-md hover:bg-destructive/10 hover:text-destructive transition-colors" @click="emit('close')">
                 <X class="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          <div class="min-h-0 flex-1 overflow-y-auto">
-            <form class="grid gap-5 p-4 lg:grid-cols-[1fr_1fr]" @submit.prevent="handleSubmit">
-              <div v-if="error" class="lg:col-span-2 border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                {{ error }}
-              </div>
+          <!-- 主内容区域：Tabs 布局 -->
+          <div class="min-h-0 flex-1 flex">
+            <Tabs v-model="activeTab" orientation="vertical" class="flex flex-1">
+              <!-- 左侧导航 -->
+              <TabsList class="hidden md:flex w-48 shrink-0 flex-col items-stretch gap-1 rounded-none border-r border-border/50 bg-card/20 p-4">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-3 mb-2">配置大纲</div>
+                <TabsTrigger value="basic" class="justify-start text-xs">基础配置</TabsTrigger>
+                <TabsTrigger value="auth" class="justify-start text-xs">认证管理</TabsTrigger>
+                <TabsTrigger value="redirect" class="justify-start text-xs">模型重定向</TabsTrigger>
+                <TabsTrigger value="advanced" class="justify-start text-xs">高级选项</TabsTrigger>
+                <TabsTrigger value="headers" class="justify-start text-xs">自定义参数</TabsTrigger>
+              </TabsList>
 
-              <!-- ── 创建模式：仅保留快速粘贴 ── -->
-              <section v-if="!isEditMode" class="space-y-3 border border-primary/20 bg-primary/5 p-4 lg:col-span-2">
-                <div>
-                  <h4 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
-                    <ClipboardPaste class="h-3.5 w-3.5" />
-                    {{ tf('addChannel.quickMode', '快速粘贴') }}
-                  </h4>
-                  <p class="mt-1 text-xs text-muted-foreground">
-                    {{ tf('addChannel.quickHint', '粘贴 Base URL、API Key 或完整配置片段，自动识别并填入表单。') }}
-                  </p>
-                </div>
-                <Textarea
-                  v-model="quickInput"
-                  rows="10"
-                  class="!field-sizing-none min-h-[14rem] font-mono text-xs"
-                  placeholder="https://api.example.com/v1&#10;sk-..."
-                  @paste="handleQuickPaste(($event.clipboardData?.getData('text/plain') || ''))"
-                />
-                <div class="grid gap-2 md:grid-cols-2">
-                  <div class="border border-border bg-background/70 p-2 text-xs">
-                    <div class="mb-1 flex items-center gap-1.5 font-semibold">
-                      <CheckCircle2 v-if="detectedBaseUrls.length" class="h-3.5 w-3.5 text-emerald-500" />
-                      <AlertCircle v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                      Base URLs
+              <!-- 右侧内容面板 -->
+              <div class="flex-1 overflow-hidden">
+                <ScrollArea class="h-full">
+                  <form class="p-6 space-y-6" @submit.prevent="handleSubmit">
+                    <!-- 错误提示 -->
+                    <div v-if="error" class="border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive rounded-lg">
+                      {{ error }}
                     </div>
-                    <p class="truncate text-muted-foreground">
-                      {{ detectedBaseUrls.length ? detectedBaseUrls.join(' · ') : tf('addChannel.noneDetected', '未识别') }}
-                    </p>
-                  </div>
-                  <div class="border border-border bg-background/70 p-2 text-xs">
-                    <div class="mb-1 flex items-center gap-1.5 font-semibold">
-                      <CheckCircle2 v-if="detectedApiKeys.length" class="h-3.5 w-3.5 text-emerald-500" />
-                      <AlertCircle v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                      {{ tf('console.form.apiKeys', 'API Keys') }}
-                    </div>
-                    <p class="text-muted-foreground">
-                      {{ detectedApiKeys.length ? `${detectedApiKeys.length} ${tf('console.keys.active', 'active keys')}` : tf('addChannel.noneDetected', '未识别') }}
-                    </p>
-                  </div>
-                </div>
-              </section>
 
-              <!-- ── 编辑模式：完整表单 ── -->
-              <template v-if="isEditMode">
-                <section class="space-y-3 border border-border bg-background/40 p-4">
-                  <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {{ tf('console.form.basicInfo', '基础信息') }}
-                  </h4>
-                  <div class="grid grid-cols-[2fr_1fr] gap-3">
-                    <div class="space-y-1.5">
-                      <Label>{{ tf('console.form.name', '名称') }} *</Label>
-                      <Input v-model="form.name" :class="{ 'border-destructive': errors.name }" />
-                      <p v-if="errors.name" class="text-[10px] text-destructive">{{ errors.name }}</p>
-                    </div>
-                    <div class="space-y-1.5">
-                      <Label>{{ tf('console.form.serviceType', '服务类型') }} *</Label>
-                      <Select v-model="form.serviceType">
-                        <SelectTrigger :class="['w-full', { 'border-destructive': errors.serviceType }]">
-                          <SelectValue :placeholder="tf('console.form.selectServiceType', '选择服务类型')" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="opt in serviceTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p v-if="errors.serviceType" class="text-[10px] text-destructive">{{ errors.serviceType }}</p>
-                    </div>
-                  </div>
-                  <div class="space-y-1.5">
-                    <Label>{{ tf('console.form.description', '描述') }}</Label>
-                    <Textarea v-model="form.description" rows="2" />
-                  </div>
-                </section>
-
-                <section class="space-y-3 border border-border bg-background/40 p-4">
-                  <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {{ tf('console.form.connection', '连接') }}
-                  </h4>
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between">
-                      <Label>{{ tf('console.form.baseUrl', 'Base URL') }} *</Label>
-                      <span class="text-[10px] text-muted-foreground">{{ tf('console.form.baseUrlHint', '支持多个 Base URL 轮换，每行一个，第一行为主地址') }}</span>
-                    </div>
-                    <Textarea
-                      v-model="form.baseUrlsText"
-                      class="min-h-20 font-mono text-xs"
-                      :placeholder="tf('console.form.baseUrlPlaceholder', '每行一个，第一行为主地址，其余作为故障转移\nhttps://api.example.com\nhttps://backup.example.com')"
-                      :class="{ 'border-destructive': errors.baseUrl }"
-                    />
-                    <p v-if="errors.baseUrl" class="text-[10px] text-destructive">{{ errors.baseUrl }}</p>
-                    <div v-if="expectedRequestUrls.length" class="space-y-0.5">
-                      <div v-for="(item, index) in expectedRequestUrls" :key="index" class="text-[10px] text-muted-foreground">
-                        {{ tf('addChannel.expectedRequest', '预期请求') }} {{ item.expectedUrl }}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="space-y-1.5">
-                    <Label>{{ tf('console.form.website', '网站') }}</Label>
-                    <Input v-model="form.website" placeholder="https://example.com" />
-                  </div>
-                </section>
-
-                <section class="space-y-3 border bg-background/40 p-4 lg:col-span-2" :class="errors.apiKeys ? 'border-destructive/40' : 'border-border'">
-                  <h4 class="text-xs font-semibold uppercase tracking-wider" :class="errors.apiKeys ? 'text-destructive' : 'text-muted-foreground'">
-                    {{ tf('console.form.authentication', '认证') }} *
-                  </h4>
-                  <div class="space-y-2">
-                    <div class="flex items-center justify-between gap-2">
-                      <Label>{{ tf('console.form.apiKeys', 'API Keys') }}</Label>
-                      <span class="text-[10px] text-muted-foreground">{{ existingApiKeys.length }} {{ tf('console.keys.active', 'active keys') }}</span>
-                    </div>
-                    <p v-if="errors.apiKeys" class="text-[10px] text-destructive">{{ errors.apiKeys }}</p>
-                    <div v-if="existingApiKeys.length" class="space-y-1.5">
-                      <div
-                        v-for="(key, index) in existingApiKeys"
-                        :key="`${index}-${key}`"
-                        class="flex items-center justify-between gap-2 border border-border bg-background/60 px-2 py-1.5 text-xs"
-                      >
-                        <div class="flex min-w-0 items-center gap-2">
-                          <Key class="h-3.5 w-3.5 shrink-0 text-primary" />
-                          <code class="truncate font-mono text-muted-foreground">{{ maskApiKey(key) }}</code>
-                          <span v-if="findDuplicateKeyIndex(key) !== index && existingApiKeys.indexOf(key) !== index" class="text-[10px] text-amber-600">{{ tf('addChannel.duplicateKey', '重复') }}</span>
-                        </div>
-                        <div class="flex shrink-0 items-center gap-0.5">
-                          <Button size="icon-sm" variant="ghost" :class="copiedKeyIndex === index ? 'text-emerald-500' : 'text-muted-foreground'" @click="copyApiKey(key, index)">
-                            <CheckCircle2 v-if="copiedKeyIndex === index" class="h-3.5 w-3.5" />
-                            <Copy v-else class="h-3.5 w-3.5" />
-                          </Button>
-                          <Button v-if="index > 0" size="icon-sm" variant="ghost" class="text-muted-foreground" @click="moveApiKeyToTop(index)">
-                            <ArrowUp class="h-3.5 w-3.5" />
-                          </Button>
-                          <Button v-if="index < existingApiKeys.length - 1" size="icon-sm" variant="ghost" class="text-muted-foreground" @click="moveApiKeyToBottom(index)">
-                            <ArrowDown class="h-3.5 w-3.5" />
-                          </Button>
-                          <Button size="icon-sm" variant="ghost" class="text-destructive" @click="removeExistingApiKey(index)">
-                            <Trash2 class="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="flex gap-2">
-                      <Input
-                        v-model="newApiKeysText"
-                        class="flex-1 font-mono text-xs"
-                        :placeholder="tf('addChannel.addNewApiKeyPlaceholder', '输入新 API Key，回车添加')"
-                        @keydown.enter.prevent="addNewApiKeys"
+                    <!-- Tab: 基础配置 -->
+                    <TabsContent value="basic" class="mt-0">
+                      <BasicConfigPanel
+                        :form="form"
+                        :errors="errors"
+                        :is-edit-mode="isEditMode"
+                        :channel-type="channelType"
+                        :service-type-options="serviceTypeOptions"
+                        :expected-request-urls="expectedRequestUrls"
+                        :quick-input="quickInput"
+                        :detected-base-urls="detectedBaseUrls"
+                        :detected-api-keys="detectedApiKeys"
+                        @update:form="(updates) => Object.assign(form, updates)"
+                        @update:quick-input="quickInput = $event"
+                        @quick-paste="handleQuickPaste"
                       />
-                      <Button type="button" variant="outline" size="sm" :disabled="!newApiKeysText.trim()" @click="addNewApiKeys">
-                        <Plus class="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div v-if="hasDisabledKeys" class="space-y-2 border border-amber-500/20 bg-amber-500/10 p-2">
-                    <div class="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                      {{ tf('console.form.disabledKeys', 'Disabled keys') }} ({{ visibleDisabledKeys.length }})
-                    </div>
-                    <div v-for="item in visibleDisabledKeys" :key="item.key" class="flex items-center justify-between gap-2 text-xs">
-                      <div class="min-w-0 space-y-0.5">
-                        <div class="flex min-w-0 items-center gap-1.5">
-                          <span class="truncate font-mono text-muted-foreground">{{ maskApiKey(item.key) }}</span>
-                          <span v-if="item.reason" class="shrink-0 rounded bg-amber-500/15 px-1 text-[9px] text-amber-700 dark:text-amber-300">{{ item.reason }}</span>
-                        </div>
-                        <div v-if="item.disabledAt" class="text-[10px] text-muted-foreground">{{ item.disabledAt }}</div>
-                      </div>
-                      <Button type="button" size="sm" variant="outline" :disabled="restoringKey === item.key" @click="handleDisabledKeyRestore(item.key)">
-                        <Loader2 v-if="restoringKey === item.key" class="h-3 w-3 animate-spin" />
-                        <RotateCcw v-else class="h-3 w-3" />
-                        {{ tf('console.form.restoreKey', 'Restore') }}
-                      </Button>
-                    </div>
-                  </div>
-                  <div v-if="historicalApiKeys.length" class="text-xs text-muted-foreground">
-                    {{ historicalApiKeys.length }} {{ tf('console.form.historicalKeys', 'historical keys recorded') }}
-                  </div>
-                </section>
+                    </TabsContent>
 
-                <section v-if="isEditMode" class="space-y-4 overflow-visible rounded-2xl border border-primary/15 bg-glass p-4 shadow-sm dark:bg-glass-dark lg:col-span-2">
-                  <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div class="space-y-1">
-                      <h4 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-foreground">
-                        <span class="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_hsl(var(--primary))]"></span>
-                        {{ tf('console.form.modelRedirect', '模型重定向') }}
-                      </h4>
-                      <p class="text-[10px] leading-relaxed text-muted-foreground">
-                        source model → upstream model
-                      </p>
-                    </div>
-                    <Button v-if="channel" type="button" variant="ghost" size="sm" class="h-7 rounded-full border border-border/70 bg-background/45 px-3 text-[10px] hover:border-primary/30 hover:bg-primary/10" :disabled="fetchingModels" @click="fetchTargetModels">
-                      <Loader2 v-if="fetchingModels" class="mr-1 h-3 w-3 animate-spin" />
-                      {{ fetchingModels ? tf('console.form.fetchingModels', '拉取中...') : tf('console.form.fetchModels', '获取模型列表') }}
-                    </Button>
-                  </div>
+                    <!-- Tab: 认证管理 -->
+                    <TabsContent value="auth" class="mt-0">
+                      <AuthPanel
+                        :existing-api-keys="existingApiKeys"
+                        :new-api-keys-text="newApiKeysText"
+                        :copied-key-index="copiedKeyIndex"
+                        :disabled-api-keys="disabledApiKeys"
+                        :historical-api-keys="historicalApiKeys"
+                        :restoring-key="restoringKey"
+                        :local-restored-keys="localRestoredKeys"
+                        :errors="errors"
+                        @update:new-api-keys-text="newApiKeysText = $event"
+                        @add-new-api-keys="addNewApiKeys"
+                        @remove-existing-api-key="removeExistingApiKey"
+                        @move-api-key-to-top="moveApiKeyToTop"
+                        @move-api-key-to-bottom="moveApiKeyToBottom"
+                        @copy-api-key="copyApiKey"
+                        @handle-disabled-key-restore="handleDisabledKeyRestore"
+                      />
+                    </TabsContent>
 
-                  <!-- 预设按钮 -->
-                  <div v-if="showModelMappingPresets || showClaudeChannelPresets || showCodexResponsesPresets" class="rounded-xl border border-border/60 bg-background/35 p-2.5">
-                    <div class="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                      <Zap class="h-3 w-3 text-primary" />
-                      {{ tf('addChannel.oneClickSetup', '一键配置') }}
-                    </div>
-                    <div v-if="showModelMappingPresets" class="flex flex-wrap items-center gap-1.5">
-                      <Button v-for="name in Object.keys(modelMappingPresets)" :key="name" type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyModelMappingPreset(name)">
-                        {{ name }}
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyClaudePreset('mimo')">MiMo</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyClaudePreset('deepseek')">DeepSeek</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyClaudePreset('minimax')">MiniMax</Button>
-                    </div>
-                    <div v-if="showClaudeChannelPresets" class="flex flex-wrap items-center gap-1.5">
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyClaudePreset('mimo')">MiMo</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyClaudePreset('deepseek')">DeepSeek</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyClaudePreset('minimax')">MiniMax</Button>
-                    </div>
-                    <div v-if="showCodexResponsesPresets" class="flex flex-wrap items-center gap-1.5">
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('mimo')">MiMo</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('deepseek')">DeepSeek</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('compshare')">Compshare</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('minimax')">MiniMax</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('dashscope')">DashScope</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('kimi')">Kimi</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('glm')">GLM</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('opencode-zen')">OpenCode Zen</Button>
-                      <Button type="button" variant="outline" size="sm" class="h-6 rounded-full border-border/70 bg-background/50 px-2.5 text-[10px] hover:border-primary/40 hover:bg-primary/10" @click="applyCodexResponsesPreset('opencode-go')">OpenCode Go</Button>
-                    </div>
-                  </div>
+                    <!-- Tab: 模型重定向 -->
+                    <TabsContent value="redirect" class="mt-0">
+                      <ModelMappingPanel
+                        :model-mapping-rows="modelMappingRows"
+                        :new-model-mapping="newModelMapping"
+                        :reasoning-effort-options="reasoningEffortOptions"
+                        :target-model-datalist="targetModelDatalist"
+                        :channel-type="channelType"
+                        :show-target-suggestions="showTargetSuggestions"
+                        :active-target-input-id="activeTargetInputId"
+                        :target-input-filter="targetInputFilter"
+                        :DEFAULT_SELECT_VALUE="DEFAULT_SELECT_VALUE"
+                        @update:new-model-mapping="(updates) => Object.assign(newModelMapping, updates)"
+                        @add-model-mapping-row="addModelMappingRow"
+                        @remove-model-mapping-row="removeModelMappingRow"
+                        @update-mapping-row="updateMappingRow"
+                        @sync-upstream-models="syncUpstreamModels"
+                        @apply-preset="applyPreset"
+                        @show-target-dropdown="showTargetDropdown"
+                        @hide-target-dropdown="hideTargetDropdown"
+                        @select-target-model="selectTargetModel"
+                        @handle-target-focus="handleTargetFocus"
+                      />
+                    </TabsContent>
 
-                  <p v-if="fetchedModelsError" class="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-[10px] text-destructive">{{ fetchedModelsError }}</p>
+                    <!-- Tab: 高级选项 -->
+                    <TabsContent value="advanced" class="mt-0">
+                      <AdvancedPanel
+                        :form="form"
+                        :channel-type="channelType"
+                        :text-verbosity-options="textVerbosityOptions"
+                        :supports-open-a-i-advanced="supportsOpenAIAdvanced"
+                        :DEFAULT_SELECT_VALUE="DEFAULT_SELECT_VALUE"
+                        @update:form="(updates) => Object.assign(form, updates)"
+                      />
+                    </TabsContent>
 
-                  <!-- 已配置的重定向 -->
-                  <div v-if="modelMappingRows.length" class="space-y-2">
-                    <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                      <span>{{ tf('console.form.modelMappingExisting', '已配置') }}</span>
-                      <span class="rounded-full border border-border/60 bg-background/45 px-2 py-0.5 font-mono">{{ modelMappingRows.length }}</span>
-                    </div>
-                    <div class="space-y-2">
-                      <div v-for="(row, index) in modelMappingRows" :key="row.id" class="group grid grid-cols-[minmax(110px,0.58fr)_auto_minmax(0,1.42fr)_auto_auto_auto] items-center gap-2 rounded-xl border border-border/65 bg-background/45 p-2.5 text-xs shadow-sm transition-all hover:border-primary/30 hover:bg-background/65">
-                        <div class="min-w-0 rounded-lg border border-border/55 bg-secondary/40 px-3 py-2">
-                          <div class="mb-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">SOURCE</div>
-                          <div class="truncate font-mono text-[11px] text-foreground" :title="row.source">{{ row.source || 'source-model' }}</div>
-                        </div>
-                        <div class="flex justify-center text-muted-foreground">
-                          <span class="flex h-7 w-7 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary transition-colors group-hover:border-primary/40 group-hover:bg-primary/15">
-                            <ArrowRight class="h-3.5 w-3.5" />
-                          </span>
-                        </div>
-                        <div class="relative min-w-0 space-y-1">
-                          <div class="text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">TARGET</div>
-                          <Input 
-                            v-model="row.target" 
-                            class="h-8 rounded-lg border border-border/70 bg-background/65 font-mono text-xs shadow-[0_0_0_3px_transparent] focus-visible:border-primary/50 focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.2)]" 
-                            placeholder="target-model" 
-                            autocomplete="off"
-                            @focus="handleTargetFocus(); showTargetDropdown(`row-${index}`, row.target)"
-                            @blur="hideTargetDropdown"
-                            @input="targetInputFilter = row.target"
-                          />
-                          <!-- 下拉建议列表 -->
-                          <div 
-                            v-if="showTargetSuggestions && activeTargetInputId === `row-${index}` && getFilteredTargetModels(targetInputFilter).length"
-                            class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-48 overflow-auto rounded-lg border border-border/70 bg-card shadow-2xl"
-                          >
-                            <div
-                              v-for="model in getFilteredTargetModels(targetInputFilter)"
-                              :key="model"
-                              class="cursor-pointer border-b border-border/30 px-3 py-1.5 font-mono text-xs text-foreground transition-colors hover:bg-primary/10 last:border-0"
-                              @mousedown.prevent="selectTargetModel(model, index)"
-                            >
-                              {{ model }}
-                            </div>
-                          </div>
-                        </div>
-                        <Select v-if="supportsOpenAIAdvanced" :model-value="toSelectValue(row.reasoning)" @update:model-value="row.reasoning = fromSelectValue($event) as ReasoningEffort | ''">
-                          <SelectTrigger class="h-8 rounded-lg border-border/70 bg-background/55 text-xs"><SelectValue :placeholder="tf('console.form.reasoningEffort', '思考强度')" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem v-for="opt in reasoningEffortOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button type="button" size="icon-sm" variant="ghost" class="h-8 w-8 rounded-full border border-border/50 bg-background/35 hover:border-amber-500/40 hover:bg-amber-500/10" :class="row.noVision ? 'text-amber-500' : 'text-muted-foreground'" :title="tf('console.form.noVision', '禁用视觉')" @click="row.noVision = !row.noVision">
-                          <EyeOff v-if="row.noVision" class="h-3.5 w-3.5" />
-                          <Eye v-else class="h-3.5 w-3.5" />
-                        </Button>
-                        <Button type="button" size="icon-sm" variant="ghost" class="h-8 w-8 rounded-full border border-border/50 bg-background/35 text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive" @click="removeModelMappingRow(index)">
-                          <Trash2 class="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 添加新重定向 -->
-                  <div class="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/[0.04] p-3">
-                    <div class="text-[10px] font-bold uppercase tracking-wider text-primary">
-                      {{ tf('console.form.modelMappingAdd', '添加新重定向') }}
-                    </div>
-                    <div class="grid grid-cols-[minmax(110px,0.58fr)_auto_minmax(0,1.42fr)_auto_auto] items-end gap-2">
-                      <div class="min-w-0 space-y-1">
-                        <div class="text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">SOURCE</div>
-                        <Input v-model="newModelMapping.source" class="h-8 rounded-lg border border-primary/25 bg-background/65 font-mono text-xs shadow-[0_0_0_3px_transparent] focus-visible:border-primary/60 focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.2)]" placeholder="source-model" list="source-models-new" @keydown.enter.prevent="addModelMappingRow" />
-                        <datalist id="source-models-new"><option v-for="m in sourceModelOptions" :key="m" :value="m" /></datalist>
-                      </div>
-                      <div class="flex h-8 items-center text-primary">
-                        <ArrowRight class="h-3.5 w-3.5" />
-                      </div>
-                      <div class="relative min-w-0 space-y-1">
-                        <div class="text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">TARGET</div>
-                        <Input 
-                          v-model="newModelMapping.target" 
-                          class="h-8 rounded-lg border border-primary/25 bg-background/65 font-mono text-xs shadow-[0_0_0_3px_transparent] focus-visible:border-primary/60 focus-visible:shadow-[0_0_0_3px_hsl(var(--primary)/0.2)]" 
-                          placeholder="target-model" 
-                          autocomplete="off"
-                          @focus="handleTargetFocus(); showTargetDropdown('new', newModelMapping.target)"
-                          @blur="hideTargetDropdown"
-                          @input="targetInputFilter = newModelMapping.target"
-                          @keydown.enter.prevent="addModelMappingRow"
-                        />
-                        <!-- 下拉建议列表 -->
-                        <div 
-                          v-if="showTargetSuggestions && activeTargetInputId === 'new' && getFilteredTargetModels(targetInputFilter).length"
-                          class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-48 overflow-auto rounded-lg border border-primary/30 bg-card shadow-2xl"
-                        >
-                          <div
-                            v-for="model in getFilteredTargetModels(targetInputFilter)"
-                            :key="model"
-                            class="cursor-pointer border-b border-border/30 px-3 py-1.5 font-mono text-xs text-foreground transition-colors hover:bg-primary/10 last:border-0"
-                            @mousedown.prevent="selectTargetModel(model, 'new')"
-                          >
-                            {{ model }}
-                          </div>
-                        </div>
-                      </div>
-                      <Select v-if="supportsOpenAIAdvanced" :model-value="toSelectValue(newModelMapping.reasoning)" @update:model-value="newModelMapping.reasoning = fromSelectValue($event) as ReasoningEffort | ''">
-                        <SelectTrigger class="h-8 rounded-lg border-primary/25 bg-background/55 text-xs"><SelectValue :placeholder="tf('console.form.reasoningEffort', '思考强度')" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="opt in reasoningEffortOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button type="button" variant="outline" size="sm" class="h-8 rounded-full border-primary/35 bg-primary/10 px-3 text-primary hover:bg-primary/15" :disabled="!newModelMapping.source.trim() || !newModelMapping.target.trim()" @click="addModelMappingRow">
-                        <Plus class="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </section>
-
-                <!-- ── 生成参数：快速模式 / Text verbosity / 视觉回退 ── -->
-                <section v-if="hasGenerationParams" class="space-y-3 border border-border bg-background/40 p-4">
-                  <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {{ tf('console.form.generationParams', '生成参数') }}
-                  </h4>
-
-                  <!-- fastMode + textVerbosity（仅 OpenAI/Responses，对齐 WebUI 模型卡片内布局） -->
-                  <div v-if="supportsOpenAIAdvanced" class="grid items-end gap-3 md:grid-cols-2">
-                    <div class="flex h-9 items-center gap-2">
-                      <Switch v-model="form.fastMode" />
-                      <Label class="text-xs">{{ tf('console.form.fastMode', '快速模式') }}</Label>
-                    </div>
-                    <div class="space-y-1">
-                      <Label class="text-[10px]">{{ tf('console.form.textVerbosity', 'Text verbosity') }}</Label>
-                      <Select :model-value="toSelectValue(form.textVerbosity)" @update:model-value="form.textVerbosity = fromSelectValue($event) as 'low' | 'medium' | 'high' | ''">
-                        <SelectTrigger class="h-9 w-full"><SelectValue :placeholder="tf('console.form.textVerbosityPlaceholder', '默认')" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="item in textVerbosityOptions" :key="item.value" :value="item.value">{{ item.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <!-- Vision fallback model（仅当有模型级 noVision 标记时显示，对齐 WebUI） -->
-                  <div v-if="getNoVisionModelsFromRows().length > 0" class="relative space-y-1.5">
-                    <Label>{{ tf('console.form.visionFallbackModel', 'Vision fallback model') }}</Label>
-                    <Input 
-                      v-model="form.visionFallbackModel" 
-                      class="h-7 text-xs" 
-                      placeholder="mimo-v2.5" 
-                      autocomplete="off"
-                      @focus="handleTargetFocus(); showTargetDropdown('vision-fallback', form.visionFallbackModel)"
-                      @blur="hideTargetDropdown"
-                      @input="targetInputFilter = form.visionFallbackModel"
-                    />
-                    <!-- 下拉建议列表 -->
-                    <div 
-                      v-if="showTargetSuggestions && activeTargetInputId === 'vision-fallback' && getFilteredTargetModels(targetInputFilter).length"
-                      class="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-auto rounded-lg border border-border/70 bg-card shadow-lg"
-                    >
-                      <div
-                        v-for="model in getFilteredTargetModels(targetInputFilter)"
-                        :key="model"
-                        class="cursor-pointer border-b border-border/30 px-3 py-1.5 font-mono text-xs text-foreground transition-colors hover:bg-primary/10 last:border-0"
-                        @mousedown.prevent="form.visionFallbackModel = model; hideTargetDropdown()"
-                      >
-                        {{ model }}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <!-- ── 模型范围：支持的模型白名单 ── -->
-                <section class="space-y-3 border border-border bg-background/40 p-4">
-                  <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {{ tf('console.form.modelScope', '模型范围') }}
-                  </h4>
-                  <div class="space-y-1.5">
-                    <Label>{{ tf('console.form.supportedModels', '支持的模型（每行一个，留空=全部）') }}</Label>
-                    <Textarea v-model="form.supportedModelsText" rows="3" placeholder="gpt-4*&#10;claude-3*" class="font-mono text-xs" />
-                    <div class="flex flex-wrap gap-1">
-                      <Button
-                        v-for="filter in commonSupportedModelFilters"
-                        :key="filter"
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        class="h-5 px-1.5 text-[10px]"
-                        :class="selectedSupportedModelSet.has(filter) ? 'border-primary bg-primary/10 text-primary' : ''"
-                        @click="toggleSupportedModelFilter(filter)"
-                      >
-                        {{ filter }}
-                      </Button>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="space-y-3 border border-border bg-background/40 p-4 lg:col-span-2">
-                  <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {{ tf('console.form.advancedFlags', '高级选项') }}
-                  </h4>
-
-                  <div class="space-y-5">
-                    <!-- Vision -->
-                    <div class="space-y-2">
-                      <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vision</div>
-                      <div class="grid gap-3 md:grid-cols-2">
-                        <div class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.noVision" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.noVision', '禁用视觉') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.noVisionHint', '启用后，包含图片的请求将跳过此渠道并 failover 到下一个渠道') }}</p>
-                          </div>
-                        </div>
-                        <div class="space-y-1 md:col-span-2"><Label class="text-[10px]">{{ tf('console.form.noVisionModels', 'No vision models（每行一个）') }}</Label><Textarea v-model="form.noVisionModelsText" rows="2" class="font-mono text-xs" /></div>
-                        <div class="space-y-1">
-                          <Label class="text-[10px]">{{ tf('console.form.historicalImageTurnLimit', '历史图片轮次限制') }}</Label>
-                          <Input v-model.number="form.historicalImageTurnLimit" type="number" min="0" class="h-7 text-xs" placeholder="0" />
-                          <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.historicalImageTurnLimitHint', '0 = 继承全局；后端会对 >0 的值应用最低 3 约束') }}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Reasoning / Thinking -->
-                    <div class="space-y-2" v-if="form.serviceType === 'claude' || form.serviceType === 'gemini' || supportsOpenAIAdvanced">
-                      <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Reasoning / Thinking</div>
-                      <div class="grid gap-3 md:grid-cols-2">
-                        <div v-if="form.serviceType === 'claude' && channelType !== 'images'" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.passbackReasoningContent" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.passbackReasoning', '回传推理内容') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.passbackReasoningHint', '将 thinking 块转为 reasoning_content 回传，兼容 mimo 等要求 OpenAI 风格 reasoning_content 的 Claude 协议上游') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="form.serviceType === 'claude' && channelType !== 'images'" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.passbackThinkingBlocks" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.passbackThinking', '回传思考块') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.passbackThinkingHint', '将真实 reasoning_content 投影为 Claude 的 content[].thinking，兼容 DeepSeek/GLM 等严格 thinking mode 上游') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="form.serviceType === 'gemini' && ['gemini','messages','chat','responses'].includes(channelType)" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.stripThoughtSignature" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.stripThoughtSignature', '移除思考签名') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.stripThoughtSignatureHint', '移除 functionCall 的 thought_signature 字段，兼容不支持该字段的旧版 Gemini API') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="form.serviceType === 'gemini' && ['gemini','messages'].includes(channelType)" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.injectDummyThoughtSignature" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.injectDummySignature', '注入假思考签名') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.injectDummySignatureHint', '为 functionCall 注入 dummy signature，兼容需要该字段的第三方 API（官方 API 请关闭）') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="supportsOpenAIAdvanced" class="flex items-center justify-between gap-3">
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.reasoningParamStyle', '思考方式') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.reasoningParamStyleHint', '选择 OpenAI 风格上游请求使用 reasoning.effort 还是 reasoning_effort。') }}</p>
-                          </div>
-                          <Select v-model="form.reasoningParamStyle"><SelectTrigger class="h-8 w-40 shrink-0 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem v-for="item in reasoningParamStyleOptions" :key="item.value" :value="item.value">{{ item.label }}</SelectItem></SelectContent></Select>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Codex / Responses -->
-                    <div class="space-y-2" v-if="channelType === 'responses'">
-                      <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Codex / Responses</div>
-                      <div class="grid gap-3 md:grid-cols-2">
-                        <div class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.codexNativeToolPassthrough" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.codexNativeTools', 'Codex 原生工具透传') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.codexNativeToolsHint', '透传模式下将 Codex 原生工具（apply_patch、namespace 等）转换为 OpenAI function 格式，使上游模型可调用。') }}</p>
-                          </div>
-                        </div>
-                        <div class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.codexToolCompat" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.codexCompat', 'Codex 工具兼容') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.codexCompatHint', '启用 Codex CLI 兼容：Responses 透传上游会剥离客户端专属工具，Chat/Claude/Gemini 上游会转换为 function 代理工具。') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="channelType === 'responses' || channelType === 'chat'" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.stripImageGenerationTool" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.stripImageGenTool', '去除 image_generation 工具') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.stripImageGenToolHint', '从请求的 tools 数组中移除 image_generation 类型，避免未开通图片生成权限的上游返回权限错误。') }}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Compatibility / Normalization -->
-                    <div class="space-y-2">
-                      <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Compatibility / Normalization</div>
-                      <div class="grid gap-3 md:grid-cols-2">
-                        <div v-if="form.serviceType === 'claude' && channelType === 'messages'" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.stripEmptyTextBlocks" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.stripEmptyBlocks', '移除空文本块') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.stripEmptyBlocksHint', '转发前移除裸空 text content block，兼容严格拒绝 Claude Code tool_use 占位块的 Claude 协议上游') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="channelType === 'messages'" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.normalizeSystemRoleToTopLevel" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.normalizeSystem', '规范化系统角色') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.normalizeSystemHint', '针对 Opus 4.8 / Fable 5 等新客户端将 system 作为消息 role 发送的情况：转发前抽回顶层 system 字段，兼容仅支持 user/assistant role 的旧 Claude 上游') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="['messages','responses'].includes(channelType)" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.normalizeMetadataUserId" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.normalizeUserId', '规范化用户 ID') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.normalizeUserIdHint', '自动将 JSON 对象格式的 user_id 转换为扁平字符串，确保上游兼容性。') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="channelType === 'messages'" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.stripBillingHeader" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.stripBillingHeader', '移除 CCH 计费参数') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.stripBillingHeaderHint', '转发前从 system 文本块中移除 cch= 计费参数，仅对当前 Messages 渠道生效。') }}</p>
-                          </div>
-                        </div>
-                        <div v-if="channelType === 'chat' || (channelType === 'responses' && form.serviceType === 'openai')" class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.normalizeNonstandardChatRoles" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.normalizeChatRoles', '规范化 Chat 角色') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.normalizeChatRolesHint', '将 developer 等非标准 role 统一转为 user 后转发给上游。国内模型通常不支持非标准 role，建议开启。') }}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Runtime -->
-                    <div class="space-y-2">
-                      <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Runtime</div>
-                      <div class="grid gap-3 md:grid-cols-2">
-                        <div class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.lowQuality" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.lowQuality', '低质量标记') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.lowQualityHint', '启用后强制本地估算 token 数量，偏差超过 5% 时使用本地值') }}</p>
-                          </div>
-                        </div>
-                        <div class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.autoBlacklistBalance" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.autoBlacklist', '自动黑名单') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.autoBlacklistHint', '当上游返回余额不足时，自动将该 Key 移入拉黑列表。') }}</p>
-                          </div>
-                        </div>
-                        <div class="flex flex-row-reverse items-center justify-between gap-3">
-                          <Switch v-model="form.insecureSkipVerify" class="shrink-0" />
-                          <div class="min-w-0 space-y-0.5">
-                            <Label class="text-xs">{{ tf('console.form.insecureSkipVerify', '跳过 TLS 验证') }}</Label>
-                            <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.insecureSkipVerifyHint', '仅在自签名或域名不匹配时临时启用，生产环境请关闭') }}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Transport -->
-                    <div class="space-y-2">
-                      <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Transport</div>
-                      <div class="grid gap-3 md:grid-cols-3">
-                        <div class="space-y-1">
-                          <Label class="text-[10px]">{{ tf('console.form.proxyUrl', '代理 URL') }}</Label>
-                          <Input v-model="form.proxyUrl" class="h-7 text-xs" placeholder="socks5://..." />
-                          <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.proxyUrlHint', '支持 HTTP/HTTPS/SOCKS5 代理，用于通过代理访问上游服务') }}</p>
-                        </div>
-                        <div class="space-y-1">
-                          <Label class="text-[10px]">{{ tf('console.form.routePrefix', '路由前缀') }}</Label>
-                          <Input v-model="form.routePrefix" class="h-7 text-xs" placeholder="kimi" />
-                          <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.routePrefixHint', '通过 /{前缀}/v1/messages 访问此渠道，多个渠道可共享同一前缀') }}</p>
-                        </div>
-                        <div class="space-y-1">
-                          <Label class="text-[10px]">{{ tf('console.form.requestTimeoutMs', '请求超时（ms）') }}</Label>
-                          <Input v-model="form.requestTimeoutMs" type="number" class="h-7 text-xs" placeholder="60000" :class="{ 'border-destructive': errors.requestTimeoutMs }" />
-                          <p v-if="errors.requestTimeoutMs" class="text-[10px] text-destructive">{{ errors.requestTimeoutMs }}</p>
-                          <p v-else class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.requestTimeoutMsHint', '仅作用于非流式上游请求；留空表示继承全局 REQUEST_TIMEOUT。') }}</p>
-                        </div>
-                        <div class="space-y-1">
-                          <p class="text-[10px] font-medium text-foreground">{{ tf('console.form.rateLimitSectionLabel', '主动限速') }}</p>
-                          <p class="text-[10px] leading-4 text-muted-foreground mb-2">{{ tf('console.form.rateLimitSectionHint', '在请求发往上游前主动限流，避免触发上游 429。') }}</p>
-                          <div class="grid grid-cols-3 gap-2 mb-3">
-                            <div class="space-y-1">
-                              <Label class="text-[10px]">{{ tf('console.form.rateLimitRpmLabel', 'RPM') }}</Label>
-                              <Input v-model="form.rateLimitRpm" type="number" class="h-7 text-xs" placeholder="留空=不限" />
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitRpmHint', '每分钟请求数上限') }}</p>
-                            </div>
-                            <div class="space-y-1">
-                              <Label class="text-[10px]">{{ tf('console.form.rateLimitWindowMinutesLabel', '窗口时长') }}</Label>
-                              <Input v-model="form.rateLimitWindowMinutes" type="number" class="h-7 text-xs" placeholder="留空=60秒" />
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitWindowMinutesHint', '滑动窗口秒数') }}</p>
-                            </div>
-                            <div class="space-y-1">
-                              <Label class="text-[10px]">{{ tf('console.form.rateLimitMaxConcurrentLabel', '最大并发') }}</Label>
-                              <Input v-model="form.rateLimitMaxConcurrent" type="number" class="h-7 text-xs" placeholder="留空=不限" />
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitMaxConcurrentHint', '并发上限') }}</p>
-                            </div>
-                          </div>
-                          <div class="flex items-center gap-2">
-                            <Switch v-model="form.rateLimitAutoFromHeaders" />
-                            <div class="space-y-0.5">
-                              <Label class="text-[10px]">{{ tf('console.form.rateLimitAutoFromHeadersLabel', '自动学习上游限速') }}</Label>
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ tf('console.form.rateLimitAutoFromHeadersHint', '解析 Retry-After / x-ratelimit-* 响应头动态调整 cooldown。') }}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Stream Timeouts -->
-                    <div class="space-y-2">
-                      <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{{ tf('console.form.streamTimeouts', '流式超时') }}</div>
-                      <div class="grid gap-3 md:grid-cols-2">
-                        <div class="border border-border bg-background/60 p-3 space-y-2">
-                          <div class="flex items-center justify-between gap-3">
-                            <Switch v-model="form.streamFirstContentTimeoutEnabled" class="shrink-0" />
-                            <div class="min-w-0 space-y-0.5">
-                              <Label class="text-xs">{{ tf('console.form.streamFirstContentTimeoutOverrideLabel', '自定义首字等待超时') }}</Label>
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ form.streamFirstContentTimeoutEnabled ? tf('console.form.streamTimeoutOverrideHint', '自定义值覆盖全局流式超时') : tf('console.form.streamTimeoutInheritHint', '继承全局流式超时') }}</p>
-                            </div>
-                          </div>
-                          <div :class="{ 'opacity-50 pointer-events-none': !form.streamFirstContentTimeoutEnabled }">
-                            <div class="flex items-center justify-between mb-1">
-                              <span class="text-[10px] text-muted-foreground">{{ tf('console.form.streamFirstContentTimeoutLabel', '首字等待超时') }}</span>
-                              <span class="text-[10px] font-medium">{{ (form.streamFirstContentTimeoutMs / 1000) }}s</span>
-                            </div>
-                            <input
-                              v-model.number="form.streamFirstContentTimeoutMs"
-                              type="range"
-                              min="5000"
-                              max="300000"
-                              step="1000"
-                              class="cb-slider w-full"
-                              :disabled="!form.streamFirstContentTimeoutEnabled"
-                            />
-                            <div class="flex justify-between text-[10px] text-muted-foreground"><span>5s</span><span>300s</span></div>
-                          </div>
-                        </div>
-                        <div class="border border-border bg-background/60 p-3 space-y-2">
-                          <div class="flex items-center justify-between gap-3">
-                            <Switch v-model="form.streamInactivityTimeoutEnabled" class="shrink-0" />
-                            <div class="min-w-0 space-y-0.5">
-                              <Label class="text-xs">{{ tf('console.form.streamInactivityTimeoutOverrideLabel', '自定义断流超时') }}</Label>
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ form.streamInactivityTimeoutEnabled ? tf('console.form.streamTimeoutOverrideHint', '自定义值覆盖全局流式超时') : tf('console.form.streamTimeoutInheritHint', '继承全局流式超时') }}</p>
-                            </div>
-                          </div>
-                          <div :class="{ 'opacity-50 pointer-events-none': !form.streamInactivityTimeoutEnabled }">
-                            <div class="flex items-center justify-between mb-1">
-                              <span class="text-[10px] text-muted-foreground">{{ tf('console.form.streamInactivityTimeoutLabel', '首字后断流超时') }}</span>
-                              <span class="text-[10px] font-medium">{{ (form.streamInactivityTimeoutMs / 1000) }}s</span>
-                            </div>
-                            <input
-                              v-model.number="form.streamInactivityTimeoutMs"
-                              type="range"
-                              min="1000"
-                              max="180000"
-                              step="1000"
-                              class="cb-slider w-full"
-                              :disabled="!form.streamInactivityTimeoutEnabled"
-                            />
-                            <div class="flex justify-between text-[10px] text-muted-foreground"><span>1s</span><span>180s</span></div>
-                          </div>
-                        </div>
-                        <div class="border border-border bg-background/60 p-3 space-y-2">
-                          <div class="flex items-center justify-between gap-3">
-                            <Switch v-model="form.streamToolCallIdleTimeoutEnabled" class="shrink-0" />
-                            <div class="min-w-0 space-y-0.5">
-                              <Label class="text-xs">{{ tf('console.form.streamToolCallIdleTimeoutOverrideLabel', '自定义工具调用空闲超时') }}</Label>
-                              <p class="text-[10px] leading-4 text-muted-foreground">{{ form.streamToolCallIdleTimeoutEnabled ? tf('console.form.streamTimeoutOverrideHint', '自定义值覆盖全局流式超时') : tf('console.form.streamTimeoutInheritHint', '继承全局流式超时') }}</p>
-                            </div>
-                          </div>
-                          <div :class="{ 'opacity-50 pointer-events-none': !form.streamToolCallIdleTimeoutEnabled }">
-                            <div class="flex items-center justify-between mb-1">
-                              <span class="text-[10px] text-muted-foreground">{{ tf('console.form.streamToolCallIdleTimeoutLabel', '工具调用空闲超时') }}</span>
-                              <span class="text-[10px] font-medium">{{ (form.streamToolCallIdleTimeoutMs / 1000) }}s</span>
-                            </div>
-                            <input
-                              v-model.number="form.streamToolCallIdleTimeoutMs"
-                              type="range"
-                              min="1000"
-                              max="180000"
-                              step="1000"
-                              class="cb-slider w-full"
-                              :disabled="!form.streamToolCallIdleTimeoutEnabled"
-                            />
-                            <div class="flex justify-between text-[10px] text-muted-foreground"><span>1s</span><span>180s</span></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="space-y-3 border border-border bg-background/40 p-4 lg:col-span-2">
-                  <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {{ tf('console.form.customHeaders', '自定义 Headers') }}
-                  </h4>
-                  <div v-if="headerRows.length" class="space-y-1.5">
-                    <div v-for="(h, index) in headerRows" :key="h.id" class="flex items-center gap-2 border border-border bg-background/60 px-2 py-1.5 text-xs">
-                      <code class="shrink-0 font-mono font-semibold text-primary">{{ h.key }}</code>
-                      <span class="shrink-0 text-muted-foreground">:</span>
-                      <Input v-model="h.value" class="flex-1 font-mono text-xs" />
-                      <Button type="button" size="icon-sm" variant="ghost" class="shrink-0 text-destructive" @click="removeHeaderRow(index)">
-                        <Trash2 class="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <Input v-model="newHeader.key" class="h-7 w-40 font-mono text-xs" placeholder="Header-Name" @keydown.enter.prevent="addHeaderRow" />
-                    <Input v-model="newHeader.value" class="flex-1 font-mono text-xs" placeholder="value" @keydown.enter.prevent="addHeaderRow" />
-                    <Button type="button" variant="outline" size="sm" :disabled="!newHeader.key.trim()" @click="addHeaderRow">
-                      <Plus class="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </section>
-              </template>
-            </form>
+                    <!-- Tab: 自定义参数 -->
+                    <TabsContent value="headers" class="mt-0">
+                      <CustomHeadersPanel
+                        :header-rows="headerRows"
+                        :new-header="newHeader"
+                        @update:new-header="(updates) => Object.assign(newHeader, updates)"
+                        @add-header-row="addHeaderRow"
+                        @remove-header-row="removeHeaderRow"
+                        @update-header-row="updateHeaderRow"
+                      />
+                    </TabsContent>
+                  </form>
+                </ScrollArea>
+              </div>
+            </Tabs>
           </div>
 
-          <div class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-card p-4">
+          <!-- 底部按钮栏 -->
+          <div class="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border bg-card/80 p-4 backdrop-blur-md">
             <Button variant="ghost" @click="emit('close')">
-              {{ tf('common.cancel', '取消') }} <span class="ml-2 text-xs opacity-60">Esc</span>
+              {{ tf('common.cancel', '取消') }}
+              <span class="ml-2 hidden sm:inline-flex h-4 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[9px] font-medium text-muted-foreground/80">Esc</span>
             </Button>
             <Button type="button" :disabled="!isValid || saving" @click="handleSubmit">
               <Loader2 v-if="saving" class="mr-2 h-4 w-4 animate-spin" />
@@ -2012,7 +1427,7 @@ function buildCurrentPayload() {
                 ? tf('console.form.save', '保存')
                 : tf('console.form.create', '创建')
               }}
-              <span class="ml-2 text-xs opacity-60">{{ isMac ? '⌘ Enter' : 'Ctrl+Enter' }}</span>
+              <span class="ml-2 hidden sm:inline-flex h-4 select-none items-center gap-1 rounded border border-primary-foreground/30 bg-primary-foreground/10 px-1.5 font-mono text-[9px] font-medium text-primary-foreground/90">{{ isMac ? '⌘ Enter' : 'Ctrl+Enter' }}</span>
             </Button>
           </div>
         </div>
@@ -2029,5 +1444,27 @@ function buildCurrentPayload() {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* Range Slider 美化 */
+input[type="range"].accent-primary::-webkit-slider-runnable-track {
+  background: hsl(var(--primary) / 0.1);
+  height: 4px;
+  border-radius: 9999px;
+}
+
+input[type="range"].accent-primary::-webkit-slider-thumb {
+  margin-top: -5px;
+  background: hsl(var(--primary));
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  transition: transform 0.1s;
+}
+
+input[type="range"].accent-primary::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
 }
 </style>

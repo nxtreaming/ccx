@@ -63,6 +63,17 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
   const sourceUrls = form.baseUrls.length > 0 ? form.baseUrls : [form.baseUrl]
   const deduplicatedUrls = deduplicateEquivalentBaseUrls(sourceUrls, form.serviceType)
 
+  // 清洗 modelMapping：确保所有 value 都是字符串
+  // v-combobox 选中下拉后 v-model 可能是 { title, value } 对象，需规整为字符串
+  const cleanModelMapping: Record<string, string> = {}
+  for (const [source, target] of Object.entries(form.modelMapping)) {
+    if (typeof target === 'string') {
+      cleanModelMapping[source] = target
+    } else if (target && typeof target === 'object' && 'value' in target) {
+      cleanModelMapping[source] = String((target as any).value || '')
+    }
+  }
+
   const channelData: Omit<Channel, 'index' | 'latency' | 'status'> = {
     name: form.name.trim(),
     serviceType: form.serviceType as 'openai' | 'gemini' | 'claude' | 'responses',
@@ -76,7 +87,7 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
     passbackThinkingBlocks: form.passbackThinkingBlocks,
     description: form.description.trim(),
     apiKeys: processedApiKeys,
-    modelMapping: form.modelMapping,
+    modelMapping: cleanModelMapping,
     reasoningMapping: advancedOptions.reasoningMapping,
     reasoningParamStyle: advancedOptions.reasoningParamStyle,
     textVerbosity: advancedOptions.textVerbosity,

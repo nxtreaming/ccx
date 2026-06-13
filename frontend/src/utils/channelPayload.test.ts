@@ -536,4 +536,54 @@ describe('buildChannelPayload', () => {
 
     expect(result.requestTimeoutMs).toBeUndefined()
   })
+
+  it('应清洗 modelMapping 中的对象值为字符串', () => {
+    const result = buildChannelPayload({
+      name: 'test',
+      serviceType: 'claude',
+      baseUrl: 'https://api.example.com',
+      baseUrls: [],
+      website: '',
+      insecureSkipVerify: false,
+      lowQuality: false,
+      injectDummyThoughtSignature: false,
+      stripThoughtSignature: false,
+      passbackReasoningContent: false,
+      passbackThinkingBlocks: false,
+      description: '',
+      apiKeys: ['sk-1'],
+      // v-combobox 选中下拉后可能产生对象值
+      modelMapping: {
+        'fable': 'claude-3-5-sonnet',
+        'haiku': { title: 'claude-3-5-haiku', value: 'claude-3-5-haiku' }
+      } as any,
+      reasoningMapping: {},
+      reasoningParamStyle: 'reasoning',
+      textVerbosity: '',
+      fastMode: false,
+      customHeaders: {},
+      proxyUrl: '',
+      routePrefix: '',
+      supportedModels: [],
+      autoBlacklistBalance: true,
+      normalizeMetadataUserId: true,
+      stripEmptyTextBlocks: false,
+      normalizeSystemRoleToTopLevel: false,
+      codexNativeToolPassthrough: false,
+      codexToolCompat: false,
+      stripImageGenerationTool: false,
+      noVision: false,
+      noVisionModels: [],
+      visionFallbackModel: ''
+    })
+
+    // 确保所有 modelMapping 值都是字符串
+    expect(result.modelMapping).toEqual({
+      'fable': 'claude-3-5-sonnet',
+      'haiku': 'claude-3-5-haiku'
+    })
+    expect(result.modelMapping).toBeDefined()
+    expect(typeof result.modelMapping!.fable).toBe('string')
+    expect(typeof result.modelMapping!.haiku).toBe('string')
+  })
 })
