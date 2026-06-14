@@ -78,6 +78,7 @@
     <div v-else>
       <VueApexCharts
         ref="chartRef"
+        :key="`key-trend-${selectedView}`"
         type="area"
         height="280"
         :options="chartOptions"

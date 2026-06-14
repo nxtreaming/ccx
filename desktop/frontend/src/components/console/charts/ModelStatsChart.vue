@@ -83,6 +83,7 @@
     <div v-else>
       <VueApexCharts
         ref="chartRef"
+        :key="`model-stats-${selectedView}`"
         type="area"
         :height="200"
         :options="chartOptions"
