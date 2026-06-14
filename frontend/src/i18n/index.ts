@@ -1,5 +1,5 @@
 import { useI18n as vueUseI18n } from 'vue-i18n'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import { usePreferencesStore } from '@/stores/preferences'
 
@@ -26,14 +26,21 @@ export function useI18n() {
 
   const locale = computed(() => normalizeLocale(preferencesStore.uiLanguage as unknown as string))
 
+  // Sync vueI18n locale when preferencesStore changes
+  watch(locale, (newLocale) => {
+    if (vueI18n.locale.value !== newLocale) {
+      vueI18n.locale.value = newLocale
+      applyDocumentLanguage(newLocale)
+    }
+  }, { immediate: true })
+
   const t = (key: string, params?: Record<string, string | number>) => {
     return vueI18n.t(key, params as Record<string, string | number>) as string
   }
 
   const setLocale = (nextLocale: string) => {
     preferencesStore.setUILanguage(nextLocale as any)
-    vueI18n.locale.value = nextLocale
-    applyDocumentLanguage(nextLocale as any)
+    // Sync will happen via the watch above
   }
 
   return {
