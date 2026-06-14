@@ -85,6 +85,9 @@ export type MessageKey =
   | 'channel.promo'
   | 'channel.console'
   | 'channel.target'
+  | 'channel.planLabel'
+  | 'channel.apiKeyLabel'
+  | 'channel.baseUrlPrefix'
   | 'channel.keySavedPlaceholder'
   | 'channel.keyInputPlaceholder'
   | 'channel.missingKey'
@@ -920,6 +923,9 @@ export const messages: Record<SupportedLocale, Messages> = {
     'channel.promo': 'Register via promotion link to claim the exclusive perk',
     'channel.console': 'Open official console',
     'channel.target': 'Target',
+    'channel.planLabel': 'Token Plan / Base URL',
+    'channel.apiKeyLabel': 'API Key',
+    'channel.baseUrlPrefix': 'Base URL',
     'channel.keySavedPlaceholder': 'Saved locally; leave empty to reuse this Provider Key',
     'channel.keyInputPlaceholder': 'Enter API Key. It is stored only in local Desktop config',
     'channel.missingKey': 'Enter an API Key, or save this Provider key in Agent Config first.',
@@ -1757,6 +1763,9 @@ export const messages: Record<SupportedLocale, Messages> = {
     'channel.promo': '通过推广链接注册领取专属福利',
     'channel.console': '访问官方控制台',
     'channel.target': '添加目标',
+    'channel.planLabel': '套餐 / Base URL',
+    'channel.apiKeyLabel': 'API Key',
+    'channel.baseUrlPrefix': 'Base URL',
     'channel.keySavedPlaceholder': '已保存，留空则复用该 Provider Key',
     'channel.keyInputPlaceholder': '输入 API Key，仅保存在本机 Desktop 配置中',
     'channel.missingKey': '请填写 API Key，或先在 Agent 配置中保存该 Provider 的 key。',

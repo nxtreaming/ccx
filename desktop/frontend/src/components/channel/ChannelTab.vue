@@ -333,7 +333,7 @@ const submit = async () => {
           </div>
 
           <div class="space-y-2">
-            <Label class="text-xs text-muted-foreground">Token Plan / Base URL</Label>
+            <Label class="text-xs text-muted-foreground">{{ t('channel.planLabel') }}</Label>
             <select
               v-model="selectedPlan"
               class="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
@@ -349,7 +349,7 @@ const submit = async () => {
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div class="space-y-2">
-            <Label class="text-xs text-muted-foreground">API Key</Label>
+            <Label class="text-xs text-muted-foreground">{{ t('channel.apiKeyLabel') }}</Label>
             <Input v-model="apiKey" type="password" autocomplete="off" :placeholder="currentAsset?.apiKey ? t('channel.keySavedPlaceholder') : t('channel.keyInputPlaceholder')" />
             <div v-if="currentAsset?.apiKey" class="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
               <KeyRound class="w-3 h-3" />
@@ -369,7 +369,7 @@ const submit = async () => {
             <Sparkles class="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
             <span class="font-semibold">{{ t('channel.presetWrites') }}</span>
           </div>
-          <p class="break-all">Base URL: <code class="text-foreground">{{ effectiveBaseUrl || '—' }}</code></p>
+          <p class="break-all">{{ t('channel.baseUrlPrefix') }}: <code class="text-foreground">{{ effectiveBaseUrl || '—' }}</code></p>
           <p>{{ t('channel.capabilityHint') }}</p>
         </div>
 
