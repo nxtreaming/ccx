@@ -51,6 +51,28 @@ export interface ChannelFormLike {
 
 }
 
+type SelectableString = string | { title?: string; value?: unknown } | null | undefined
+
+export function normalizeSelectableString(value: SelectableString): string {
+  if (!value) return ''
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed.startsWith('{')) return value
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (parsed && typeof parsed === 'object' && 'value' in parsed) {
+        return normalizeSelectableString(parsed as SelectableString)
+      }
+    } catch {
+      return value
+    }
+    return value
+  }
+  if (typeof value.value === 'string') return value.value
+  if (value.value != null) return String(value.value)
+  return ''
+}
+
 export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index' | 'latency' | 'status'> {
   const processedApiKeys = form.apiKeys.filter(key => key.trim())
   const advancedOptions = normalizeAdvancedChannelOptions(form.serviceType, {
@@ -63,14 +85,13 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
   const sourceUrls = form.baseUrls.length > 0 ? form.baseUrls : [form.baseUrl]
   const deduplicatedUrls = deduplicateEquivalentBaseUrls(sourceUrls, form.serviceType)
 
-  // 清洗 modelMapping：确保所有 value 都是字符串
-  // v-combobox 选中下拉后 v-model 可能是 { title, value } 对象，需规整为字符串
+  // 清洗 modelMapping：v-combobox 选中下拉后 key/value 都可能是 { title, value } 对象。
   const cleanModelMapping: Record<string, string> = {}
   for (const [source, target] of Object.entries(form.modelMapping)) {
-    if (typeof target === 'string') {
-      cleanModelMapping[source] = target
-    } else if (target && typeof target === 'object' && 'value' in target) {
-      cleanModelMapping[source] = String((target as any).value || '')
+    const cleanSource = normalizeSelectableString(source).trim()
+    const cleanTarget = normalizeSelectableString(target as SelectableString).trim()
+    if (cleanSource && cleanTarget) {
+      cleanModelMapping[cleanSource] = cleanTarget
     }
   }
 
@@ -108,9 +129,7 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
     stripImageGenerationTool: !!form.stripImageGenerationTool,
     noVision: form.noVision,
     noVisionModels: form.noVisionModels,
-    visionFallbackModel: typeof form.visionFallbackModel === 'object' && form.visionFallbackModel !== null
-      ? (form.visionFallbackModel as unknown as { value: string }).value || ''
-      : form.visionFallbackModel || '',
+    visionFallbackModel: normalizeSelectableString(form.visionFallbackModel as SelectableString),
   }
 
   // 历史图片轮次限制：始终发送（含 0），使编辑场景能把渠道级覆盖清回 0（继承全局）。

@@ -144,8 +144,8 @@
                   <!-- 源模型徽章 -->
                   <div class="model-badge source-badge pa-2 rounded-lg d-flex flex-column justify-center">
                     <span class="badge-title">SOURCE</span>
-                    <span class="model-name text-truncate font-mono" :title="row.source">
-                      {{ row.source || 'source-model' }}
+                    <span class="model-name text-truncate font-mono" :title="formatModelName(row.source)">
+                      {{ formatModelName(row.source) || 'source-model' }}
                     </span>
                   </div>
 
@@ -313,6 +313,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from '../../i18n'
+import { normalizeSelectableString } from '../../utils/channelPayload'
 
 interface MappingRow {
   id: number
@@ -323,8 +324,8 @@ interface MappingRow {
 }
 
 interface NewMapping {
-  source: string
-  target: string
+  source: string | { title: string; value: string }
+  target: string | { title: string; value: string }
   reasoningEffort?: string
 }
 
@@ -362,7 +363,7 @@ const newMapping = ref<NewMapping>({
 })
 
 const isMappingInputValid = computed(() => {
-  return !!(newMapping.value.source && newMapping.value.target)
+  return !!(normalizeSelectableString(newMapping.value.source).trim() && normalizeSelectableString(newMapping.value.target).trim())
 })
 
 const handleSourceChange = () => {
@@ -371,16 +372,18 @@ const handleSourceChange = () => {
 
 const handleAddMapping = () => {
   if (!isMappingInputValid.value) return
+  const source = normalizeSelectableString(newMapping.value.source).trim()
+  const target = normalizeSelectableString(newMapping.value.target).trim()
 
   const row: MappingRow = {
     id: Date.now(),
-    source: newMapping.value.source,
-    target: newMapping.value.target,
+    source,
+    target,
     reasoning: (newMapping.value.reasoningEffort || '') as '' | 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
     noVision: false,
   }
 
-  emit('update:mappingRows', [...props.mappingRows, row])
+  emit('update:mappingRows', [...normalizeMappingRows(props.mappingRows), row])
 
   // 重置输入
   newMapping.value = {
@@ -391,15 +394,23 @@ const handleAddMapping = () => {
 }
 
 const removeMapping = (index: number) => {
-  const updated = props.mappingRows.filter((_, i) => i !== index)
+  const updated = normalizeMappingRows(props.mappingRows).filter((_, i) => i !== index)
   emit('update:mappingRows', updated)
 }
 
 const toggleVision = (index: number) => {
-  const updated = [...props.mappingRows]
+  const updated = normalizeMappingRows(props.mappingRows)
   updated[index] = { ...updated[index], noVision: !updated[index].noVision }
   emit('update:mappingRows', updated)
 }
+
+const normalizeMappingRows = (rows: MappingRow[]): MappingRow[] => rows.map(row => ({
+  ...row,
+  source: normalizeSelectableString(row.source),
+  target: normalizeSelectableString(row.target),
+}))
+
+const formatModelName = (value: MappingRow['source']) => normalizeSelectableString(value)
 
 const props = defineProps<Props>()
 </script>

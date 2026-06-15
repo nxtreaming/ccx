@@ -55,6 +55,48 @@ describe('buildChannelPayload', () => {
     expect((result as any).historicalImageTurnLimit).toBe(3)
   })
 
+  it('应将模型映射中的 combobox 对象规整为字符串', () => {
+    const result = buildChannelPayload({
+      name: 'mapping-object',
+      serviceType: 'responses',
+      baseUrl: 'https://api.example.com/v1',
+      baseUrls: [],
+      website: '',
+      insecureSkipVerify: false,
+      lowQuality: false,
+      injectDummyThoughtSignature: false,
+      stripThoughtSignature: false,
+      passbackReasoningContent: false,
+      passbackThinkingBlocks: false,
+      description: '',
+      apiKeys: ['sk-1'],
+      modelMapping: {
+        '{"title":"codex","value":"codex"}': { title: 'MiMo', value: 'mimo-v2.5-pro' } as any
+      },
+      reasoningMapping: {},
+      reasoningParamStyle: 'reasoning',
+      textVerbosity: '',
+      fastMode: false,
+      customHeaders: {},
+      proxyUrl: '',
+      routePrefix: '',
+      supportedModels: [],
+      autoBlacklistBalance: true,
+      normalizeMetadataUserId: true,
+      stripEmptyTextBlocks: false,
+      normalizeSystemRoleToTopLevel: false,
+      codexNativeToolPassthrough: false,
+      codexToolCompat: true,
+      stripImageGenerationTool: false,
+      noVision: false,
+      noVisionModels: [],
+      visionFallbackModel: { title: 'MiMo', value: 'mimo-v2.5-pro' } as any
+    })
+
+    expect(result.modelMapping).toEqual({ codex: 'mimo-v2.5-pro' })
+    expect(result.visionFallbackModel).toBe('mimo-v2.5-pro')
+  })
+
   it('应对多个 baseUrls 去重并保留 baseUrls 输出', () => {
     const result = buildChannelPayload({
       name: 'multi',
