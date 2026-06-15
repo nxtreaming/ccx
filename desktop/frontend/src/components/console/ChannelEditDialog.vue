@@ -1503,7 +1503,7 @@ void getFilteredTargetModels
           <!-- 编辑模式：完整渠道编辑器 -->
           <div v-else class="min-h-0 flex-1 flex">
             <!-- 左侧导航 -->
-            <nav class="hidden md:flex w-[180px] shrink-0 flex-col items-stretch gap-1 rounded-none border-r border-border/50 bg-card/20 p-4">
+            <nav class="flex w-[180px] shrink-0 flex-col items-stretch gap-1 rounded-none border-r border-border/50 bg-card/20 p-4">
               <div class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-3 mb-2">{{ tf('channelEditor.nav.outline', '配置大纲') }}</div>
               <button
                 v-for="s in sections"
@@ -1517,7 +1517,7 @@ void getFilteredTargetModels
             </nav>
 
               <!-- 右侧内容面板 -->
-              <div class="flex-1 overflow-hidden">
+              <div class="min-w-0 flex-1 overflow-hidden">
                 <ScrollArea class="h-full">
                   <form class="p-6 space-y-6" @submit.prevent="handleSubmit">
                     <!-- 错误提示 -->

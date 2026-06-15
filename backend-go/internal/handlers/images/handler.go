@@ -3,15 +3,18 @@ package images
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
 	"github.com/BenedictKing/ccx/internal/handlers/common"
+	"github.com/BenedictKing/ccx/internal/httpclient"
 	"github.com/BenedictKing/ccx/internal/middleware"
 	"github.com/BenedictKing/ccx/internal/scheduler"
 	"github.com/BenedictKing/ccx/internal/types"
@@ -23,6 +26,9 @@ const (
 	operationGenerations = "generations"
 	operationEdits       = "edits"
 	operationVariations  = "variations"
+
+	imageURLDownloadTimeout = 30 * time.Second
+	maxImageDownloadBytes   = 25 * 1024 * 1024
 )
 
 // Handler Images API 代理处理器
@@ -254,7 +260,7 @@ func handleMultiChannel(
 					channelScheduler.MarkURLSuccess(scheduler.ChannelKindImages, channelIndex, url)
 				},
 				func(c *gin.Context, resp *http.Response, upstreamCopy *config.UpstreamConfig, apiKey string, actualRequestBody []byte) (*types.Usage, error) {
-					return handleSuccess(c, resp, envCfg, startTime, isStream, common.ResolveStreamPreflightTimeouts(upstreamCopy, metricsManager.GetCircuitBreakerConfig()))
+					return handleSuccess(c, resp, envCfg, startTime, isStream, common.ResolveStreamPreflightTimeouts(upstreamCopy, metricsManager.GetCircuitBreakerConfig()), upstreamCopy, actualRequestBody, contentType)
 				},
 				model,
 				operation,
@@ -328,7 +334,7 @@ func handleSingleChannel(
 		nil,
 		nil,
 		func(c *gin.Context, resp *http.Response, upstreamCopy *config.UpstreamConfig, apiKey string, actualRequestBody []byte) (*types.Usage, error) {
-			return handleSuccess(c, resp, envCfg, startTime, isStream, common.ResolveStreamPreflightTimeouts(upstreamCopy, metricsManager.GetCircuitBreakerConfig()))
+			return handleSuccess(c, resp, envCfg, startTime, isStream, common.ResolveStreamPreflightTimeouts(upstreamCopy, metricsManager.GetCircuitBreakerConfig()), upstreamCopy, actualRequestBody, contentType)
 		},
 		model,
 		operation,
@@ -528,7 +534,7 @@ func preflightImagesStream(resp *http.Response, timeouts common.StreamPreflightT
 	}
 }
 
-func handleSuccess(c *gin.Context, resp *http.Response, envCfg *config.EnvConfig, startTime time.Time, isStream bool, timeouts common.StreamPreflightTimeouts) (*types.Usage, error) {
+func handleSuccess(c *gin.Context, resp *http.Response, envCfg *config.EnvConfig, startTime time.Time, isStream bool, timeouts common.StreamPreflightTimeouts, upstream *config.UpstreamConfig, requestBody []byte, requestContentType string) (*types.Usage, error) {
 	defer resp.Body.Close()
 	if isStream {
 		return nil, passthroughStreamingResponseWithLog(c, resp, envCfg, startTime, timeouts)
@@ -544,9 +550,25 @@ func handleSuccess(c *gin.Context, resp *http.Response, envCfg *config.EnvConfig
 		common.RequestLogf(c, "[Images-Timing] 响应完成: %dms, 状态: %d", responseTime, resp.StatusCode)
 		common.LogUpstreamResponse(c, resp, bodyBytes, envCfg, "Images")
 	}
-	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	var respMap map[string]interface{}
-	if err := common.PassthroughJSONResponse(c, resp, &respMap); err != nil {
+	if err := json.Unmarshal(bodyBytes, &respMap); err == nil {
+		if shouldConvertImageURLToB64JSON(upstream, requestBody, requestContentType) {
+			convertedBody, err := convertImageURLResponseToB64JSON(c.Request.Context(), respMap, upstream)
+			if err != nil {
+				return nil, fmt.Errorf("%w: image url to b64_json conversion failed: %v", common.ErrInvalidResponseBody, err)
+			}
+			bodyBytes = convertedBody
+			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(bodyBytes)))
+		}
+	} else {
+		respMap = nil
+	}
+	utils.ForwardResponseHeaders(resp.Header, c.Writer)
+	c.Status(resp.StatusCode)
+	if _, err := c.Writer.Write(bodyBytes); err != nil {
+		return nil, err
+	}
+	if respMap == nil {
 		return nil, nil
 	}
 	if u, ok := respMap["usage"].(map[string]interface{}); ok {
@@ -555,6 +577,119 @@ func handleSuccess(c *gin.Context, resp *http.Response, envCfg *config.EnvConfig
 		return &types.Usage{InputTokens: int(inputTokens), OutputTokens: int(outputTokens)}, nil
 	}
 	return nil, nil
+}
+
+func shouldConvertImageURLToB64JSON(upstream *config.UpstreamConfig, requestBody []byte, contentType string) bool {
+	if upstream == nil || !upstream.ConvertImageURLToB64JSON {
+		return false
+	}
+	if isMultipartContentType(contentType) {
+		responseFormat, ok := extractMultipartField(requestBody, contentType, "response_format")
+		return ok && strings.EqualFold(strings.TrimSpace(responseFormat), "b64_json")
+	}
+	var reqMap map[string]interface{}
+	if err := json.Unmarshal(requestBody, &reqMap); err != nil {
+		return false
+	}
+	responseFormat, _ := reqMap["response_format"].(string)
+	return strings.EqualFold(strings.TrimSpace(responseFormat), "b64_json")
+}
+
+func convertImageURLResponseToB64JSON(ctx context.Context, respMap map[string]interface{}, upstream *config.UpstreamConfig) ([]byte, error) {
+	data, ok := respMap["data"].([]interface{})
+	if !ok {
+		return json.Marshal(respMap)
+	}
+	for _, rawItem := range data {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if b64, _ := item["b64_json"].(string); strings.TrimSpace(b64) != "" {
+			continue
+		}
+		imageURL, _ := item["url"].(string)
+		if strings.TrimSpace(imageURL) == "" {
+			continue
+		}
+		b64, err := downloadImageAsBase64(ctx, imageURL, upstream)
+		if err != nil {
+			return nil, err
+		}
+		item["b64_json"] = b64
+		delete(item, "url")
+	}
+	return json.Marshal(respMap)
+}
+
+func downloadImageAsBase64(ctx context.Context, rawURL string, upstream *config.UpstreamConfig) (string, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid image url: %w", err)
+	}
+	if parsedURL.Scheme == "data" {
+		if idx := strings.Index(rawURL, ","); idx >= 0 {
+			meta := rawURL[:idx]
+			dataPart := rawURL[idx+1:]
+			if strings.Contains(meta, ";base64") {
+				decoded, decodeErr := base64.StdEncoding.DecodeString(dataPart)
+				if decodeErr != nil {
+					return "", decodeErr
+				}
+				return base64.StdEncoding.EncodeToString(decoded), nil
+			}
+		}
+		return "", fmt.Errorf("unsupported data image url")
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return "", fmt.Errorf("unsupported image url scheme: %s", parsedURL.Scheme)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "image/*")
+
+	insecureSkipVerify := false
+	proxyURL := ""
+	if upstream != nil {
+		insecureSkipVerify = upstream.InsecureSkipVerify
+		proxyURL = upstream.ProxyURL
+	}
+	client := httpclient.GetManager().NewStandardClient(imageURLDownloadTimeout, insecureSkipVerify, proxyURL)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("image download failed with status %d", resp.StatusCode)
+	}
+	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if contentType != "" && !strings.HasPrefix(contentType, "image/") {
+		return "", fmt.Errorf("image download returned non-image content type %q", contentType)
+	}
+
+	limitedReader := io.LimitReader(resp.Body, maxImageDownloadBytes+1)
+	imageBytes, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return "", err
+	}
+	if len(imageBytes) > maxImageDownloadBytes {
+		return "", fmt.Errorf("image download exceeds %d bytes", maxImageDownloadBytes)
+	}
+	if len(imageBytes) == 0 {
+		return "", fmt.Errorf("image download returned empty body")
+	}
+	if contentType == "" {
+		detectedContentType := strings.ToLower(http.DetectContentType(imageBytes))
+		if !strings.HasPrefix(detectedContentType, "image/") {
+			return "", fmt.Errorf("image download returned non-image body %q", detectedContentType)
+		}
+	}
+	return base64.StdEncoding.EncodeToString(imageBytes), nil
 }
 
 func passthroughStreamingResponse(c *gin.Context, resp *http.Response) error {

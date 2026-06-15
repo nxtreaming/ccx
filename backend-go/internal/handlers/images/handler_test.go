@@ -2,7 +2,11 @@ package images
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -208,5 +212,103 @@ func TestHandler_InvalidMultipartEditsReturnsBadRequest(t *testing.T) {
 	}
 	if strings.Contains(logs, "broken") {
 		t.Fatalf("expected multipart body content to stay out of logs, got: %s", logs)
+	}
+}
+
+func TestShouldConvertImageURLToB64JSON(t *testing.T) {
+	upstream := &config.UpstreamConfig{ConvertImageURLToB64JSON: true}
+
+	if !shouldConvertImageURLToB64JSON(upstream, []byte(`{"response_format":"b64_json"}`), "application/json") {
+		t.Fatal("expected conversion for b64_json request")
+	}
+	if shouldConvertImageURLToB64JSON(upstream, []byte(`{"response_format":"url"}`), "application/json") {
+		t.Fatal("did not expect conversion for url response_format")
+	}
+	if shouldConvertImageURLToB64JSON(&config.UpstreamConfig{}, []byte(`{"response_format":"b64_json"}`), "application/json") {
+		t.Fatal("did not expect conversion when channel flag is disabled")
+	}
+	if shouldConvertImageURLToB64JSON(upstream, []byte(`broken`), "application/json") {
+		t.Fatal("did not expect conversion for invalid request body")
+	}
+
+	var multipartBody bytes.Buffer
+	writer := multipart.NewWriter(&multipartBody)
+	if err := writer.WriteField("response_format", "b64_json"); err != nil {
+		t.Fatalf("write multipart field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	if !shouldConvertImageURLToB64JSON(upstream, multipartBody.Bytes(), writer.FormDataContentType()) {
+		t.Fatal("expected conversion for multipart b64_json request")
+	}
+}
+
+func TestConvertImageURLResponseToB64JSON(t *testing.T) {
+	imageBytes := []byte("image-bytes")
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(imageBytes)
+	}))
+	defer imageServer.Close()
+
+	respMap := map[string]interface{}{
+		"data": []interface{}{
+			map[string]interface{}{
+				"url":            imageServer.URL + "/image.png",
+				"revised_prompt": "keep",
+			},
+			map[string]interface{}{
+				"url":      imageServer.URL + "/already.png",
+				"b64_json": "already",
+			},
+		},
+	}
+
+	body, err := convertImageURLResponseToB64JSON(context.Background(), respMap, &config.UpstreamConfig{})
+	if err != nil {
+		t.Fatalf("convertImageURLResponseToB64JSON() error = %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal converted body: %v", err)
+	}
+	data := got["data"].([]interface{})
+	first := data[0].(map[string]interface{})
+	if first["b64_json"] != base64.StdEncoding.EncodeToString(imageBytes) {
+		t.Fatalf("b64_json = %v, want encoded image bytes", first["b64_json"])
+	}
+	if _, exists := first["url"]; exists {
+		t.Fatalf("url should be removed after conversion: %#v", first)
+	}
+	if first["revised_prompt"] != "keep" {
+		t.Fatalf("revised_prompt = %v, want keep", first["revised_prompt"])
+	}
+	second := data[1].(map[string]interface{})
+	if second["b64_json"] != "already" {
+		t.Fatalf("existing b64_json = %v, want already", second["b64_json"])
+	}
+}
+
+func TestConvertImageURLResponseToB64JSONRejectsNonImage(t *testing.T) {
+	textServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("not image"))
+	}))
+	defer textServer.Close()
+
+	respMap := map[string]interface{}{
+		"data": []interface{}{
+			map[string]interface{}{"url": textServer.URL + "/not-image.txt"},
+		},
+	}
+
+	_, err := convertImageURLResponseToB64JSON(context.Background(), respMap, &config.UpstreamConfig{})
+	if err == nil {
+		t.Fatal("expected non-image response to fail conversion")
+	}
+	if !strings.Contains(err.Error(), "non-image") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

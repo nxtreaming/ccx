@@ -429,6 +429,57 @@ func TestStripImageGenerationToolDefaultsAndUpdate(t *testing.T) {
 	}
 }
 
+func TestConvertImageURLToB64JSONDefaultsAndImagesUpdate(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	initialConfig := `{
+		"imagesUpstream": [{
+			"name": "images-channel",
+			"baseUrl": "https://example.com",
+			"apiKeys": ["sk-active"],
+			"serviceType": "openai"
+		}]
+	}`
+	if err := os.WriteFile(configPath, []byte(initialConfig), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cm, err := NewConfigManager(configPath, "")
+	if err != nil {
+		t.Fatalf("NewConfigManager() error = %v", err)
+	}
+	defer cm.Close()
+
+	cfg := cm.GetConfig()
+	if cfg.ImagesUpstream[0].ConvertImageURLToB64JSON {
+		t.Fatal("default ConvertImageURLToB64JSON = true, want false")
+	}
+
+	enabled := true
+	if _, err := cm.UpdateImagesUpstream(0, UpstreamUpdate{ConvertImageURLToB64JSON: &enabled}); err != nil {
+		t.Fatalf("UpdateImagesUpstream() error = %v", err)
+	}
+
+	cfg = cm.GetConfig()
+	if !cfg.ImagesUpstream[0].ConvertImageURLToB64JSON {
+		t.Fatal("ConvertImageURLToB64JSON = false, want true")
+	}
+
+	cloned := cfg.ImagesUpstream[0].Clone()
+	if !cloned.ConvertImageURLToB64JSON {
+		t.Fatal("cloned ConvertImageURLToB64JSON = false, want true")
+	}
+
+	disabled := false
+	if _, err := cm.UpdateImagesUpstream(0, UpstreamUpdate{ConvertImageURLToB64JSON: &disabled}); err != nil {
+		t.Fatalf("UpdateImagesUpstream() disable error = %v", err)
+	}
+	cfg = cm.GetConfig()
+	if cfg.ImagesUpstream[0].ConvertImageURLToB64JSON {
+		t.Fatal("after disable ConvertImageURLToB64JSON = true, want false")
+	}
+}
+
 func TestStripBillingHeaderDefaultsUpdateAndMigration(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.json")

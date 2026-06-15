@@ -82,6 +82,7 @@ export interface Channel {
   normalizeNonstandardChatRoles?: boolean  // OpenAI Chat 上游：将非标准 role 改写为 user（默认 true）
   stripCodexClientTools?: boolean          // Responses 上游：透传前剥离 Codex CLI 0.130+ 客户端专属工具条目（默认 true）
   stripImageGenerationTool?: boolean       // Responses/Chat 上游：移除 image_generation 工具（默认 true）
+  convertImageUrlToB64Json?: boolean       // Images 上游：将仅返回 URL 的 b64_json 请求响应转换为 base64
   latency?: number
   status?: ChannelStatus | 'healthy' | 'error' | 'unknown' | ''
   index: number

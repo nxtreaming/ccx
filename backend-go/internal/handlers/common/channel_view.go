@@ -44,6 +44,7 @@ func BuildChannelView(up config.UpstreamConfig, index int) gin.H {
 		"codexNativeToolPassthrough":    up.CodexNativeToolPassthrough,
 		"codexToolCompat":               up.IsCodexToolCompatEnabled(),
 		"stripImageGenerationTool":      up.IsStripImageGenerationToolEnabled(),
+		"convertImageUrlToB64Json":      up.ConvertImageURLToB64JSON,
 		"noVision":                      up.NoVision,
 		"noVisionModels":                up.NoVisionModels,
 		"visionFallbackModel":           up.VisionFallbackModel,

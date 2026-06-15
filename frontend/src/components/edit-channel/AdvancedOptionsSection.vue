@@ -97,6 +97,7 @@ interface FormData {
   codexNativeToolPassthrough?: boolean
   codexToolCompat?: boolean
   stripImageGenerationTool?: boolean
+  convertImageUrlToB64Json?: boolean
   normalizeMetadataUserId?: boolean
   stripBillingHeader?: boolean
   normalizeNonstandardChatRoles?: boolean

@@ -21,6 +21,7 @@ func TestBuildChannelView_TuningBenchFields(t *testing.T) {
 		StreamInactivityTimeoutMs:   20000,
 		StreamToolCallIdleTimeoutMs: 45000,
 		HistoricalImageTurnLimit:    5,
+		ConvertImageURLToB64JSON:    true,
 	}
 
 	view := BuildChannelView(up, 0)
@@ -38,6 +39,7 @@ func TestBuildChannelView_TuningBenchFields(t *testing.T) {
 		{"streamInactivityTimeoutMs", 20000},
 		{"streamToolCallIdleTimeoutMs", 45000},
 		{"historicalImageTurnLimit", 5},
+		{"convertImageUrlToB64Json", true},
 	}
 
 	for _, a := range assertions {

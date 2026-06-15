@@ -258,6 +258,9 @@ func (cm *ConfigManager) UpdateImagesUpstream(index int, updates UpstreamUpdate)
 	if updates.StripImageGenerationTool != nil {
 		upstream.StripImageGenerationTool = *updates.StripImageGenerationTool
 	}
+	if updates.ConvertImageURLToB64JSON != nil {
+		upstream.ConvertImageURLToB64JSON = *updates.ConvertImageURLToB64JSON
+	}
 	if updates.PassbackReasoningContent != nil {
 		upstream.PassbackReasoningContent = *updates.PassbackReasoningContent
 	}

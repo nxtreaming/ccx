@@ -44,6 +44,7 @@ export interface ChannelFormLike {
   normalizeNonstandardChatRoles?: boolean
   stripCodexClientTools?: boolean
   stripImageGenerationTool?: boolean
+  convertImageUrlToB64Json?: boolean
   noVision: boolean
   noVisionModels: string[]
   visionFallbackModel: string
@@ -127,6 +128,7 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
     normalizeNonstandardChatRoles: !!form.normalizeNonstandardChatRoles,
     stripCodexClientTools: form.codexToolCompat,
     stripImageGenerationTool: !!form.stripImageGenerationTool,
+    convertImageUrlToB64Json: !!form.convertImageUrlToB64Json,
     noVision: form.noVision,
     noVisionModels: form.noVisionModels,
     visionFallbackModel: normalizeSelectableString(form.visionFallbackModel as SelectableString),

@@ -947,6 +947,19 @@
               </div>
             </v-col>
 
+            <v-col v-if="props.channelType === 'images'" cols="12">
+              <div class="d-flex align-center justify-space-between ga-5">
+                <div class="d-flex align-center ga-2" style="min-width: 0; flex: 1 1 auto;">
+                  <v-icon color="primary">mdi-image-multiple</v-icon>
+                  <div style="min-width: 0;">
+                    <div class="section-title section-title--soft">{{ t('addChannel.convertImageUrlToB64JsonLabel') }}</div>
+                    <div class="text-caption text-medium-emphasis" style="word-break: break-word;">{{ t('addChannel.convertImageUrlToB64JsonHint') }}</div>
+                  </div>
+                </div>
+                <v-switch v-model="form.convertImageUrlToB64Json" inset color="primary" hide-details style="flex-shrink: 0;" />
+              </div>
+            </v-col>
+
             <v-col v-if="props.channelType === 'messages' || props.channelType === 'responses'" cols="12">
               <div class="d-flex align-center justify-space-between">
                 <div class="d-flex align-center ga-2">
@@ -2268,6 +2281,7 @@ const form = reactive({
   normalizeNonstandardChatRoles: false,
   stripCodexClientTools: false,
   stripImageGenerationTool: false,
+  convertImageUrlToB64Json: false,
   noVision: false,
   noVisionModels: [] as string[],
   visionFallbackModel: '',
@@ -2703,6 +2717,7 @@ const hasEditableDraftChanges = computed(() => {
     normalizeNonstandardChatRoles: !!props.channel.normalizeNonstandardChatRoles,
     stripCodexClientTools: props.channel.codexToolCompat ?? props.channel.stripCodexClientTools ?? false,
     stripImageGenerationTool: !!props.channel.stripImageGenerationTool,
+    convertImageUrlToB64Json: !!props.channel.convertImageUrlToB64Json,
     noVision: !!props.channel.noVision,
     noVisionModels: [...(props.channel.noVisionModels || [])],
     visionFallbackModel: props.channel.visionFallbackModel || '',
@@ -2802,6 +2817,7 @@ const resetForm = () => {
   form.normalizeNonstandardChatRoles = false
   form.stripCodexClientTools = false
   form.stripImageGenerationTool = false
+  form.convertImageUrlToB64Json = false
   form.noVision = false
   form.noVisionModels = []
   form.visionFallbackModel = ''
@@ -2893,6 +2909,7 @@ const loadChannelData = (channel: Channel) => {
   form.normalizeNonstandardChatRoles = !!channel.normalizeNonstandardChatRoles
   form.stripCodexClientTools = channel.codexToolCompat ?? channel.stripCodexClientTools ?? false
   form.stripImageGenerationTool = !!channel.stripImageGenerationTool
+  form.convertImageUrlToB64Json = !!channel.convertImageUrlToB64Json
   form.noVision = !!channel.noVision
   form.noVisionModels = [...(channel.noVisionModels || [])]
   form.visionFallbackModel = channel.visionFallbackModel || ''
@@ -3348,7 +3365,7 @@ const PAYLOAD_KEYS = [
   'fastMode', 'customHeaders', 'proxyUrl', 'requestTimeoutMs', 'streamFirstContentTimeoutMs', 'streamInactivityTimeoutMs', 'streamToolCallIdleTimeoutMs', 'routePrefix', 'supportedModels',
   'rateLimitRpm', 'rateLimitWindowMinutes', 'rateLimitMaxConcurrent', 'rateLimitAutoFromHeaders',
   'autoBlacklistBalance', 'normalizeMetadataUserId', 'stripBillingHeader', 'passbackThinkingBlocks', 'stripEmptyTextBlocks', 'normalizeSystemRoleToTopLevel', 'codexNativeToolPassthrough',
-  'codexToolCompat', 'normalizeNonstandardChatRoles', 'stripCodexClientTools', 'stripImageGenerationTool'
+  'codexToolCompat', 'normalizeNonstandardChatRoles', 'stripCodexClientTools', 'stripImageGenerationTool', 'convertImageUrlToB64Json'
 ] as const
 
 function extractPayloadFields(channel: Channel): Record<string, unknown> {

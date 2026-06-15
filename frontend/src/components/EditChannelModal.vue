@@ -903,6 +903,7 @@ const form = reactive({
   normalizeNonstandardChatRoles: false,
   stripCodexClientTools: false,
   stripImageGenerationTool: false,
+  convertImageUrlToB64Json: false,
   noVision: false,
   noVisionModels: [] as string[],
   visionFallbackModel: '',
@@ -1340,6 +1341,7 @@ const hasEditableDraftChanges = computed(() => {
     normalizeNonstandardChatRoles: !!props.channel.normalizeNonstandardChatRoles,
     stripCodexClientTools: props.channel.codexToolCompat ?? props.channel.stripCodexClientTools ?? false,
     stripImageGenerationTool: !!props.channel.stripImageGenerationTool,
+    convertImageUrlToB64Json: !!props.channel.convertImageUrlToB64Json,
     noVision: !!props.channel.noVision,
     noVisionModels: [...(props.channel.noVisionModels || [])],
     visionFallbackModel: props.channel.visionFallbackModel || '',
@@ -1437,6 +1439,7 @@ const resetForm = () => {
   form.normalizeNonstandardChatRoles = false
   form.stripCodexClientTools = false
   form.stripImageGenerationTool = false
+  form.convertImageUrlToB64Json = false
   form.noVision = false
   form.noVisionModels = []
   form.visionFallbackModel = ''
@@ -1520,6 +1523,7 @@ const loadChannelData = (channel: Channel) => {
   form.normalizeNonstandardChatRoles = !!channel.normalizeNonstandardChatRoles
   form.stripCodexClientTools = channel.codexToolCompat ?? channel.stripCodexClientTools ?? false
   form.stripImageGenerationTool = !!channel.stripImageGenerationTool
+  form.convertImageUrlToB64Json = !!channel.convertImageUrlToB64Json
   form.noVision = !!channel.noVision
   form.noVisionModels = [...(channel.noVisionModels || [])]
   form.visionFallbackModel = channel.visionFallbackModel || ''
@@ -2037,7 +2041,7 @@ const PAYLOAD_KEYS = [
   'fastMode', 'customHeaders', 'proxyUrl', 'requestTimeoutMs', 'streamFirstContentTimeoutMs', 'streamInactivityTimeoutMs', 'streamToolCallIdleTimeoutMs', 'routePrefix', 'supportedModels',
   'rateLimitRpm', 'rateLimitWindowMinutes', 'rateLimitMaxConcurrent', 'rateLimitAutoFromHeaders',
   'autoBlacklistBalance', 'normalizeMetadataUserId', 'stripBillingHeader', 'passbackThinkingBlocks', 'stripEmptyTextBlocks', 'normalizeSystemRoleToTopLevel', 'codexNativeToolPassthrough',
-  'codexToolCompat', 'normalizeNonstandardChatRoles', 'stripCodexClientTools', 'stripImageGenerationTool'
+  'codexToolCompat', 'normalizeNonstandardChatRoles', 'stripCodexClientTools', 'stripImageGenerationTool', 'convertImageUrlToB64Json'
 ] as const
 
 function extractPayloadFields(channel: Channel): Record<string, unknown> {

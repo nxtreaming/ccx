@@ -42,6 +42,18 @@
         <v-switch :model-value="form.stripImageGenerationTool" inset color="warning" hide-details @update:model-value="updateField('stripImageGenerationTool', $event)" />
       </div>
 
+      <!-- Convert Images URL to b64_json -->
+      <div v-if="channelType === 'images'" class="d-flex align-center justify-space-between">
+        <div class="d-flex align-center ga-2">
+          <v-icon color="primary">mdi-image-multiple</v-icon>
+          <div>
+            <div class="section-title section-title--soft">{{ t('channelEditor.compat.convertImageUrlToB64Json.label') }}</div>
+            <div class="text-caption text-medium-emphasis">{{ t('channelEditor.compat.convertImageUrlToB64Json.hint') }}</div>
+          </div>
+        </div>
+        <v-switch :model-value="form.convertImageUrlToB64Json" inset color="primary" hide-details @update:model-value="updateField('convertImageUrlToB64Json', $event)" />
+      </div>
+
       <!-- Normalize System Role To TopLevel -->
       <div v-if="channelType === 'messages'" class="d-flex align-center justify-space-between">
         <div class="d-flex align-center ga-2">
@@ -217,6 +229,7 @@ interface FormData {
   codexNativeToolPassthrough?: boolean
   codexToolCompat?: boolean
   stripImageGenerationTool?: boolean
+  convertImageUrlToB64Json?: boolean
   normalizeSystemRoleToTopLevel?: boolean
   normalizeMetadataUserId?: boolean
   stripBillingHeader?: boolean

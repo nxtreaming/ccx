@@ -42,6 +42,8 @@ type UpstreamConfig struct {
 	StripCodexClientTools bool `json:"stripCodexClientTools,omitempty"`
 	// Responses/Chat 工具兼容：移除 image_generation 工具（兼容未开通图片生成权限的上游）
 	StripImageGenerationTool bool `json:"stripImageGenerationTool,omitempty"`
+	// Images 响应兼容：当客户端请求 b64_json 而上游只返回 URL 时，下载并转换为 b64_json（默认 false）
+	ConvertImageURLToB64JSON bool `json:"convertImageUrlToB64Json,omitempty"`
 	// 多渠道调度相关字段
 	Priority       int        `json:"priority"`                 // 渠道优先级（数字越小优先级越高，默认按索引）
 	Status         string     `json:"status"`                   // 渠道状态：active（正常）, suspended（暂停）, disabled（备用池）
@@ -187,6 +189,7 @@ type UpstreamUpdate struct {
 	CodexToolCompat               *bool             `json:"codexToolCompat"`
 	StripCodexClientTools         *bool             `json:"stripCodexClientTools"`
 	StripImageGenerationTool      *bool             `json:"stripImageGenerationTool"`
+	ConvertImageURLToB64JSON      *bool             `json:"convertImageUrlToB64Json"`
 	// 多渠道调度相关字段
 	Priority                *int       `json:"priority"`
 	Status                  *string    `json:"status"`
