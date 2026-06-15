@@ -246,6 +246,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from '../../i18n'
+import { maskApiKey } from '../../utils/apiKeyMask'
 
 interface KeyModelsStatus {
   loading?: boolean
@@ -288,11 +289,6 @@ const hasConfigurableKeys = computed(() => props.apiKeys.length > 0)
 const visibleDisabledKeys = computed(() => {
   return props.disabledKeys.filter(dk => !props.apiKeys.includes(dk.key))
 })
-
-const maskApiKey = (key: string): string => {
-  if (key.length <= 12) return '***'
-  return key.slice(0, 6) + '***' + key.slice(-6)
-}
 
 const handleInput = () => {
   apiKeyError.value = ''

@@ -351,6 +351,7 @@
 import { computed, ref } from 'vue'
 import type { Channel } from '../services/api'
 import { useI18n } from '../i18n'
+import { maskApiKey } from '../utils/apiKeyMask'
 
 const disabledKeyReasonLabelMap = {
   insufficient_balance: 'channelCard.blacklistReason.insufficient_balance',
@@ -433,12 +434,6 @@ const getStatusTooltip = () => {
   if (status === 'healthy') return t('channelCard.tooltipHealthy')
   if (status === 'error') return t('channelCard.tooltipError')
   return t('channelCard.tooltipUnknown')
-}
-
-// 掩码API密钥用于显示
-const maskApiKey = (key: string): string => {
-  if (key.length <= 10) return key.slice(0, 3) + '***' + key.slice(-2)
-  return key.slice(0, 8) + '***' + key.slice(-5)
 }
 
 // 获取原始密钥（用于删除操作），现在直接传递原始密钥

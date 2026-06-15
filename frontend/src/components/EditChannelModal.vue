@@ -193,6 +193,7 @@ import { buildExpectedRequestUrls } from '../utils/expectedRequestUrls'
 import { supportsAdvancedChannelOptions } from '../utils/channelAdvancedOptions'
 import { buildExpectedRequestUrl } from '../utils/baseUrlSemantics'
 import { buildChannelPayload } from '../utils/channelPayload'
+import { maskApiKey } from '../utils/apiKeyMask'
 import {
   resolveChannelWatcherAction,
   syncBaseUrlsFormState,
@@ -1209,11 +1210,6 @@ const isValidUrl = (url: string): boolean => {
   } catch {
     return false
   }
-}
-
-const maskApiKey = (key: string): string => {
-  if (key.length <= 10) return key.slice(0, 3) + '***' + key.slice(-2)
-  return key.slice(0, 8) + '***' + key.slice(-5)
 }
 
 const normalizeStringArray = (values: string[]): string[] => values.map(v => v.trim()).filter(Boolean)
