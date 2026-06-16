@@ -64,7 +64,7 @@ const { tf } = useLanguage()
           <!-- 左栏 -->
           <div class="space-y-3">
             <!-- 渠道名称预览 -->
-            <div class="flex items-center gap-3 rounded-lg border-0 bg-muted/30 p-3">
+            <div class="flex items-center gap-3 rounded-lg border-0 bg-muted/10 p-3">
               <Tag class="h-4 w-4 shrink-0 text-primary" />
               <div class="min-w-0 flex-1 space-y-0.5">
                 <div class="text-[11px] text-muted-foreground">{{ tf('addChannel.channelName', '渠道名称') }}</div>
@@ -76,7 +76,7 @@ const { tf } = useLanguage()
             </div>
 
             <!-- 上游类型选择器 -->
-            <div class="flex items-center gap-3 rounded-lg border-0 bg-muted/30 p-3">
+            <div class="flex items-center gap-3 rounded-lg border-0 bg-muted/10 p-3">
               <Layers class="h-4 w-4 shrink-0 text-muted-foreground" />
               <div class="min-w-0 flex-1 space-y-1">
                 <div class="text-[11px] text-muted-foreground">
