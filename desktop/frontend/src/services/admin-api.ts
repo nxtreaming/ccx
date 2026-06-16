@@ -72,6 +72,7 @@ export interface Channel {
   customHeaders?: Record<string, string>
   proxyUrl?: string
   requestTimeoutMs?: number
+  responseHeaderTimeoutMs?: number
   streamFirstContentTimeoutMs?: number
   streamInactivityTimeoutMs?: number
   streamToolCallIdleTimeoutMs?: number

@@ -24,6 +24,7 @@ export interface ChannelFormLike {
   customHeaders: Record<string, string>
   proxyUrl: string
   requestTimeoutMs?: string | number | null
+  responseHeaderTimeoutMs?: string | number | null
   streamFirstContentTimeoutMs?: string | number | null
   streamInactivityTimeoutMs?: string | number | null
   streamToolCallIdleTimeoutMs?: string | number | null
@@ -114,8 +115,13 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
       : 0
 
   const requestTimeoutMs = Number(form.requestTimeoutMs)
-  if (Number.isInteger(requestTimeoutMs) && requestTimeoutMs > 0) {
+  if (Number.isInteger(requestTimeoutMs) && requestTimeoutMs >= 1000 && requestTimeoutMs <= 300000) {
     channelData.requestTimeoutMs = requestTimeoutMs
+  }
+
+  const responseHeaderTimeoutMs = Number(form.responseHeaderTimeoutMs)
+  if (Number.isInteger(responseHeaderTimeoutMs) && responseHeaderTimeoutMs >= 1000 && responseHeaderTimeoutMs <= 300000) {
+    channelData.responseHeaderTimeoutMs = responseHeaderTimeoutMs
   }
 
   const streamFirstContentTimeoutMs = Number(form.streamFirstContentTimeoutMs)

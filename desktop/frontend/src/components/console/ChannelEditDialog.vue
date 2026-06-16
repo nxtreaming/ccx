@@ -234,6 +234,7 @@ const form = reactive({
   website: '',
   proxyUrl: '',
   requestTimeoutMs: '' as string | number,
+  responseHeaderTimeoutMs: '' as string | number,
   streamFirstContentTimeoutEnabled: false,
   streamFirstContentTimeoutMs: 30000,
   streamInactivityTimeoutEnabled: false,
@@ -317,6 +318,7 @@ function resetForm() {
   form.website = ''
   form.proxyUrl = ''
   form.requestTimeoutMs = ''
+  form.responseHeaderTimeoutMs = ''
   form.streamFirstContentTimeoutEnabled = false
   form.streamFirstContentTimeoutMs = 30000
   form.streamInactivityTimeoutEnabled = false
@@ -383,6 +385,7 @@ function populateFromChannel(ch: Channel) {
   form.website = ch.website || ''
   form.proxyUrl = ch.proxyUrl || ''
   form.requestTimeoutMs = ch.requestTimeoutMs || ''
+  form.responseHeaderTimeoutMs = ch.responseHeaderTimeoutMs || ''
   form.streamFirstContentTimeoutEnabled = !!(ch.streamFirstContentTimeoutMs && ch.streamFirstContentTimeoutMs > 0)
   form.streamFirstContentTimeoutMs = ch.streamFirstContentTimeoutMs && ch.streamFirstContentTimeoutMs > 0 ? ch.streamFirstContentTimeoutMs : 30000
   form.streamInactivityTimeoutEnabled = !!(ch.streamInactivityTimeoutMs && ch.streamInactivityTimeoutMs > 0)
@@ -474,8 +477,14 @@ const errors = computed(() => {
   if (!hasConfigurableKeys.value) errs.apiKeys = tf('channelEditor.auth.apiKeyRequired', '至少需要一个 API Key')
   if (String(form.requestTimeoutMs).trim()) {
     const timeout = Number(form.requestTimeoutMs)
-    if (!Number.isInteger(timeout) || timeout <= 0) {
-      errs.requestTimeoutMs = tf('channelEditor.transport.requestTimeout.invalid', '请求超时必须是正整数毫秒')
+    if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 300000) {
+      errs.requestTimeoutMs = tf('channelEditor.transport.requestTimeout.invalid', '请求超时必须是 1000-300000 之间的毫秒整数')
+    }
+  }
+  if (String(form.responseHeaderTimeoutMs).trim()) {
+    const timeout = Number(form.responseHeaderTimeoutMs)
+    if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 300000) {
+      errs.responseHeaderTimeoutMs = tf('channelEditor.transport.responseHeaderTimeout.invalid', '响应头等待超时必须是 1000-300000 之间的毫秒整数')
     }
   }
   return errs
@@ -559,6 +568,7 @@ function buildSubmitPayload() {
         customHeaders: parseJsonObject<Record<string, string>>(form.customHeadersText, 'Custom headers'),
         proxyUrl: form.proxyUrl,
         requestTimeoutMs: form.requestTimeoutMs,
+        responseHeaderTimeoutMs: form.responseHeaderTimeoutMs,
         streamFirstContentTimeoutMs: form.streamFirstContentTimeoutEnabled ? form.streamFirstContentTimeoutMs : undefined,
         streamInactivityTimeoutMs: form.streamInactivityTimeoutEnabled ? form.streamInactivityTimeoutMs : undefined,
         streamToolCallIdleTimeoutMs: form.streamToolCallIdleTimeoutEnabled ? form.streamToolCallIdleTimeoutMs : undefined,
@@ -583,6 +593,9 @@ function buildSubmitPayload() {
 
   if (isEditMode.value && props.channel?.requestTimeoutMs && !String(form.requestTimeoutMs ?? '').trim()) {
     payload.requestTimeoutMs = 0
+  }
+  if (isEditMode.value && props.channel?.responseHeaderTimeoutMs && !String(form.responseHeaderTimeoutMs ?? '').trim()) {
+    payload.responseHeaderTimeoutMs = 0
   }
   if (isEditMode.value && props.channel?.streamFirstContentTimeoutMs && !form.streamFirstContentTimeoutEnabled) {
     payload.streamFirstContentTimeoutMs = 0
@@ -1486,6 +1499,7 @@ function buildCurrentPayload() {
     customHeaders: getHeadersAsObject(),
     proxyUrl: form.proxyUrl,
     requestTimeoutMs: form.requestTimeoutMs,
+    responseHeaderTimeoutMs: form.responseHeaderTimeoutMs,
     streamFirstContentTimeoutMs: form.streamFirstContentTimeoutEnabled ? form.streamFirstContentTimeoutMs : undefined,
     streamInactivityTimeoutMs: form.streamInactivityTimeoutEnabled ? form.streamInactivityTimeoutMs : undefined,
     streamToolCallIdleTimeoutMs: form.streamToolCallIdleTimeoutEnabled ? form.streamToolCallIdleTimeoutMs : undefined,

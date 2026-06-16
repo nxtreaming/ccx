@@ -33,6 +33,7 @@ interface FormData {
   rateLimitMaxConcurrent: string | number
   rateLimitAutoFromHeaders: boolean
   requestTimeoutMs: string | number
+  responseHeaderTimeoutMs: string | number
 }
 
 defineProps<{
@@ -294,11 +295,28 @@ function updateTextVerbosity(value: string) {
             <Input
               :model-value="form.requestTimeoutMs"
               type="number"
+              min="1000"
+              max="300000"
+              step="1000"
               class="h-8 w-full text-xs"
               :placeholder="t('channelEditor.transport.requestTimeout.placeholder')"
               @update:model-value="(val) => updateField('requestTimeoutMs', val)"
             />
             <p class="text-[10px] leading-4 text-muted-foreground">{{ t('channelEditor.transport.requestTimeout.hint') }}</p>
+          </div>
+          <div class="space-y-1">
+            <Label class="text-[9px] font-bold text-muted-foreground">{{ t('channelEditor.transport.responseHeaderTimeout.label') }}</Label>
+            <Input
+              :model-value="form.responseHeaderTimeoutMs"
+              type="number"
+              min="1000"
+              max="300000"
+              step="1000"
+              class="h-8 w-full text-xs"
+              :placeholder="t('channelEditor.transport.responseHeaderTimeout.placeholder')"
+              @update:model-value="(val) => updateField('responseHeaderTimeoutMs', val)"
+            />
+            <p class="text-[10px] leading-4 text-muted-foreground">{{ t('channelEditor.transport.responseHeaderTimeout.hint') }}</p>
           </div>
           <div class="space-y-1">
             <Label class="text-[9px] font-bold text-muted-foreground">{{ t('channelEditor.transport.routePrefix.label') }}</Label>
