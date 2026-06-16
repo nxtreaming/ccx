@@ -86,8 +86,8 @@
 
                 <!-- 两栏布局 -->
                 <v-row dense>
-                  <!-- 左栏：渠道名称 + 上游类型 -->
-                  <v-col cols="12" md="6">
+                  <!-- 左栏：渠道名称 + 上游类型（2/3） -->
+                  <v-col cols="12" md="8">
                     <div class="d-flex flex-column ga-3">
                       <!-- 渠道名称预览 -->
                       <div class="d-flex align-center ga-3 pa-3 bg-grey-lighten-4 rounded-lg">
@@ -123,8 +123,8 @@
                     </div>
                   </v-col>
 
-                  <!-- 右栏：API Keys -->
-                  <v-col cols="12" md="6">
+                  <!-- 右栏：API Keys（1/3） -->
+                  <v-col cols="12" md="4">
                     <div class="d-flex align-center ga-3">
                       <v-icon :color="detectedApiKeys.length > 0 ? 'success' : 'error'" size="20">
                         {{ detectedApiKeys.length > 0 ? 'mdi-check-circle' : 'mdi-alert-circle' }}

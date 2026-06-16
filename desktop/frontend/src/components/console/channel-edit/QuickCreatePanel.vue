@@ -60,9 +60,9 @@ const { tf } = useLanguage()
         </div>
 
         <!-- 两栏：左（渠道名称+上游类型）右（API Keys） -->
-        <div class="grid items-start gap-3 md:grid-cols-2">
-          <!-- 左栏 -->
-          <div class="space-y-3">
+        <div class="grid items-start gap-3 md:grid-cols-3">
+          <!-- 左栏：2/3 -->
+          <div class="space-y-3 md:col-span-2">
             <!-- 渠道名称预览 -->
             <div class="flex items-center gap-3 rounded-lg border-0 bg-muted/10 p-3">
               <Tag class="h-4 w-4 shrink-0 text-primary" />
@@ -94,8 +94,8 @@ const { tf } = useLanguage()
             </div>
           </div>
 
-          <!-- 右栏：API Keys -->
-          <div class="rounded-lg border border-border bg-background/70 p-3">
+          <!-- 右栏：API Keys（1/3） -->
+          <div class="rounded-lg border border-border bg-background/70 p-3 md:col-span-1">
             <div class="flex items-center gap-2 text-xs font-semibold mb-1.5">
               <CheckCircle2 v-if="detectedApiKeys.length" class="h-4 w-4 text-emerald-500" />
               <AlertCircle v-else class="h-4 w-4 text-muted-foreground" />
