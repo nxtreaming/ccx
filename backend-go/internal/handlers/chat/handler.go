@@ -358,6 +358,19 @@ func stripImageGenerationFromChatTools(reqMap map[string]interface{}) {
 	reqMap["tools"] = kept
 }
 
+func extractRequestModel(bodyBytes []byte, fallback string) string {
+	var reqMap map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &reqMap); err != nil {
+		return fallback
+	}
+	model, _ := reqMap["model"].(string)
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return fallback
+	}
+	return model
+}
+
 // buildProviderRequest 构建上游请求
 
 func stripThinkingBlocksFromBody(bodyBytes []byte) []byte {
@@ -427,7 +440,8 @@ func buildProviderRequest(
 	skipVersionPrefix := strings.HasSuffix(baseURL, "#")
 	baseURL = strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "#")
 	// 应用模型映射
-	mappedModel := config.RedirectModel(model, upstream)
+	effectiveModel := extractRequestModel(bodyBytes, model)
+	mappedModel := config.RedirectModel(effectiveModel, upstream)
 
 	var requestBody []byte
 	var url string
@@ -436,7 +450,7 @@ func buildProviderRequest(
 	case "openai", "":
 		// OpenAI 兼容上游：透传请求，仅替换 model 并注入高级参数
 		var err error
-		requestBody, err = buildChatCompletionRequestBody(bodyBytes, model, mappedModel, upstream, true)
+		requestBody, err = buildChatCompletionRequestBody(bodyBytes, effectiveModel, mappedModel, upstream, true)
 		if err != nil {
 			return nil, err
 		}
@@ -452,7 +466,7 @@ func buildProviderRequest(
 
 	case "responses":
 		// Responses 上游：转换 Chat 格式为 Responses 格式，发送到 /v1/responses
-		chatBody, err := buildChatCompletionRequestBody(bodyBytes, model, mappedModel, upstream, true)
+		chatBody, err := buildChatCompletionRequestBody(bodyBytes, effectiveModel, mappedModel, upstream, true)
 		if err != nil {
 			return nil, err
 		}
@@ -485,7 +499,7 @@ func buildProviderRequest(
 	case "gemini":
 		// Gemini 上游：透传为 OpenAI Chat 格式（大部分 Gemini 兼容端点支持 OpenAI 格式）
 		var err error
-		requestBody, err = buildChatCompletionRequestBody(bodyBytes, model, mappedModel, upstream, false)
+		requestBody, err = buildChatCompletionRequestBody(bodyBytes, effectiveModel, mappedModel, upstream, false)
 		if err != nil {
 			return nil, err
 		}
@@ -503,7 +517,7 @@ func buildProviderRequest(
 	default:
 		// 默认当作 OpenAI 兼容处理
 		var err error
-		requestBody, err = buildChatCompletionRequestBody(bodyBytes, model, mappedModel, upstream, false)
+		requestBody, err = buildChatCompletionRequestBody(bodyBytes, effectiveModel, mappedModel, upstream, false)
 		if err != nil {
 			return nil, err
 		}

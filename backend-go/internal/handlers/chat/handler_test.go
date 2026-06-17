@@ -59,6 +59,39 @@ func TestBuildProviderRequest_InjectsReasoningBeforeModelRedirect(t *testing.T) 
 	}
 }
 
+func TestBuildProviderRequest_UsesEffectiveBodyModelForVisionFallbackReasoning(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(context.Background())
+
+	bodyBytes := []byte(`{"model":"mimo-v2.5","messages":[{"role":"user","content":"hi"}]}`)
+	upstream := &config.UpstreamConfig{
+		ServiceType: "openai",
+		ReasoningMapping: map[string]string{
+			"mimo-v2.5": "max",
+		},
+	}
+
+	req, err := buildProviderRequest(c, upstream, "https://api.example.com", "sk-test", bodyBytes, "mimo-v2.5-pro", false)
+	if err != nil {
+		t.Fatalf("buildProviderRequest() err = %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+
+	if got["model"] != "mimo-v2.5" {
+		t.Fatalf("model = %v, want mimo-v2.5", got["model"])
+	}
+	reasoning, ok := got["reasoning"].(map[string]interface{})
+	if !ok || reasoning["effort"] != "max" {
+		t.Fatalf("reasoning = %#v, want effort=max", got["reasoning"])
+	}
+}
+
 func TestStripImageGenerationFromChatTools(t *testing.T) {
 	t.Run("剥离 image_generation 保留其他工具", func(t *testing.T) {
 		reqMap := map[string]interface{}{
