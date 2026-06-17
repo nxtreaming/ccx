@@ -24,6 +24,7 @@ func extractReasoningEffortForLog(bodyBytes []byte) string {
 		"reasoning.effort",
 		"reasoning",
 		"thinking.effort",
+		"output_config.effort",
 		"generationConfig.thinkingConfig.thinkingLevel",
 		"thinkingConfig.thinkingLevel",
 		"thinking.thinkingLevel",

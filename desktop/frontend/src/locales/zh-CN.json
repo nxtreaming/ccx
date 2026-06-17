@@ -577,6 +577,8 @@
   "addChannel.visionFallbackLabel": "视觉回退模型",
   "addChannel.visionFallbackPlaceholder": "含图请求时使用的替代模型",
   "addChannel.visionFallbackHint": "当请求包含图片且目标模型不支持 vision 时，使用此模型替代。留空则 failover 到下一个渠道。",
+  "addChannel.visionFallbackReasoningLabel": "回退思考强度",
+  "addChannel.visionFallbackReasoningHint": "含图请求改用视觉回退模型时使用的思考强度。",
   "channelEditor.auth.apiKeyRequired": "至少需要一个 API Key",
   "channelEditor.mapping.reasoningEffort.label": "推理强度",
   "channelEditor.compat.noVisionModels": "无视觉模型（每行一个）",

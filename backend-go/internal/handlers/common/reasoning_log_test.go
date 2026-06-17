@@ -29,6 +29,11 @@ func TestExtractReasoningEffortForLog(t *testing.T) {
 			want: "max",
 		},
 		{
+			name: "claude output config effort",
+			body: `{"model":"glm-5.2","output_config":{"effort":"max"}}`,
+			want: "max",
+		},
+		{
 			name: "claude disabled thinking wins over stale effort",
 			body: `{"model":"claude","thinking":{"type":"disabled","effort":"max"}}`,
 			want: "none",

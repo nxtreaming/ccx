@@ -9,6 +9,7 @@ import { useConsoleChannels } from '@/composables/useConsoleChannels'
 import { useLanguage } from '@/composables/useLanguage'
 import { AdminApiError } from '@/composables/useAdminApi'
 import { buildChannelPayload } from '@/utils/channel-payload'
+import { supportsAdvancedChannelOptions, supportsReasoningMapping } from '@/utils/channel-advanced-options'
 import {
   extractChannelNamePrefix,
   filterValidSupportedModelPatterns,
@@ -255,6 +256,7 @@ const form = reactive({
   textVerbosity: '' as 'low' | 'medium' | 'high' | '',
   supportedModelsText: '',
   visionFallbackModel: '',
+  visionFallbackReasoningEffort: '' as ReasoningEffort | '',
   noVision: false,
   historicalImageTurnLimit: 0,
   passbackReasoningContent: false,
@@ -339,6 +341,7 @@ function resetForm() {
   form.textVerbosity = ''
   form.supportedModelsText = ''
   form.visionFallbackModel = ''
+  form.visionFallbackReasoningEffort = ''
   form.noVision = false
   form.historicalImageTurnLimit = 0
   form.passbackReasoningContent = false
@@ -414,6 +417,7 @@ function populateFromChannel(ch: Channel) {
   form.supportedModelsText = (ch.supportedModels || []).join('\n')
   // noVisionModels 中命中映射 target 的由行级 toggle 表示，其余保留在文本框，避免重复展示
   form.visionFallbackModel = ch.visionFallbackModel || ''
+  form.visionFallbackReasoningEffort = (ch.reasoningMapping?.[form.visionFallbackModel] || '') as ReasoningEffort | ''
   form.noVision = ch.noVision ?? false
   form.historicalImageTurnLimit = ch.historicalImageTurnLimit ?? 0
   form.passbackReasoningContent = ch.passbackReasoningContent ?? false
@@ -590,6 +594,8 @@ function buildSubmitPayload() {
         visionFallbackModel: form.visionFallbackModel,
         historicalImageTurnLimit: form.historicalImageTurnLimit,
       })
+
+  applyVisionFallbackReasoning(payload)
 
   if (isEditMode.value && props.channel?.requestTimeoutMs && !String(form.requestTimeoutMs ?? '').trim()) {
     payload.requestTimeoutMs = 0
@@ -1075,8 +1081,9 @@ const headerServiceTypeItems = computed(() => {
   )
 })
 
-const supportsOpenAIAdvanced = computed(() => form.serviceType === 'openai' || form.serviceType === 'responses')
-const supportsOpenAIAdvancedOptions = computed(() => form.serviceType === 'openai' || form.serviceType === 'responses')
+const supportsOpenAIAdvanced = computed(() => supportsAdvancedChannelOptions(form.serviceType))
+const supportsOpenAIAdvancedOptions = computed(() => supportsAdvancedChannelOptions(form.serviceType))
+const supportsReasoningMappingOptions = computed(() => supportsReasoningMapping(form.serviceType))
 const supportsChatRoleNormalization = computed(() => {
   return props.channelType === 'chat' || (props.channelType === 'responses' && form.serviceType === 'openai')
 })
@@ -1136,6 +1143,7 @@ function applyClaudePreset(name: string) {
   form.normalizeSystemRoleToTopLevel = preset.normalizeSystemRoleToTopLevel
   form.noVision = preset.noVision
   form.visionFallbackModel = preset.visionFallbackModel
+  form.visionFallbackReasoningEffort = ''
 }
 
 function applyCodexResponsesPreset(name: string) {
@@ -1151,6 +1159,7 @@ function applyCodexResponsesPreset(name: string) {
   form.normalizeNonstandardChatRoles = preset.normalizeNonstandardChatRoles
   form.noVision = preset.noVision
   form.visionFallbackModel = preset.visionFallbackModel
+  form.visionFallbackReasoningEffort = ''
 }
 
 // ── 模型列表拉取 ──
@@ -1392,6 +1401,21 @@ function getReasoningMappingAsObject(): Record<string, 'none' | 'low' | 'medium'
     }
   }
   return result
+}
+
+function applyVisionFallbackReasoning(payload: Partial<Channel>) {
+  const fallbackModel = form.visionFallbackModel.trim()
+  if (!supportsReasoningMappingOptions.value || !fallbackModel) {
+    return
+  }
+
+  const reasoningMapping = { ...(payload.reasoningMapping || {}) }
+  if (form.visionFallbackReasoningEffort) {
+    reasoningMapping[fallbackModel] = form.visionFallbackReasoningEffort
+  } else if (!modelMappingRows.value.some(row => row.source === fallbackModel && row.reasoning)) {
+    delete reasoningMapping[fallbackModel]
+  }
+  payload.reasoningMapping = reasoningMapping
 }
 
 function getNoVisionModelsFromRows(): string[] {
@@ -1638,6 +1662,7 @@ void toggleSupportedModelFilter
                         :active-target-input-id="activeTargetInputId"
                         :DEFAULT_SELECT_VALUE="DEFAULT_SELECT_VALUE"
                         :vision-fallback-model="form.visionFallbackModel"
+                        :vision-fallback-reasoning-effort="form.visionFallbackReasoningEffort"
                         :supported-models-text="form.supportedModelsText"
                         :model-mapping-hint="modelMappingHint"
                         :target-model-placeholder="targetModelPlaceholder"
@@ -1645,7 +1670,7 @@ void toggleSupportedModelFilter
                         :show-messages-open-a-i-channel-presets="showMessagesOpenAIChannelPresets"
                         :show-claude-channel-presets="showClaudeChannelPresets"
                         :show-codex-responses-presets="showCodexResponsesPresets"
-                        :supports-open-a-i-advanced-options="supportsOpenAIAdvancedOptions"
+                        :supports-reasoning-mapping-options="supportsReasoningMappingOptions"
                         :common-supported-model-filters="commonSupportedModelFilters"
                         :selected-supported-model-set="selectedSupportedModelSet"
                         :source-mapping-error="sourceMappingError"
@@ -1653,6 +1678,7 @@ void toggleSupportedModelFilter
                         :supported-models-error="supportedModelsError"
                         @update:new-model-mapping="(updates) => Object.assign(newModelMapping, updates)"
                         @update:vision-fallback-model="form.visionFallbackModel = $event"
+                        @update:vision-fallback-reasoning-effort="form.visionFallbackReasoningEffort = $event"
                         @update:supported-models-text="form.supportedModelsText = $event"
                         @add-model-mapping-row="addModelMappingRow"
                         @remove-model-mapping-row="removeModelMappingRow"

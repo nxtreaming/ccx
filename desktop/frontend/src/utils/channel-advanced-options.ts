@@ -14,18 +14,18 @@ export const supportsAdvancedChannelOptions = (serviceType: ChannelServiceType):
   return serviceType === 'openai' || serviceType === 'responses'
 }
 
+export const supportsReasoningMapping = (serviceType: ChannelServiceType): boolean => {
+  return serviceType === 'openai' || serviceType === 'responses' || serviceType === 'claude'
+}
+
 export const normalizeAdvancedChannelOptions = (
   serviceType: ChannelServiceType,
   options: AdvancedChannelOptions
 ): AdvancedChannelOptions => {
-  if (supportsAdvancedChannelOptions(serviceType)) {
-    return options
-  }
-
   return {
-    reasoningMapping: {},
-    reasoningParamStyle: 'reasoning',
-    textVerbosity: '',
-    fastMode: false
+    reasoningMapping: supportsReasoningMapping(serviceType) ? options.reasoningMapping : {},
+    reasoningParamStyle: supportsAdvancedChannelOptions(serviceType) ? options.reasoningParamStyle : 'reasoning',
+    textVerbosity: supportsAdvancedChannelOptions(serviceType) ? options.textVerbosity : '',
+    fastMode: supportsAdvancedChannelOptions(serviceType) ? options.fastMode : false
   }
 }

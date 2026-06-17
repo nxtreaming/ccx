@@ -578,6 +578,8 @@
   "addChannel.visionFallbackLabel": "Vision fallback model",
   "addChannel.visionFallbackPlaceholder": "Model to use when request contains images",
   "addChannel.visionFallbackHint": "When a request contains images and the target model does not support vision, this model will be used instead. Leave empty to failover to the next channel.",
+  "addChannel.visionFallbackReasoningLabel": "Fallback reasoning effort",
+  "addChannel.visionFallbackReasoningHint": "Reasoning effort used when image requests switch to the vision fallback model.",
   "channelEditor.mapping.reasoningEffort.label": "Reasoning effort",
   "channelEditor.compat.noVisionModels": "No vision models (one per line)",
   "channelEditor.compat.visionFallback.label": "Vision fallback model",

@@ -65,6 +65,7 @@ func TestClaudeProvider_InjectsReasoningEffortForRedirectedModel(t *testing.T) {
 		"model": "claude-opus-4-xhigh",
 		"messages": [{"role": "user", "content": "hi"}],
 		"thinking": {"type": "enabled", "effort": "xhigh", "budget_tokens": 32000},
+		"output_config": {"effort": "xhigh"},
 		"reasoning": {"effort": "xhigh"},
 		"reasoning_effort": "xhigh"
 	}`)
@@ -109,6 +110,13 @@ func TestClaudeProvider_InjectsReasoningEffortForRedirectedModel(t *testing.T) {
 	if _, exists := got["reasoning_effort"]; exists {
 		t.Fatalf("reasoning_effort should be removed from Claude passthrough body: %#v", got["reasoning_effort"])
 	}
+	outputConfig, ok := got["output_config"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("output_config = %#v, want object; body=%s", got["output_config"], string(reqBody))
+	}
+	if outputConfig["effort"] != "max" {
+		t.Fatalf("output_config.effort = %v, want max", outputConfig["effort"])
+	}
 }
 
 func TestClaudeProvider_DisablesThinkingForNoneReasoningEffort(t *testing.T) {
@@ -117,7 +125,8 @@ func TestClaudeProvider_DisablesThinkingForNoneReasoningEffort(t *testing.T) {
 	body := []byte(`{
 		"model": "claude-sonnet-4",
 		"messages": [{"role": "user", "content": "hi"}],
-		"thinking": {"type": "enabled", "effort": "xhigh", "budget_tokens": 32000}
+		"thinking": {"type": "enabled", "effort": "xhigh", "budget_tokens": 32000},
+		"output_config": {"effort": "xhigh", "foo": "bar"}
 	}`)
 	c := newGinContext(http.MethodPost, "/v1/messages", body, context.Background())
 	upstream := &config.UpstreamConfig{
@@ -150,6 +159,16 @@ func TestClaudeProvider_DisablesThinkingForNoneReasoningEffort(t *testing.T) {
 	}
 	if _, exists := thinking["budget_tokens"]; exists {
 		t.Fatalf("disabled thinking should not keep budget_tokens: %#v", thinking)
+	}
+	outputConfig, ok := got["output_config"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("output_config = %#v, want object; body=%s", got["output_config"], string(reqBody))
+	}
+	if _, exists := outputConfig["effort"]; exists {
+		t.Fatalf("disabled output_config should not keep effort: %#v", outputConfig)
+	}
+	if outputConfig["foo"] != "bar" {
+		t.Fatalf("output_config should keep unrelated fields: %#v", outputConfig)
 	}
 }
 

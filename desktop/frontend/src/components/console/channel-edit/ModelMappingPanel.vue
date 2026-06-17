@@ -29,12 +29,13 @@ const props = defineProps<{
   activeTargetInputId: string | null
   DEFAULT_SELECT_VALUE: string
   visionFallbackModel: string
+  visionFallbackReasoningEffort: ReasoningEffort | ''
   supportedModelsText: string
   showModelMappingPresets: boolean
   showMessagesOpenAIChannelPresets: boolean
   showClaudeChannelPresets: boolean
   showCodexResponsesPresets: boolean
-  supportsOpenAIAdvancedOptions: boolean
+  supportsReasoningMappingOptions: boolean
   modelMappingHint: string
   targetModelPlaceholder: string
   commonSupportedModelFilters: string[]
@@ -47,6 +48,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:newModelMapping': [value: Partial<ModelMappingRow>]
   'update:visionFallbackModel': [value: string]
+  'update:visionFallbackReasoningEffort': [value: ReasoningEffort | '']
   'update:supportedModelsText': [value: string]
   'addModelMappingRow': []
   'removeModelMappingRow': [id: number]
@@ -220,7 +222,7 @@ function fromSelectValue(value: string): ReasoningEffort | '' {
           </div>
 
           <!-- VERBOSITY (Reasoning) -->
-          <div v-if="supportsOpenAIAdvancedOptions" class="space-y-0.5">
+          <div v-if="supportsReasoningMappingOptions" class="space-y-0.5">
             <span class="text-[8px] font-bold tracking-wider text-muted-foreground/50 block pl-1">{{ t('channelEditor.mapping.reasoningEffort.label') }}</span>
             <Select
               :model-value="toSelectValue(row.reasoning)"
@@ -265,31 +267,53 @@ function fromSelectValue(value: string): ReasoningEffort | '' {
     </div>
 
     <div v-if="hasNoVisionRows" class="space-y-1.5 rounded-xl border border-border/60 bg-card/30 p-4">
-      <Label class="text-xs font-semibold text-muted-foreground">
-        {{ t('addChannel.visionFallbackLabel') }}
-      </Label>
-      <div class="relative" data-target-model-picker>
-        <Input
-          :model-value="visionFallbackModel"
-          :class="['h-9 w-full font-mono text-xs', stableInputFocusClass]"
-          :placeholder="t('addChannel.visionFallbackPlaceholder')"
-          @update:model-value="(val) => { emit('update:visionFallbackModel', val as string); emit('showTargetDropdown', 'vision-fallback', val as string) }"
-          @focus="emit('handleTargetFocus'); emit('showTargetDropdown', 'vision-fallback', visionFallbackModel)"
-        />
-        <div
-          v-if="showTargetSuggestions && activeTargetInputId === 'vision-fallback' && filteredTargetModels.length"
-          class="absolute left-0 right-0 top-full z-30 mt-1 max-h-52 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
-        >
-          <button
-            v-for="model in filteredTargetModels"
-            :key="model"
-            type="button"
-            class="flex w-full items-center rounded-md px-2 py-1.5 text-left font-mono text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-            :class="model === visionFallbackModel ? 'bg-primary/10 text-primary' : ''"
-            @mousedown.prevent="emit('update:visionFallbackModel', model); emit('hideTargetDropdown')"
+      <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+        <div class="space-y-1.5">
+          <Label class="text-xs font-semibold text-muted-foreground">
+            {{ t('addChannel.visionFallbackLabel') }}
+          </Label>
+          <div class="relative" data-target-model-picker>
+            <Input
+              :model-value="visionFallbackModel"
+              :class="['h-9 w-full font-mono text-xs', stableInputFocusClass]"
+              :placeholder="t('addChannel.visionFallbackPlaceholder')"
+              @update:model-value="(val) => { emit('update:visionFallbackModel', val as string); emit('showTargetDropdown', 'vision-fallback', val as string) }"
+              @focus="emit('handleTargetFocus'); emit('showTargetDropdown', 'vision-fallback', visionFallbackModel)"
+            />
+            <div
+              v-if="showTargetSuggestions && activeTargetInputId === 'vision-fallback' && filteredTargetModels.length"
+              class="absolute left-0 right-0 top-full z-30 mt-1 max-h-52 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
+            >
+              <button
+                v-for="model in filteredTargetModels"
+                :key="model"
+                type="button"
+                class="flex w-full items-center rounded-md px-2 py-1.5 text-left font-mono text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                :class="model === visionFallbackModel ? 'bg-primary/10 text-primary' : ''"
+                @mousedown.prevent="emit('update:visionFallbackModel', model); emit('hideTargetDropdown')"
+              >
+                {{ model }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-if="supportsReasoningMappingOptions" class="space-y-1.5">
+          <Label class="text-xs font-semibold text-muted-foreground">
+            {{ t('addChannel.visionFallbackReasoningLabel') }}
+          </Label>
+          <Select
+            :model-value="toSelectValue(visionFallbackReasoningEffort)"
+            @update:model-value="(val) => emit('update:visionFallbackReasoningEffort', fromSelectValue(val as string))"
           >
-            {{ model }}
-          </button>
+            <SelectTrigger class="h-9 rounded-lg border border-border/70 bg-background/60 px-3 text-xs text-muted-foreground">
+              <SelectValue :placeholder="t('channelEditor.compat.selectDefault')" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in reasoningEffortOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
       <p class="text-[10px] leading-4 text-muted-foreground">
@@ -350,7 +374,7 @@ function fromSelectValue(value: string): ReasoningEffort | '' {
             </button>
           </div>
         </div>
-        <div v-if="supportsOpenAIAdvancedOptions" class="space-y-1">
+        <div v-if="supportsReasoningMappingOptions" class="space-y-1">
           <Label class="text-xs font-semibold text-muted-foreground">
             {{ t('channelEditor.mapping.reasoningEffort.label') }}
           </Label>
