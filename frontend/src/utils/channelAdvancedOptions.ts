@@ -14,6 +14,10 @@ export const supportsAdvancedChannelOptions = (serviceType: ChannelServiceType):
   return serviceType === 'openai' || serviceType === 'responses'
 }
 
+export const supportsReasoningMapping = (serviceType: ChannelServiceType): boolean => {
+  return serviceType === 'openai' || serviceType === 'responses' || serviceType === 'claude'
+}
+
 export const normalizeAdvancedChannelOptions = (
   serviceType: ChannelServiceType,
   options: AdvancedChannelOptions
@@ -23,7 +27,7 @@ export const normalizeAdvancedChannelOptions = (
   }
 
   return {
-    reasoningMapping: {},
+    reasoningMapping: supportsReasoningMapping(serviceType) ? options.reasoningMapping : {},
     reasoningParamStyle: 'reasoning',
     textVerbosity: '',
     fastMode: false

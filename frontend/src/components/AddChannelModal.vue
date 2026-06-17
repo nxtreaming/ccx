@@ -404,7 +404,7 @@
                       />
 
                       <v-select
-                        v-if="supportsOpenAIAdvancedOptions"
+                        v-if="supportsReasoningMappingOptions"
                         v-model="newMapping.reasoningEffort"
                         :label="t('addChannel.reasoningEffortLabel')"
                         :items="reasoningEffortOptions"
@@ -475,7 +475,7 @@
 
                             <!-- Reasoning 选择器 -->
                             <v-select
-                              v-if="supportsOpenAIAdvancedOptions"
+                              v-if="supportsReasoningMappingOptions"
                               v-model="row.reasoning"
                               :items="[
                                 { title: '无', value: '' },
@@ -570,21 +570,39 @@
 
             <!-- Vision 回退模型（仅当有模型级 noVision 标记时显示） -->
             <v-col v-if="form.noVisionModels.length > 0" cols="12">
-              <v-combobox
-                v-model="form.visionFallbackModel"
-                :label="t('addChannel.visionFallbackLabel')"
-                :placeholder="t('addChannel.visionFallbackPlaceholder')"
-                :hint="t('addChannel.visionFallbackHint')"
-                :items="targetModelOptions"
-                prepend-inner-icon="mdi-eye"
-                persistent-hint
-                clearable
-                variant="outlined"
-                density="comfortable"
-                eager
-                @focus="ensureTargetModelsLoaded"
-                @update:menu="onMenuUpdate"
-              />
+              <v-row dense>
+                <v-col cols="12" :md="supportsReasoningMappingOptions ? 8 : 12">
+                  <v-combobox
+                    v-model="form.visionFallbackModel"
+                    :label="t('addChannel.visionFallbackLabel')"
+                    :placeholder="t('addChannel.visionFallbackPlaceholder')"
+                    :hint="t('addChannel.visionFallbackHint')"
+                    :items="targetModelOptions"
+                    prepend-inner-icon="mdi-eye"
+                    persistent-hint
+                    clearable
+                    variant="outlined"
+                    density="comfortable"
+                    eager
+                    @focus="ensureTargetModelsLoaded"
+                    @update:menu="onMenuUpdate"
+                  />
+                </v-col>
+                <v-col v-if="supportsReasoningMappingOptions" cols="12" md="4">
+                  <v-select
+                    v-model="form.visionFallbackReasoningEffort"
+                    :label="t('addChannel.visionFallbackReasoningLabel')"
+                    :items="reasoningEffortOptions"
+                    variant="outlined"
+                    density="comfortable"
+                    clearable
+                    persistent-hint
+                    :hint="t('addChannel.visionFallbackReasoningHint')"
+                    eager
+                    @update:menu="onMenuUpdate"
+                  />
+                </v-col>
+              </v-row>
             </v-col>
 
             <!-- 历史图片轮次限制 -->
@@ -1449,7 +1467,7 @@ import {
   parseQuickInput as parseQuickInputUtil
 } from '../utils/quickInputParser'
 import { buildExpectedRequestUrls } from '../utils/expectedRequestUrls'
-import { supportsAdvancedChannelOptions } from '../utils/channelAdvancedOptions'
+import { supportsAdvancedChannelOptions, supportsReasoningMapping } from '../utils/channelAdvancedOptions'
 import { buildExpectedRequestUrl } from '../utils/baseUrlSemantics'
 import { buildChannelPayload } from '../utils/channelPayload'
 import { maskApiKey } from '../utils/apiKeyMask'
@@ -1927,6 +1945,7 @@ const textVerbosityOptions = [
 ]
 
 const supportsOpenAIAdvancedOptions = computed(() => supportsAdvancedChannelOptions(form.serviceType))
+const supportsReasoningMappingOptions = computed(() => supportsReasoningMapping(form.serviceType))
 const supportsChatRoleNormalization = computed(() => {
   return props.channelType === 'chat' || (props.channelType === 'responses' && form.serviceType === 'openai')
 })
@@ -2079,6 +2098,7 @@ const applyClaudeChannelPreset = (preset: keyof typeof claudeChannelPresets) => 
   form.noVision = presetConfig.noVision
   form.noVisionModels = [...presetConfig.noVisionModels]
   form.visionFallbackModel = presetConfig.visionFallbackModel
+  form.visionFallbackReasoningEffort = ''
   if (presetConfig.modelMapping) {
     form.modelMapping = { ...presetConfig.modelMapping }
     form.reasoningMapping = {}
@@ -2174,6 +2194,7 @@ const applyCodexResponsesChannelPreset = (preset: keyof typeof codexResponsesCha
   form.noVision = presetConfig.noVision
   form.noVisionModels = [...presetConfig.noVisionModels]
   form.visionFallbackModel = presetConfig.visionFallbackModel
+  form.visionFallbackReasoningEffort = ''
 
   syncModelMappingRowsFromForm()
 }
@@ -2342,6 +2363,7 @@ const form = reactive({
   noVision: false,
   noVisionModels: [] as string[],
   visionFallbackModel: '',
+  visionFallbackReasoningEffort: '' as 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | '',
   historicalImageTurnLimit: 0,
 })
 
@@ -2403,7 +2425,7 @@ const modelMappingRows = ref<ModelMappingRow[]>([])
 const editingMapping = ref<string | null>(null)
 const editMappingForm = reactive({
   targetModel: '',
-  reasoning: '' as '' | 'off' | 'low' | 'medium' | 'high' | 'xhigh'
+  reasoning: '' as '' | 'off' | 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 })
 
 // 自定义请求头输入
@@ -2703,6 +2725,7 @@ const normalizeComparablePayload = (payload: Partial<Channel>) => ({
 
 const buildSubmitPayload = () => {
   const payload = buildChannelPayload(form)
+  applyVisionFallbackReasoning(payload)
   if (!form.streamFirstContentTimeoutEnabled) {
     delete payload.streamFirstContentTimeoutMs
     if (isEditing.value && props.channel?.streamFirstContentTimeoutMs) {
@@ -2737,6 +2760,21 @@ const buildSubmitPayload = () => {
     payload.rateLimitMaxConcurrent = 0
   }
   return payload
+}
+
+const applyVisionFallbackReasoning = (payload: Partial<Channel>) => {
+  const fallbackModel = normalizeSelectableString(form.visionFallbackModel).trim()
+  if (!supportsReasoningMappingOptions.value || !fallbackModel) {
+    return
+  }
+
+  const reasoningMapping = { ...(payload.reasoningMapping || {}) }
+  if (form.visionFallbackReasoningEffort) {
+    reasoningMapping[fallbackModel] = form.visionFallbackReasoningEffort
+  } else if (!modelMappingRows.value.some(row => row.source === fallbackModel && row.reasoning)) {
+    delete reasoningMapping[fallbackModel]
+  }
+  payload.reasoningMapping = reasoningMapping
 }
 
 const hasEditableDraftChanges = computed(() => {
@@ -2889,6 +2927,7 @@ const resetForm = () => {
   form.noVision = false
   form.noVisionModels = []
   form.visionFallbackModel = ''
+  form.visionFallbackReasoningEffort = ''
   form.historicalImageTurnLimit = 0
 
   // 重置 baseUrlsText
@@ -2982,6 +3021,7 @@ const loadChannelData = (channel: Channel) => {
   form.noVision = !!channel.noVision
   form.noVisionModels = [...(channel.noVisionModels || [])]
   form.visionFallbackModel = channel.visionFallbackModel || ''
+  form.visionFallbackReasoningEffort = (channel.reasoningMapping?.[form.visionFallbackModel] || '') as 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | ''
   form.historicalImageTurnLimit = channel.historicalImageTurnLimit ?? 0
 
   // 立即同步 baseUrl 到预览变量，避免等待 debounce
@@ -3242,7 +3282,7 @@ const syncModelMappingRowsFromForm = () => {
 const startEditMapping = (source: string) => {
   editingMapping.value = source
   editMappingForm.targetModel = form.modelMapping[source] || ''
-  editMappingForm.reasoning = (form.reasoningMapping[source] || '') as '' | 'off' | 'low' | 'medium' | 'high' | 'xhigh'
+  editMappingForm.reasoning = (form.reasoningMapping[source] || '') as '' | 'off' | 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 }
 
 // 取消编辑模型映射（已废弃）

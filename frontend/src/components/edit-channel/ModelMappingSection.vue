@@ -171,7 +171,7 @@
 
                   <!-- Reasoning 选择器 -->
                   <v-select
-                    v-if="supportsOpenAIAdvancedOptions"
+                    v-if="supportsReasoningMappingOptions"
                     v-model="row.reasoning"
                     :items="[
                       { title: '无', value: '' },
@@ -270,7 +270,7 @@
             />
 
             <v-select
-              v-if="supportsOpenAIAdvancedOptions"
+              v-if="supportsReasoningMappingOptions"
               v-model="newMapping.reasoningEffort"
               :label="t('channelEditor.mapping.reasoningEffort.label')"
               :items="reasoningEffortOptions"
@@ -342,7 +342,7 @@ interface Props {
   showMessagesOpenAIChannelPresets: boolean
   showClaudeChannelPresets: boolean
   showCodexResponsesChannelPresets: boolean
-  supportsOpenAIAdvancedOptions: boolean
+  supportsReasoningMappingOptions: boolean
   reasoningEffortOptions: Array<{ title: string; value: string }>
 }
 

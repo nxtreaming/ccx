@@ -223,7 +223,7 @@ describe('buildChannelPayload', () => {
     expect(result.baseUrls).toEqual(['https://new.timefiles.online', 'https://new.timefiles.online#'])
   })
 
-  it('应清空 claude 渠道不支持的高级参数', () => {
+  it('应为 claude 渠道保留模型级思考强度并清空 OpenAI 专属高级参数', () => {
     const result = buildChannelPayload({
       name: 'claude-channel',
       serviceType: 'claude',
@@ -260,7 +260,7 @@ describe('buildChannelPayload', () => {
     })
 
     expect(result.modelMapping).toEqual({ opus: 'claude-3-7-sonnet' })
-    expect(result.reasoningMapping).toEqual({})
+    expect(result.reasoningMapping).toEqual({ opus: 'high' })
     expect(result.reasoningParamStyle).toBe('reasoning')
     expect(result.textVerbosity).toBe('')
     expect(result.fastMode).toBe(false)
