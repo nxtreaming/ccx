@@ -44,6 +44,8 @@ type ResponsesItem struct {
 	Input     string      `json:"input,omitempty"`
 	Arguments string      `json:"arguments,omitempty"`
 	Output    interface{} `json:"output,omitempty"`
+	// Codex RemoteCompactionV2 使用 compaction.encrypted_content 承载压缩摘要。
+	EncryptedContent string `json:"encrypted_content,omitempty"`
 }
 
 // ContentBlock 内容块（用于嵌套 content 数组）

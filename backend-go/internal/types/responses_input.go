@@ -51,18 +51,19 @@ func NormalizeResponsesItem(item ResponsesItem) ResponsesItem {
 
 func responsesItemFromMap(itemMap map[string]interface{}) ResponsesItem {
 	item := ResponsesItem{
-		ID:        stringFromMap(itemMap, "id"),
-		Type:      stringFromMap(itemMap, "type"),
-		Role:      stringFromMap(itemMap, "role"),
-		Status:    stringFromMap(itemMap, "status"),
-		Content:   itemMap["content"],
-		Summary:   itemMap["summary"],
-		CallID:    stringFromMap(itemMap, "call_id"),
-		Name:      stringFromMap(itemMap, "name"),
-		Namespace: stringFromMap(itemMap, "namespace"),
-		Input:     stringFromMap(itemMap, "input"),
-		Arguments: stringFromMap(itemMap, "arguments"),
-		Output:    itemMap["output"],
+		ID:               stringFromMap(itemMap, "id"),
+		Type:             stringFromMap(itemMap, "type"),
+		Role:             stringFromMap(itemMap, "role"),
+		Status:           stringFromMap(itemMap, "status"),
+		Content:          itemMap["content"],
+		Summary:          itemMap["summary"],
+		CallID:           stringFromMap(itemMap, "call_id"),
+		Name:             stringFromMap(itemMap, "name"),
+		Namespace:        stringFromMap(itemMap, "namespace"),
+		Input:            stringFromMap(itemMap, "input"),
+		Arguments:        stringFromMap(itemMap, "arguments"),
+		Output:           itemMap["output"],
+		EncryptedContent: stringFromMap(itemMap, "encrypted_content"),
 	}
 
 	if item.Type == "" && item.Role != "" {

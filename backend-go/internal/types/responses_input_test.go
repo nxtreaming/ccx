@@ -81,6 +81,24 @@ func TestParseResponsesInput_InfersMessageTypeFromRole(t *testing.T) {
 	}
 }
 
+func TestParseResponsesInput_PreservesCompactionEncryptedContent(t *testing.T) {
+	items, err := ParseResponsesInput([]interface{}{
+		map[string]interface{}{
+			"type":              "compaction",
+			"encrypted_content": "summary payload",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ParseResponsesInput failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Type != "compaction" || items[0].EncryptedContent != "summary payload" {
+		t.Fatalf("compaction encrypted_content not preserved: %#v", items[0])
+	}
+}
+
 func TestNormalizeResponsesItem_IsIdempotent(t *testing.T) {
 	original := ResponsesItem{
 		Type:      "function_call",
