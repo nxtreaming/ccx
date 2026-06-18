@@ -8,7 +8,7 @@ import {
 import { useConsoleChannels } from '@/composables/useConsoleChannels'
 import { useLanguage } from '@/composables/useLanguage'
 import { AdminApiError } from '@/composables/useAdminApi'
-import { buildChannelPayload } from '@/utils/channel-payload'
+import { buildChannelPayload, parseModelCapabilitiesText } from '@/utils/channel-payload'
 import { supportsAdvancedChannelOptions, supportsReasoningMapping } from '@/utils/channel-advanced-options'
 import {
   extractChannelNamePrefix,
@@ -251,6 +251,10 @@ const form = reactive({
   apiKeysText: '',
   customHeadersText: '{}',
   modelMappingText: '{}',
+  modelCapabilitiesText: '',
+  defaultContextWindowTokens: '' as string | number,
+  defaultMaxOutputTokens: '' as string | number,
+  allowUnknownContext: false,
   reasoningMappingText: '{}',
   reasoningParamStyle: 'reasoning' as 'reasoning' | 'reasoning_effort' | 'thinking',
   textVerbosity: '' as 'low' | 'medium' | 'high' | '',
@@ -336,6 +340,10 @@ function resetForm() {
   form.apiKeysText = ''
   form.customHeadersText = '{}'
   form.modelMappingText = '{}'
+  form.modelCapabilitiesText = ''
+  form.defaultContextWindowTokens = ''
+  form.defaultMaxOutputTokens = ''
+  form.allowUnknownContext = false
   form.reasoningMappingText = '{}'
   form.reasoningParamStyle = 'reasoning'
   form.textVerbosity = ''
@@ -411,6 +419,10 @@ function populateFromChannel(ch: Channel) {
   headerRows.value = headerRowsFromChannel(ch)
   form.customHeadersText = stringifyJson(ch.customHeaders)
   form.modelMappingText = stringifyJson(ch.modelMapping)
+  form.modelCapabilitiesText = stringifyJson(ch.modelCapabilities)
+  form.defaultContextWindowTokens = ch.defaultCapability?.contextWindowTokens ?? ''
+  form.defaultMaxOutputTokens = ch.defaultCapability?.maxOutputTokens ?? ''
+  form.allowUnknownContext = ch.allowUnknownContext ?? false
   form.reasoningMappingText = stringifyJson(ch.reasoningMapping)
   form.reasoningParamStyle = ch.reasoningParamStyle || 'reasoning'
   form.textVerbosity = ch.textVerbosity || ''
@@ -492,6 +504,9 @@ const errors = computed(() => {
       errs.responseHeaderTimeoutMs = tf('channelEditor.transport.responseHeaderTimeout.invalid', '响应头等待超时必须是 1000-300000 之间的毫秒整数')
     }
   }
+  if (parseModelCapabilitiesText(form.modelCapabilitiesText) === null) {
+    errs.modelCapabilitiesText = t('addChannel.modelCapabilitiesJsonInvalid')
+  }
   return errs
 })
 
@@ -562,6 +577,10 @@ function buildSubmitPayload() {
         description: form.description,
         apiKeys: getSubmitApiKeys(),
         modelMapping: parseJsonObject<Record<string, string>>(form.modelMappingText, 'Model mapping'),
+        modelCapabilitiesText: form.modelCapabilitiesText,
+        defaultContextWindowTokens: form.defaultContextWindowTokens,
+        defaultMaxOutputTokens: form.defaultMaxOutputTokens,
+        allowUnknownContext: form.allowUnknownContext,
         reasoningMapping: parseJsonObject<Record<string, 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>>(form.reasoningMappingText, 'Reasoning mapping'),
         reasoningParamStyle: form.reasoningParamStyle,
         textVerbosity: form.textVerbosity,
@@ -1563,6 +1582,10 @@ function buildCurrentPayload() {
     description: form.description,
     apiKeys: getSubmitApiKeys(),
     modelMapping,
+    modelCapabilitiesText: form.modelCapabilitiesText,
+    defaultContextWindowTokens: form.defaultContextWindowTokens,
+    defaultMaxOutputTokens: form.defaultMaxOutputTokens,
+    allowUnknownContext: form.allowUnknownContext,
     reasoningMapping,
     reasoningParamStyle: form.reasoningParamStyle,
     textVerbosity: form.textVerbosity,
@@ -1767,6 +1790,7 @@ void toggleSupportedModelFilter
                       <AdvancedPanel
                         :form="form"
                         :channel-type="channelType"
+                        :model-capabilities-error="errors.modelCapabilitiesText"
                         :supports-open-a-i-advanced-options="supportsOpenAIAdvancedOptions"
                         :supports-chat-role-normalization="supportsChatRoleNormalization"
                         :reasoning-param-style-options="reasoningParamStyleOptions"

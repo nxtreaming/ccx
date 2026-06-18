@@ -14,6 +14,7 @@ CCX 是一个高性能的 AI API 代理与协议转换网关，支持 Claude、O
 - 内置 Web 管理面板，支持渠道管理、测试、日志和监控
 - 同时支持 Claude Messages、OpenAI Chat Completions、OpenAI Images、Codex Responses、Gemini
 - 智能调度：优先级、促销期、健康检查、故障转移与熔断恢复
+- 上下文路由：根据实际模型上下文窗口和最大输出能力过滤候选渠道
 - 每个渠道支持多 API Key 轮换、代理、自定义请求头、模型白名单和路由前缀
 - Responses API 支持多轮会话跟踪
 - 前端构建产物嵌入后端，便于单二进制部署

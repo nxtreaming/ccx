@@ -2,11 +2,17 @@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Clock, Database, Globe, ShieldCheck, Zap } from 'lucide-vue-next'
 import { useLanguage } from '@/composables/useLanguage'
 
 interface FormData {
   fastMode: boolean
+  modelCapabilitiesText: string
+  defaultContextWindowTokens: string | number
+  defaultMaxOutputTokens: string | number
+  allowUnknownContext: boolean
   historicalImageTurnLimit: number
   insecureSkipVerify: boolean
   passbackReasoningContent: boolean
@@ -39,6 +45,7 @@ interface FormData {
 defineProps<{
   form: FormData
   channelType: string
+  modelCapabilitiesError?: string
   supportsOpenAIAdvancedOptions: boolean
   supportsChatRoleNormalization: boolean
   reasoningParamStyleOptions: Array<{ label: string; value: string }>
@@ -51,6 +58,12 @@ const emit = defineEmits<{
 
 const { t, tf } = useLanguage()
 const TEXT_VERBOSITY_DEFAULT_VALUE = 'default'
+const modelCapabilitiesJsonPlaceholder = `{
+  "claude-sonnet-4-6": {
+    "contextWindowTokens": 1000000,
+    "maxOutputTokens": 64000
+  }
+}`
 
 function updateField<K extends keyof FormData>(key: K, value: FormData[K]) {
   emit('update:form', { [key]: value } as Partial<FormData>)
@@ -68,7 +81,7 @@ function updateTextVerbosity(value: string) {
   <section class="space-y-6 rounded-xl border border-border/60 bg-gradient-to-br from-card/60 to-card/40 p-5 shadow-sm backdrop-blur-sm">
     <h4 class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary border-b border-border/40 pb-2.5">
       <span class="flex h-5 w-5 items-center justify-center rounded-md bg-primary/10 text-primary">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <ShieldCheck class="h-3 w-3" />
       </span>
       {{ tf('channelEditor.nav.advanced', '高级选项') }}
     </h4>
@@ -90,11 +103,79 @@ function updateTextVerbosity(value: string) {
       </div>
     </div>
 
+    <div v-if="channelType !== 'images'" class="space-y-3 rounded-lg border border-border/60 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+      <div class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-primary border-b border-border/40 pb-2">
+        <Database class="h-3 w-3" />
+        {{ t('addChannel.contextCapabilityTitle') }}
+      </div>
+      <div class="grid gap-3 md:grid-cols-2">
+        <div class="space-y-1.5">
+          <Label class="text-xs font-semibold text-muted-foreground">
+            {{ t('addChannel.defaultContextWindowLabel') }}
+          </Label>
+          <Input
+            :model-value="form.defaultContextWindowTokens"
+            type="number"
+            min="0"
+            class="h-9"
+            :placeholder="tf('addChannel.defaultContextWindowLabel', '默认上下文窗口 tokens')"
+            @update:model-value="(val) => updateField('defaultContextWindowTokens', val as string | number)"
+          />
+          <p class="text-[10px] leading-4 text-muted-foreground">
+            {{ t('addChannel.defaultContextWindowHint') }}
+          </p>
+        </div>
+        <div class="space-y-1.5">
+          <Label class="text-xs font-semibold text-muted-foreground">
+            {{ t('addChannel.defaultMaxOutputLabel') }}
+          </Label>
+          <Input
+            :model-value="form.defaultMaxOutputTokens"
+            type="number"
+            min="0"
+            class="h-9"
+            :placeholder="tf('addChannel.defaultMaxOutputLabel', '默认最大输出 tokens')"
+            @update:model-value="(val) => updateField('defaultMaxOutputTokens', val as string | number)"
+          />
+          <p class="text-[10px] leading-4 text-muted-foreground">
+            {{ t('addChannel.defaultMaxOutputHint') }}
+          </p>
+        </div>
+      </div>
+
+      <div class="space-y-1.5">
+        <Label class="text-xs font-semibold text-muted-foreground">
+          {{ t('addChannel.modelCapabilitiesJsonLabel') }}
+        </Label>
+        <Textarea
+          :model-value="form.modelCapabilitiesText"
+          :placeholder="modelCapabilitiesJsonPlaceholder"
+          class="min-h-[104px] font-mono text-xs"
+          :class="{ 'border-destructive': !!modelCapabilitiesError }"
+          @update:model-value="(val) => updateField('modelCapabilitiesText', val as string)"
+        />
+        <p v-if="modelCapabilitiesError" class="text-[10px] leading-4 text-destructive">
+          {{ modelCapabilitiesError }}
+        </p>
+        <p class="text-[10px] leading-4 text-muted-foreground">
+          {{ t('addChannel.modelCapabilitiesJsonHint') }}
+        </p>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/80 p-3">
+        <div class="min-w-0 space-y-0.5">
+          <Label class="text-xs font-medium">{{ t('addChannel.allowUnknownContextLabel') }}</Label>
+          <p class="text-[10px] leading-4 text-muted-foreground">{{ t('addChannel.allowUnknownContextHint') }}</p>
+        </div>
+        <Switch :model-value="form.allowUnknownContext" @update:model-value="updateField('allowUnknownContext', $event)" />
+      </div>
+    </div>
+
     <div class="space-y-2.5">
       <!-- Runtime 运行期策略 -->
       <div class="p-4 rounded-lg border border-border/60 bg-gradient-to-br from-background/60 to-background/40 shadow-sm backdrop-blur-sm space-y-2.5">
         <div class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary border-b border-border/40 pb-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <Zap class="h-3 w-3" />
           {{ t('channelEditor.runtime.title') }}
         </div>
         <div class="space-y-2">
@@ -122,7 +203,7 @@ function updateTextVerbosity(value: string) {
       <!-- 协议规范化 -->
       <div class="p-4 rounded-lg border border-border/60 bg-gradient-to-br from-background/60 to-background/40 shadow-sm backdrop-blur-sm space-y-2.5">
         <div class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary border-b border-border/40 pb-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <ShieldCheck class="h-3 w-3" />
           {{ t('channelEditor.compat.title') }}
         </div>
         <div class="space-y-2">
@@ -276,7 +357,7 @@ function updateTextVerbosity(value: string) {
       <!-- Transport 代理路由网络 -->
       <div class="p-4 rounded-lg border border-border/60 bg-gradient-to-br from-background/60 to-background/40 shadow-sm backdrop-blur-sm space-y-3">
         <div class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary border-b border-border/40 pb-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <Globe class="h-3 w-3" />
           {{ t('channelEditor.transport.title') }}
         </div>
         <div class="grid gap-2">
@@ -334,7 +415,7 @@ function updateTextVerbosity(value: string) {
       <!-- Rate Limit -->
       <div class="p-4 rounded-lg border border-border/60 bg-gradient-to-br from-background/60 to-background/40 shadow-sm backdrop-blur-sm space-y-3">
         <div class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary border-b border-border/40 pb-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <Clock class="h-3 w-3" />
           {{ t('channelEditor.rateLimit.title') }}
         </div>
         <p class="text-[10px] leading-4 text-muted-foreground">{{ t('channelEditor.rateLimit.section.hint') }}</p>

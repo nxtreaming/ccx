@@ -107,7 +107,10 @@ func handleMultiChannel(
 ) {
 	isTitleRequest := isClaudeCodeTitleRequest(bodyBytes)
 
-	common.HandleMultiChannelFailover(
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildMessagesContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, claudeReq.Model, cfg)
+	common.HandleMultiChannelFailoverWithContextRequirement(
 		c,
 		envCfg,
 		channelScheduler,
@@ -115,6 +118,7 @@ func handleMultiChannel(
 		"Messages",
 		userID,
 		claudeReq.Model,
+		contextRequirement,
 		func(selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
 			upstream := selection.Upstream
 			channelIndex := selection.ChannelIndex
@@ -231,6 +235,17 @@ func handleSingleChannel(
 		return
 	}
 
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildMessagesContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, claudeReq.Model, cfg)
+	if err := channelScheduler.ValidateUpstreamContext(scheduler.ChannelKindMessages, claudeReq.Model, upstream, contextRequirement); err != nil {
+		c.JSON(400, gin.H{
+			"error": err.Error(),
+			"code":  "CONTEXT_WINDOW_EXCEEDED",
+		})
+		return
+	}
+
 	provider := providers.GetProvider(upstream.ServiceType)
 	if provider == nil {
 		c.JSON(400, gin.H{"error": "Unsupported service type"})
@@ -286,7 +301,7 @@ func handleSingleChannel(
 		if !isTitleRequest {
 			lastUserMessage := extractLastUserMessage(claudeReq.Messages)
 			userMessageCount := countUserMessages(claudeReq.Messages)
-			channelScheduler.SetTraceAffinity(userID, channelIndex, scheduler.ChannelKindMessages)
+			channelScheduler.SetTraceAffinityForRequirement(userID, channelIndex, scheduler.ChannelKindMessages, contextRequirement)
 			channelScheduler.TrackConversation(scheduler.ChannelKindMessages, userID, claudeReq.Model, channelIndex, upstream.Name, "", lastUserMessage, userMessageCount)
 			if envCfg.ShouldLog("debug") {
 				common.RequestLogf(c, "[Messages-Conversation-Debug] 已追踪单渠道对话: user=%s, model=%s, channel=%d, userMessages=%d, hasFallbackTitle=%t",

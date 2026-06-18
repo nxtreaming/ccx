@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -194,6 +195,37 @@ type SelectionResult struct {
 	Upstream     *config.UpstreamConfig
 	ChannelIndex int
 	Reason       string // 选择原因（用于日志）
+}
+
+// ContextRequirement 描述当前请求需要的上下文与输出预算。
+type ContextRequirement struct {
+	InputTokens                int
+	OutputTokens               int
+	RequiredTokens             int
+	MinimumContextWindowTokens int
+	ExplicitOutputMax          bool
+	SkipWindowValidation       bool
+}
+
+func (r *ContextRequirement) effectiveWindowTokens() int {
+	if r == nil {
+		return 0
+	}
+	if r.MinimumContextWindowTokens > r.RequiredTokens {
+		return r.MinimumContextWindowTokens
+	}
+	return r.RequiredTokens
+}
+
+// SelectionOptions 描述一次渠道选择所需的上下文。
+type SelectionOptions struct {
+	UserID             string
+	FailedChannels     map[int]bool
+	Kind               ChannelKind
+	Model              string
+	RoutePrefix        string
+	ChannelName        string
+	ContextRequirement *ContextRequirement
 }
 
 func (s *ChannelScheduler) selectionResult(kind ChannelKind, upstream *config.UpstreamConfig, channelIndex int, reason string) *SelectionResult {
@@ -386,8 +418,29 @@ func (s *ChannelScheduler) SelectChannel(
 	routePrefix string,
 	channelName string,
 ) (*SelectionResult, error) {
+	return s.SelectChannelWithOptions(ctx, SelectionOptions{
+		UserID:         userID,
+		FailedChannels: failedChannels,
+		Kind:           kind,
+		Model:          model,
+		RoutePrefix:    routePrefix,
+		ChannelName:    channelName,
+	})
+}
+
+func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts SelectionOptions) (*SelectionResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	userID := opts.UserID
+	failedChannels := opts.FailedChannels
+	if failedChannels == nil {
+		failedChannels = map[int]bool{}
+	}
+	kind := opts.Kind
+	model := opts.Model
+	routePrefix := opts.RoutePrefix
+	channelName := opts.ChannelName
 
 	// 获取活跃渠道列表（含模型过滤）
 	activeChannels := s.getActiveChannels(kind, model)
@@ -408,25 +461,6 @@ func (s *ChannelScheduler) SelectChannel(
 			return nil, fmt.Errorf("没有 %s 渠道支持模型 %q，请检查渠道的 supportedModels 配置", kindName, model)
 		}
 		return nil, fmt.Errorf("没有可用的活跃 %s 渠道", kindName)
-	}
-
-	// 指定渠道名（X-Channel 头）：直接定位，跳过所有自动选择逻辑
-	if channelName != "" {
-		for _, ch := range activeChannels {
-			if ch.Name == channelName {
-				if failedChannels[ch.Index] {
-					return nil, fmt.Errorf("指定渠道 %q 在本次请求中已失败", channelName)
-				}
-				upstream := s.getUpstreamByIndex(ch.Index, kind)
-				if upstream == nil {
-					return nil, fmt.Errorf("指定渠道 %q 配置异常", channelName)
-				}
-				prefix := kindSchedulerLogPrefix(kind)
-				log.Printf("[%s-Pin] 通过 X-Channel 指定渠道: [%d] %s", prefix, ch.Index, ch.Name)
-				return s.selectionResult(kind, upstream, ch.Index, "channel_pin"), nil
-			}
-		}
-		return nil, fmt.Errorf("未找到名为 %q 的活跃渠道", channelName)
 	}
 
 	// 按路由前缀过滤渠道
@@ -469,28 +503,51 @@ func (s *ChannelScheduler) SelectChannel(
 		activeChannels = filtered
 	}
 
+	activeChannels, err := s.filterChannelsByContext(activeChannels, kind, model, opts.ContextRequirement)
+	if err != nil {
+		return nil, err
+	}
+
+	// 指定渠道名（X-Channel 头）：在模型、路由前缀与上下文过滤后直接定位。
+	if channelName != "" {
+		for _, ch := range activeChannels {
+			if ch.Name == channelName {
+				if failedChannels[ch.Index] {
+					return nil, fmt.Errorf("指定渠道 %q 在本次请求中已失败", channelName)
+				}
+				upstream := s.getUpstreamByIndex(ch.Index, kind)
+				if upstream == nil {
+					return nil, fmt.Errorf("指定渠道 %q 配置异常", channelName)
+				}
+				prefix := kindSchedulerLogPrefix(kind)
+				log.Printf("[%s-Pin] 通过 X-Channel 指定渠道: [%d] %s", prefix, ch.Index, ch.Name)
+				return s.selectionResult(kind, upstream, ch.Index, "channel_pin"), nil
+			}
+		}
+		return nil, fmt.Errorf("指定渠道 %q 不满足当前模型、路由前缀或上下文要求", channelName)
+	}
+
 	// 0. 检查手动序列覆盖
 	if userID != "" && s.overrideManager != nil {
 		if sequence, ok := s.overrideManager.GetOverrideForUser(string(kind), userID); ok {
 			prefix := kindSchedulerLogPrefix(kind)
-			for _, entry := range sequence {
-				if failedChannels[entry.ChannelIndex] {
+			orderedChannels := applyManualOverrideOrder(activeChannels, sequence)
+			for _, ch := range orderedChannels {
+				if failedChannels[ch.Index] {
 					continue
 				}
-				for _, ch := range activeChannels {
-					if ch.Index == entry.ChannelIndex && ch.Status == "active" {
-						upstream := s.getUpstreamByIndex(entry.ChannelIndex, kind)
-						if upstream != nil && s.channelCircuitState(upstream, kind) != metrics.CircuitStateOpen && !s.channelInRuntimeCooldown(kind, entry.ChannelIndex) {
-							log.Printf("[%s-Override] 手动覆盖选择渠道: [%d] %s (user: %s)", prefix, entry.ChannelIndex, entry.ChannelName, maskUserID(userID))
-							// Idle 续期：对话活跃时延长 override TTL
-							s.overrideManager.RefreshOverrideForUser(string(kind), userID)
-							return s.selectionResult(kind, upstream, entry.ChannelIndex, "manual_override"), nil
-						}
-					}
+				if ch.Status != "active" {
+					continue
+				}
+				upstream := s.getUpstreamByIndex(ch.Index, kind)
+				if upstream != nil && s.channelIsRuntimeAvailable(upstream, kind, ch.Index) {
+					log.Printf("[%s-Override] 按手动排序选择渠道: [%d] %s (user: %s)", prefix, ch.Index, ch.Name, maskUserID(userID))
+					// Idle 续期：对话活跃时延长 override TTL
+					s.overrideManager.RefreshOverrideForUser(string(kind), userID)
+					return s.selectionResult(kind, upstream, ch.Index, "manual_override"), nil
 				}
 			}
-			log.Printf("[%s-Override] 覆盖序列中无可用渠道，自动清除覆盖并回退到默认调度 (user: %s)", prefix, maskUserID(userID))
-			s.overrideManager.RemoveOverrideByUser(string(kind), userID)
+			log.Printf("[%s-Override] 手动排序序列中无当前可用渠道，保留排序并回退默认调度 (user: %s)", prefix, maskUserID(userID))
 		}
 	}
 
@@ -515,7 +572,7 @@ func (s *ChannelScheduler) SelectChannel(
 
 	// 1. 检查 Trace 亲和性（促销渠道失败时或无促销渠道时）
 	if userID != "" {
-		compositeKey := string(kind) + ":" + userID
+		compositeKey := traceAffinityKey(kind, userID, opts.ContextRequirement)
 		if preferredIdx, ok := s.traceAffinity.GetPreferredChannel(compositeKey); ok {
 			bestPriority := s.findBestAvailableChannelPriority(activeChannels, failedChannels, kind)
 			for _, ch := range activeChannels {
@@ -645,6 +702,181 @@ func (s *ChannelScheduler) channelIsRuntimeAvailable(upstream *config.UpstreamCo
 		return false
 	}
 	return !s.channelInRuntimeCooldown(kind, channelIndex)
+}
+
+func (s *ChannelScheduler) filterChannelsByContext(activeChannels []ChannelInfo, kind ChannelKind, model string, requirement *ContextRequirement) ([]ChannelInfo, error) {
+	if requirement == nil || requirement.effectiveWindowTokens() <= 0 {
+		return activeChannels, nil
+	}
+	cfg := s.configManager.GetConfig()
+	if !cfg.ContextRouting.IsContextRoutingEnabled() {
+		return activeChannels, nil
+	}
+
+	unknownSafeWindow := cfg.ContextRouting.EffectiveUnknownSafeWindowTokens()
+	prefix := kindSchedulerLogPrefix(kind)
+	filtered := make([]ChannelInfo, 0, len(activeChannels))
+	skipped := make([]string, 0)
+	maxKnownWindow := 0
+	requiredWindow := requirement.effectiveWindowTokens()
+
+	for _, ch := range activeChannels {
+		upstream := s.getUpstreamByIndex(ch.Index, kind)
+		if upstream == nil {
+			continue
+		}
+
+		resolved := config.ResolveUpstreamCapability(model, upstream, cfg.UpstreamModelCapabilities)
+		capability := resolved.Capability
+		if capability.ContextWindowTokens > maxKnownWindow {
+			maxKnownWindow = capability.ContextWindowTokens
+		}
+
+		if requirement.ExplicitOutputMax && capability.MaxOutputTokens > 0 && requirement.OutputTokens > capability.MaxOutputTokens {
+			reason := fmt.Sprintf("[%d]%s actual=%s output=%d>%d", ch.Index, ch.Name, resolved.ActualModel, requirement.OutputTokens, capability.MaxOutputTokens)
+			skipped = append(skipped, reason)
+			log.Printf("[%s-ContextFilter] 跳过渠道 [%d] %s: 显式输出上限 %d 超过实际模型 %q 最大输出 %d",
+				prefix, ch.Index, ch.Name, requirement.OutputTokens, resolved.ActualModel, capability.MaxOutputTokens)
+			continue
+		}
+
+		if requirement.SkipWindowValidation {
+			filtered = append(filtered, ch)
+			continue
+		}
+
+		if capability.ContextWindowTokens > 0 {
+			if requiredWindow > capability.ContextWindowTokens {
+				reason := fmt.Sprintf("[%d]%s actual=%s required=%d>%d", ch.Index, ch.Name, resolved.ActualModel, requiredWindow, capability.ContextWindowTokens)
+				skipped = append(skipped, reason)
+				log.Printf("[%s-ContextFilter] 跳过渠道 [%d] %s: required=%d, window=%d, actualModel=%q, source=%s",
+					prefix, ch.Index, ch.Name, requiredWindow, capability.ContextWindowTokens, resolved.ActualModel, resolved.Source)
+				continue
+			}
+			filtered = append(filtered, ch)
+			continue
+		}
+
+		if upstream.AllowUnknownContext || requiredWindow <= unknownSafeWindow {
+			filtered = append(filtered, ch)
+			continue
+		}
+
+		reason := fmt.Sprintf("[%d]%s actual=%s unknown required=%d", ch.Index, ch.Name, resolved.ActualModel, requiredWindow)
+		skipped = append(skipped, reason)
+		log.Printf("[%s-ContextFilter] 跳过未知上下文渠道 [%d] %s: required=%d 超过 unknownSafeWindow=%d, actualModel=%q",
+			prefix, ch.Index, ch.Name, requiredWindow, unknownSafeWindow, resolved.ActualModel)
+	}
+
+	if len(filtered) == 0 {
+		if maxKnownWindow > 0 {
+			return nil, fmt.Errorf("没有 %s 渠道可承载当前上下文：估算 %d tokens，最大已知窗口 %d tokens（已过滤：%s）",
+				kindDisplayName(kind), requiredWindow, maxKnownWindow, strings.Join(skipped, "; "))
+		}
+		return nil, fmt.Errorf("没有 %s 渠道可承载当前上下文：估算 %d tokens，所有候选渠道上下文能力未知或不足（已过滤：%s）",
+			kindDisplayName(kind), requiredWindow, strings.Join(skipped, "; "))
+	}
+
+	return filtered, nil
+}
+
+// ValidateUpstreamContext 校验单个渠道是否满足当前上下文需求。
+func (s *ChannelScheduler) ValidateUpstreamContext(kind ChannelKind, model string, upstream *config.UpstreamConfig, requirement *ContextRequirement) error {
+	if upstream == nil || requirement == nil || requirement.effectiveWindowTokens() <= 0 {
+		return nil
+	}
+	cfg := s.configManager.GetConfig()
+	if !cfg.ContextRouting.IsContextRoutingEnabled() {
+		return nil
+	}
+
+	resolved := config.ResolveUpstreamCapability(model, upstream, cfg.UpstreamModelCapabilities)
+	capability := resolved.Capability
+	if requirement.ExplicitOutputMax && capability.MaxOutputTokens > 0 && requirement.OutputTokens > capability.MaxOutputTokens {
+		return fmt.Errorf("渠道 %q 的实际模型 %q 最大输出为 %d tokens，低于请求的 %d tokens",
+			upstream.Name, resolved.ActualModel, capability.MaxOutputTokens, requirement.OutputTokens)
+	}
+	if requirement.SkipWindowValidation {
+		return nil
+	}
+	requiredWindow := requirement.effectiveWindowTokens()
+	if capability.ContextWindowTokens > 0 {
+		if requiredWindow > capability.ContextWindowTokens {
+			return fmt.Errorf("渠道 %q 的实际模型 %q 上下文窗口为 %d tokens，低于当前请求估算 %d tokens",
+				upstream.Name, resolved.ActualModel, capability.ContextWindowTokens, requiredWindow)
+		}
+		return nil
+	}
+	if upstream.AllowUnknownContext || requiredWindow <= cfg.ContextRouting.EffectiveUnknownSafeWindowTokens() {
+		return nil
+	}
+	return fmt.Errorf("渠道 %q 的实际模型 %q 上下文能力未知，当前请求估算 %d tokens 超过未知安全窗口 %d tokens",
+		upstream.Name, resolved.ActualModel, requiredWindow, cfg.ContextRouting.EffectiveUnknownSafeWindowTokens())
+}
+
+func applyManualOverrideOrder(activeChannels []ChannelInfo, sequence []conversation.ChannelEntry) []ChannelInfo {
+	if len(activeChannels) == 0 || len(sequence) == 0 {
+		return activeChannels
+	}
+	byIndex := make(map[int]ChannelInfo, len(activeChannels))
+	for _, ch := range activeChannels {
+		byIndex[ch.Index] = ch
+	}
+
+	ordered := make([]ChannelInfo, 0, len(activeChannels))
+	used := make(map[int]bool, len(activeChannels))
+	for _, entry := range sequence {
+		ch, ok := byIndex[entry.ChannelIndex]
+		if !ok || used[ch.Index] {
+			continue
+		}
+		ordered = append(ordered, ch)
+		used[ch.Index] = true
+	}
+	for _, ch := range activeChannels {
+		if !used[ch.Index] {
+			ordered = append(ordered, ch)
+		}
+	}
+	return ordered
+}
+
+func traceAffinityKey(kind ChannelKind, userID string, requirement *ContextRequirement) string {
+	requiredWindow := requirement.effectiveWindowTokens()
+	if requiredWindow <= 0 {
+		return string(kind) + ":" + userID
+	}
+	return string(kind) + ":" + userID + ":" + contextBucket(requiredWindow)
+}
+
+func contextBucket(tokens int) string {
+	switch {
+	case tokens <= 200000:
+		return "ctx-200k"
+	case tokens <= 272000:
+		return "ctx-272k"
+	case tokens <= 400000:
+		return "ctx-400k"
+	case tokens <= 1000000:
+		return "ctx-1m"
+	default:
+		return "ctx-over-1m"
+	}
+}
+
+func kindDisplayName(kind ChannelKind) string {
+	switch kind {
+	case ChannelKindGemini:
+		return "Gemini"
+	case ChannelKindResponses:
+		return "Responses"
+	case ChannelKindChat:
+		return "Chat"
+	case ChannelKindImages:
+		return "Images"
+	default:
+		return "Messages"
+	}
 }
 
 // findPromotedChannel 查找处于促销期的渠道
@@ -871,8 +1103,13 @@ func (s *ChannelScheduler) RecordRequestEnd(baseURL, apiKey, serviceType string,
 
 // SetTraceAffinity 设置 Trace 亲和（按 kind 隔离）
 func (s *ChannelScheduler) SetTraceAffinity(userID string, channelIndex int, kind ChannelKind) {
+	s.SetTraceAffinityForRequirement(userID, channelIndex, kind, nil)
+}
+
+// SetTraceAffinityForRequirement 设置带上下文桶隔离的 Trace 亲和。
+func (s *ChannelScheduler) SetTraceAffinityForRequirement(userID string, channelIndex int, kind ChannelKind, requirement *ContextRequirement) {
 	if userID != "" {
-		compositeKey := string(kind) + ":" + userID
+		compositeKey := traceAffinityKey(kind, userID, requirement)
 		s.traceAffinity.SetPreferredChannel(compositeKey, channelIndex)
 	}
 }

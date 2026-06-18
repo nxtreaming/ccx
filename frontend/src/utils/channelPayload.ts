@@ -1,4 +1,4 @@
-import type { Channel } from '../services/api'
+import type { Channel, UpstreamModelCapability } from '../services/api'
 import { normalizeAdvancedChannelOptions } from './channelAdvancedOptions'
 import { deduplicateEquivalentBaseUrls } from './baseUrlSemantics'
 
@@ -17,6 +17,10 @@ export interface ChannelFormLike {
   description: string
   apiKeys: string[]
   modelMapping: Record<string, string>
+  modelCapabilitiesText?: string
+  defaultContextWindowTokens?: string | number | null
+  defaultMaxOutputTokens?: string | number | null
+  allowUnknownContext?: boolean
   reasoningMapping: Record<string, 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
   reasoningParamStyle: 'reasoning' | 'reasoning_effort' | 'thinking'
   textVerbosity: 'low' | 'medium' | 'high' | ''
@@ -51,6 +55,55 @@ export interface ChannelFormLike {
   visionFallbackModel: string
   historicalImageTurnLimit?: string | number | null
 
+}
+
+export function parseModelCapabilitiesText(text?: string): Record<string, UpstreamModelCapability> | null {
+  const trimmed = (text || '').trim()
+  if (!trimmed) return {}
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return null
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null
+  }
+
+  const result: Record<string, UpstreamModelCapability> = {}
+  for (const [model, rawCapability] of Object.entries(parsed as Record<string, unknown>)) {
+    const modelName = model.trim()
+    if (!modelName || !rawCapability || typeof rawCapability !== 'object' || Array.isArray(rawCapability)) {
+      return null
+    }
+
+    const capability = rawCapability as Record<string, unknown>
+    const normalized: UpstreamModelCapability = {}
+    const contextWindowTokens = capability.contextWindowTokens
+    if (contextWindowTokens !== undefined) {
+      if (typeof contextWindowTokens !== 'number' || !Number.isInteger(contextWindowTokens) || contextWindowTokens < 0) return null
+      normalized.contextWindowTokens = contextWindowTokens
+    }
+    const maxOutputTokens = capability.maxOutputTokens
+    if (maxOutputTokens !== undefined) {
+      if (typeof maxOutputTokens !== 'number' || !Number.isInteger(maxOutputTokens) || maxOutputTokens < 0) return null
+      normalized.maxOutputTokens = maxOutputTokens
+    }
+    if (capability.thinkingMode !== undefined) {
+      if (typeof capability.thinkingMode !== 'string') return null
+      normalized.thinkingMode = capability.thinkingMode
+    }
+    if (capability.reasoningEfforts !== undefined) {
+      if (!Array.isArray(capability.reasoningEfforts) || !capability.reasoningEfforts.every(v => typeof v === 'string')) return null
+      normalized.reasoningEfforts = capability.reasoningEfforts
+    }
+
+    result[modelName] = normalized
+  }
+
+  return result
 }
 
 type SelectableString = string | { title?: string; value?: unknown } | null | undefined
@@ -97,6 +150,10 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
     }
   }
 
+  const modelCapabilities = parseModelCapabilitiesText(form.modelCapabilitiesText)
+  const defaultContextWindowTokens = Number(form.defaultContextWindowTokens)
+  const defaultMaxOutputTokens = Number(form.defaultMaxOutputTokens)
+
   const channelData: Omit<Channel, 'index' | 'latency' | 'status'> = {
     name: form.name.trim(),
     serviceType: form.serviceType as 'openai' | 'gemini' | 'claude' | 'responses',
@@ -111,6 +168,9 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
     description: form.description.trim(),
     apiKeys: processedApiKeys,
     modelMapping: cleanModelMapping,
+    modelCapabilities: modelCapabilities || {},
+    defaultCapability: {},
+    allowUnknownContext: !!form.allowUnknownContext,
     reasoningMapping: advancedOptions.reasoningMapping,
     reasoningParamStyle: advancedOptions.reasoningParamStyle,
     textVerbosity: advancedOptions.textVerbosity,
@@ -133,6 +193,13 @@ export function buildChannelPayload(form: ChannelFormLike): Omit<Channel, 'index
     noVision: form.noVision,
     noVisionModels: form.noVisionModels,
     visionFallbackModel: normalizeSelectableString(form.visionFallbackModel as SelectableString),
+  }
+
+  if (Number.isInteger(defaultContextWindowTokens) && defaultContextWindowTokens > 0) {
+    channelData.defaultCapability!.contextWindowTokens = defaultContextWindowTokens
+  }
+  if (Number.isInteger(defaultMaxOutputTokens) && defaultMaxOutputTokens > 0) {
+    channelData.defaultCapability!.maxOutputTokens = defaultMaxOutputTokens
   }
 
   // 历史图片轮次限制：始终发送（含 0），使编辑场景能把渠道级覆盖清回 0（继承全局）。

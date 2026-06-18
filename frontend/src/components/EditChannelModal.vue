@@ -124,6 +124,64 @@
                   @menu-update="onMenuUpdate"
                 />
               </div>
+
+              <div v-if="props.channelType !== 'images'" class="mt-6">
+                <div class="text-subtitle-2 mb-3">{{ t('addChannel.contextCapabilityTitle') }}</div>
+                <v-row dense>
+                  <v-col cols="12" md="6">
+                    <v-text-field
+                      v-model="form.defaultContextWindowTokens"
+                      :label="t('addChannel.defaultContextWindowLabel')"
+                      :hint="t('addChannel.defaultContextWindowHint')"
+                      type="number"
+                      min="0"
+                      prepend-inner-icon="mdi-database"
+                      persistent-hint
+                      variant="outlined"
+                      density="comfortable"
+                    />
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field
+                      v-model="form.defaultMaxOutputTokens"
+                      :label="t('addChannel.defaultMaxOutputLabel')"
+                      :hint="t('addChannel.defaultMaxOutputHint')"
+                      type="number"
+                      min="0"
+                      prepend-inner-icon="mdi-text"
+                      persistent-hint
+                      variant="outlined"
+                      density="comfortable"
+                    />
+                  </v-col>
+                </v-row>
+
+                <v-textarea
+                  v-model="form.modelCapabilitiesText"
+                  :label="t('addChannel.modelCapabilitiesJsonLabel')"
+                  :placeholder="modelCapabilitiesJsonPlaceholder"
+                  :hint="t('addChannel.modelCapabilitiesJsonHint')"
+                  :error-messages="modelCapabilitiesError ? [modelCapabilitiesError] : []"
+                  prepend-inner-icon="mdi-code-braces"
+                  persistent-hint
+                  auto-grow
+                  rows="4"
+                  variant="outlined"
+                  density="comfortable"
+                  class="mt-2"
+                />
+
+                <v-switch
+                  v-model="form.allowUnknownContext"
+                  :label="t('addChannel.allowUnknownContextLabel')"
+                  :hint="t('addChannel.allowUnknownContextHint')"
+                  color="primary"
+                  inset
+                  persistent-hint
+                  hide-details="auto"
+                  class="mt-2"
+                />
+              </div>
             </section>
 
             <!-- 身份认证 -->
@@ -210,7 +268,7 @@ import { useChannelStore } from '../stores/channel'
 import { useDialogStore } from '../stores/dialog'
 import { buildExpectedRequestUrls } from '../utils/expectedRequestUrls'
 import { supportsAdvancedChannelOptions, supportsReasoningMapping } from '../utils/channelAdvancedOptions'
-import { buildChannelPayload, normalizeSelectableString } from '../utils/channelPayload'
+import { buildChannelPayload, normalizeSelectableString, parseModelCapabilitiesText } from '../utils/channelPayload'
 import { maskApiKey } from '../utils/apiKeyMask'
 import {
   resolveChannelWatcherAction,
@@ -891,6 +949,10 @@ const form = reactive({
   description: '',
   apiKeys: [] as string[],
   modelMapping: {} as Record<string, string>,
+  modelCapabilitiesText: '',
+  defaultContextWindowTokens: null as string | number | null,
+  defaultMaxOutputTokens: null as string | number | null,
+  allowUnknownContext: false,
   reasoningMapping: {} as Record<string, 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>,
   reasoningParamStyle: 'reasoning' as 'reasoning' | 'reasoning_effort' | 'thinking',
   textVerbosity: '' as 'low' | 'medium' | 'high' | '',
@@ -1198,6 +1260,17 @@ const commonSupportedModelFilters = ['claude-*', 'gpt-5*', 'gpt-image-2', 'grok-
 
 const selectedSupportedModelSet = computed(() => new Set(form.supportedModels))
 const supportedModelsError = ref('')
+const modelCapabilitiesJsonPlaceholder = `{
+  "claude-sonnet-4-6": {
+    "contextWindowTokens": 1000000,
+    "maxOutputTokens": 64000
+  }
+}`
+const modelCapabilitiesError = computed(() => {
+  return parseModelCapabilitiesText(form.modelCapabilitiesText) === null
+    ? t('addChannel.modelCapabilitiesJsonInvalid')
+    : ''
+})
 
 // 动态header样式
 const headerClasses = computed(() => {
@@ -1221,7 +1294,7 @@ const subtitleClasses = computed(() => {
 
 const isFormValid = computed(() => {
   return (
-    form.name.trim() && form.serviceType && form.baseUrl.trim() && isValidUrl(form.baseUrl) && hasConfigurableKeys.value
+    form.name.trim() && form.serviceType && form.baseUrl.trim() && isValidUrl(form.baseUrl) && hasConfigurableKeys.value && !modelCapabilitiesError.value
   )
 })
 
@@ -1260,6 +1333,10 @@ const normalizeStringRecord = (record: Record<string, string>): Record<string, s
   return normalized
 }
 
+const normalizeModelCapabilities = (record: Channel['modelCapabilities'] = {}): Channel['modelCapabilities'] => {
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
+}
+
 const buildComparablePayload = () => {
   const payload = buildSubmitPayload()
   return normalizeComparablePayload(payload)
@@ -1272,6 +1349,9 @@ const normalizeComparablePayload = (payload: Partial<Channel>) => ({
   supportedModels: normalizeStringArray(payload.supportedModels || []),
   customHeaders: normalizeStringRecord(payload.customHeaders || {}),
   modelMapping: Object.fromEntries(Object.entries(payload.modelMapping || {}).sort(([a], [b]) => a.localeCompare(b))),
+  modelCapabilities: normalizeModelCapabilities(payload.modelCapabilities || {}),
+  defaultCapability: payload.defaultCapability || {},
+  allowUnknownContext: !!payload.allowUnknownContext,
   reasoningMapping: Object.fromEntries(Object.entries(payload.reasoningMapping || {}).sort(([a], [b]) => a.localeCompare(b))),
   reasoningParamStyle: payload.reasoningParamStyle || 'reasoning',
   requestTimeoutMs: payload.requestTimeoutMs || undefined,
@@ -1359,6 +1439,9 @@ const hasEditableDraftChanges = computed(() => {
     description: (props.channel.description || '').trim(),
     apiKeys: normalizeStringArray(props.channel.apiKeys || []),
     modelMapping: Object.fromEntries(Object.entries(props.channel.modelMapping || {}).sort(([a], [b]) => a.localeCompare(b))),
+    modelCapabilities: normalizeModelCapabilities(props.channel.modelCapabilities || {}),
+    defaultCapability: props.channel.defaultCapability || {},
+    allowUnknownContext: !!props.channel.allowUnknownContext,
     reasoningMapping: Object.fromEntries(Object.entries(props.channel.reasoningMapping || {}).sort(([a], [b]) => a.localeCompare(b))),
     reasoningParamStyle: props.channel.reasoningParamStyle || 'reasoning',
     textVerbosity: props.channel.textVerbosity || '',
@@ -1411,6 +1494,9 @@ const ensureLatestSavedChannel = async (): Promise<number | null> => {
       return null
     }
   }
+  if (modelCapabilitiesError.value) {
+    return null
+  }
 
   silentlySaving.value = true
   try {
@@ -1450,6 +1536,10 @@ const resetForm = () => {
   form.description = ''
   form.apiKeys = []
   form.modelMapping = {}
+  form.modelCapabilitiesText = ''
+  form.defaultContextWindowTokens = null
+  form.defaultMaxOutputTokens = null
+  form.allowUnknownContext = false
   form.reasoningMapping = {}
 
   // 清空模型映射行
@@ -1535,6 +1625,12 @@ const loadChannelData = (channel: Channel) => {
   originalKeyMap.value.clear()
 
   form.modelMapping = { ...(channel.modelMapping || {}) }
+  form.modelCapabilitiesText = Object.keys(channel.modelCapabilities || {}).length > 0
+    ? JSON.stringify(normalizeModelCapabilities(channel.modelCapabilities), null, 2)
+    : ''
+  form.defaultContextWindowTokens = channel.defaultCapability?.contextWindowTokens || null
+  form.defaultMaxOutputTokens = channel.defaultCapability?.maxOutputTokens || null
+  form.allowUnknownContext = !!channel.allowUnknownContext
   form.reasoningMapping = { ...(channel.reasoningMapping || {}) }
 
   // 加载模型映射行
@@ -2064,6 +2160,7 @@ const handleSubmit = async () => {
 
   const { valid } = await formRef.value.validate()
   if (!valid) return
+  if (modelCapabilitiesError.value) return
 
   // 将模型映射行同步到 form 对象
   syncModelMappingToForm()
@@ -2081,7 +2178,8 @@ const handleCancel = () => {
 const PAYLOAD_KEYS = [
   'name', 'serviceType', 'baseUrl', 'baseUrls', 'website', 'insecureSkipVerify',
   'lowQuality', 'injectDummyThoughtSignature', 'stripThoughtSignature', 'description',
-  'apiKeys', 'modelMapping', 'reasoningMapping', 'reasoningParamStyle', 'textVerbosity',
+  'apiKeys', 'modelMapping', 'modelCapabilities', 'defaultCapability', 'allowUnknownContext',
+  'reasoningMapping', 'reasoningParamStyle', 'textVerbosity',
   'fastMode', 'customHeaders', 'proxyUrl', 'requestTimeoutMs', 'responseHeaderTimeoutMs', 'streamFirstContentTimeoutMs', 'streamInactivityTimeoutMs', 'streamToolCallIdleTimeoutMs', 'routePrefix', 'supportedModels',
   'rateLimitRpm', 'rateLimitWindowMinutes', 'rateLimitMaxConcurrent', 'rateLimitAutoFromHeaders',
   'autoBlacklistBalance', 'normalizeMetadataUserId', 'stripBillingHeader', 'passbackThinkingBlocks', 'stripEmptyTextBlocks', 'normalizeSystemRoleToTopLevel', 'codexNativeToolPassthrough',
@@ -2106,6 +2204,7 @@ const handleTestCapability = async () => {
   if (!formRef.value) return
   const { valid } = await formRef.value.validate()
   if (!valid) return
+  if (modelCapabilitiesError.value) return
 
   const channelData = buildSubmitPayload()
   const original = extractPayloadFields(props.channel)

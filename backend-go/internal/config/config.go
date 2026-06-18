@@ -17,21 +17,24 @@ import (
 
 // UpstreamConfig 上游配置
 type UpstreamConfig struct {
-	BaseURL             string            `json:"baseUrl"`
-	BaseURLs            []string          `json:"baseUrls,omitempty"` // 多 BaseURL 支持（failover 模式）
-	APIKeys             []string          `json:"apiKeys"`
-	HistoricalAPIKeys   []string          `json:"historicalApiKeys,omitempty"` // 历史 API Key（用于统计聚合，换 Key 后保留旧 Key 的统计数据）
-	DisabledAPIKeys     []DisabledKeyInfo `json:"disabledApiKeys,omitempty"`   // 被拉黑的 API Key（持久化，需手动恢复）
-	ServiceType         string            `json:"serviceType"`                 // gemini, openai, claude
-	Name                string            `json:"name,omitempty"`
-	Description         string            `json:"description,omitempty"`
-	Website             string            `json:"website,omitempty"`
-	InsecureSkipVerify  bool              `json:"insecureSkipVerify,omitempty"`
-	ModelMapping        map[string]string `json:"modelMapping,omitempty"`
-	ReasoningMapping    map[string]string `json:"reasoningMapping,omitempty"`
-	ReasoningParamStyle string            `json:"reasoningParamStyle,omitempty"`
-	TextVerbosity       string            `json:"textVerbosity,omitempty"`
-	FastMode            bool              `json:"fastMode,omitempty"`
+	BaseURL             string                             `json:"baseUrl"`
+	BaseURLs            []string                           `json:"baseUrls,omitempty"` // 多 BaseURL 支持（failover 模式）
+	APIKeys             []string                           `json:"apiKeys"`
+	HistoricalAPIKeys   []string                           `json:"historicalApiKeys,omitempty"` // 历史 API Key（用于统计聚合，换 Key 后保留旧 Key 的统计数据）
+	DisabledAPIKeys     []DisabledKeyInfo                  `json:"disabledApiKeys,omitempty"`   // 被拉黑的 API Key（持久化，需手动恢复）
+	ServiceType         string                             `json:"serviceType"`                 // gemini, openai, claude
+	Name                string                             `json:"name,omitempty"`
+	Description         string                             `json:"description,omitempty"`
+	Website             string                             `json:"website,omitempty"`
+	InsecureSkipVerify  bool                               `json:"insecureSkipVerify,omitempty"`
+	ModelMapping        map[string]string                  `json:"modelMapping,omitempty"`
+	ModelCapabilities   map[string]UpstreamModelCapability `json:"modelCapabilities,omitempty"`   // 实际模型能力覆盖，key 支持模型通配符
+	DefaultCapability   UpstreamModelCapability            `json:"defaultCapability,omitempty"`   // 渠道默认实际模型能力
+	AllowUnknownContext bool                               `json:"allowUnknownContext,omitempty"` // 大上下文请求是否允许落到未知能力渠道
+	ReasoningMapping    map[string]string                  `json:"reasoningMapping,omitempty"`
+	ReasoningParamStyle string                             `json:"reasoningParamStyle,omitempty"`
+	TextVerbosity       string                             `json:"textVerbosity,omitempty"`
+	FastMode            bool                               `json:"fastMode,omitempty"`
 	// OpenAI Chat 上游配置：启用后将非标准 Chat role 改写为 user（默认 false）
 	NormalizeNonstandardChatRoles bool `json:"normalizeNonstandardChatRoles,omitempty"`
 	// Codex 工具兼容开关（默认 false）。
@@ -104,6 +107,36 @@ type DisabledKeyInfo struct {
 	Message    string `json:"message"`             // 原始错误信息
 	DisabledAt string `json:"disabledAt"`          // ISO8601 时间戳
 	RecoverAt  string `json:"recoverAt,omitempty"` // 自动恢复时间（可选）
+}
+
+// AgentModelProfile 描述下游 agent 模型的上下文管理语义。
+type AgentModelProfile struct {
+	ContextWindowTokens    int      `json:"contextWindowTokens,omitempty"`
+	MaxContextWindowTokens int      `json:"maxContextWindowTokens,omitempty"`
+	EffectiveContextRatio  float64  `json:"effectiveContextRatio,omitempty"`
+	AutoCompactRatio       float64  `json:"autoCompactRatio,omitempty"`
+	AutoCompactThreshold   int      `json:"autoCompactThreshold,omitempty"`
+	MaxOutputTokens        int      `json:"maxOutputTokens,omitempty"`
+	TruncationMode         string   `json:"truncationMode,omitempty"`
+	TruncationLimit        int      `json:"truncationLimit,omitempty"`
+	ReasoningEfforts       []string `json:"reasoningEfforts,omitempty"`
+	SupportsPriorityTier   bool     `json:"supportsPriorityTier,omitempty"`
+	DisplayName            string   `json:"displayName,omitempty"`
+}
+
+// UpstreamModelCapability 描述实际发送给上游的模型能力。
+type UpstreamModelCapability struct {
+	ContextWindowTokens int      `json:"contextWindowTokens,omitempty"`
+	MaxOutputTokens     int      `json:"maxOutputTokens,omitempty"`
+	ThinkingMode        string   `json:"thinkingMode,omitempty"`
+	ReasoningEfforts    []string `json:"reasoningEfforts,omitempty"`
+}
+
+// ContextRoutingConfig 控制上下文路由过滤。
+type ContextRoutingConfig struct {
+	Enabled                    *bool `json:"enabled,omitempty"`
+	DefaultOutputReserveTokens int   `json:"defaultOutputReserveTokens,omitempty"`
+	UnknownSafeWindowTokens    int   `json:"unknownSafeWindowTokens,omitempty"`
 }
 
 // IsAutoRecoverableDisabledReason 判断是否属于可自动恢复的拉黑原因。
@@ -186,25 +219,28 @@ func (u *UpstreamConfig) GetEffectiveResponseHeaderTimeoutMs(fallbackMs int) int
 
 // UpstreamUpdate 用于部分更新 UpstreamConfig
 type UpstreamUpdate struct {
-	Name                          *string           `json:"name"`
-	ServiceType                   *string           `json:"serviceType"`
-	BaseURL                       *string           `json:"baseUrl"`
-	BaseURLs                      []string          `json:"baseUrls"`
-	APIKeys                       []string          `json:"apiKeys"`
-	Description                   *string           `json:"description"`
-	Website                       *string           `json:"website"`
-	InsecureSkipVerify            *bool             `json:"insecureSkipVerify"`
-	ModelMapping                  map[string]string `json:"modelMapping"`
-	ReasoningMapping              map[string]string `json:"reasoningMapping"`
-	ReasoningParamStyle           *string           `json:"reasoningParamStyle"`
-	TextVerbosity                 *string           `json:"textVerbosity"`
-	FastMode                      *bool             `json:"fastMode"`
-	NormalizeNonstandardChatRoles *bool             `json:"normalizeNonstandardChatRoles"`
-	CodexNativeToolPassthrough    *bool             `json:"codexNativeToolPassthrough"`
-	CodexToolCompat               *bool             `json:"codexToolCompat"`
-	StripCodexClientTools         *bool             `json:"stripCodexClientTools"`
-	StripImageGenerationTool      *bool             `json:"stripImageGenerationTool"`
-	ConvertImageURLToB64JSON      *bool             `json:"convertImageUrlToB64Json"`
+	Name                          *string                            `json:"name"`
+	ServiceType                   *string                            `json:"serviceType"`
+	BaseURL                       *string                            `json:"baseUrl"`
+	BaseURLs                      []string                           `json:"baseUrls"`
+	APIKeys                       []string                           `json:"apiKeys"`
+	Description                   *string                            `json:"description"`
+	Website                       *string                            `json:"website"`
+	InsecureSkipVerify            *bool                              `json:"insecureSkipVerify"`
+	ModelMapping                  map[string]string                  `json:"modelMapping"`
+	ModelCapabilities             map[string]UpstreamModelCapability `json:"modelCapabilities"`
+	DefaultCapability             *UpstreamModelCapability           `json:"defaultCapability"`
+	AllowUnknownContext           *bool                              `json:"allowUnknownContext"`
+	ReasoningMapping              map[string]string                  `json:"reasoningMapping"`
+	ReasoningParamStyle           *string                            `json:"reasoningParamStyle"`
+	TextVerbosity                 *string                            `json:"textVerbosity"`
+	FastMode                      *bool                              `json:"fastMode"`
+	NormalizeNonstandardChatRoles *bool                              `json:"normalizeNonstandardChatRoles"`
+	CodexNativeToolPassthrough    *bool                              `json:"codexNativeToolPassthrough"`
+	CodexToolCompat               *bool                              `json:"codexToolCompat"`
+	StripCodexClientTools         *bool                              `json:"stripCodexClientTools"`
+	StripImageGenerationTool      *bool                              `json:"stripImageGenerationTool"`
+	ConvertImageURLToB64JSON      *bool                              `json:"convertImageUrlToB64Json"`
 	// 多渠道调度相关字段
 	Priority                *int       `json:"priority"`
 	Status                  *string    `json:"status"`
@@ -283,6 +319,11 @@ type Config struct {
 
 	// Images 接口专用配置（OpenAI /v1/images/generations 兼容）
 	ImagesUpstream []UpstreamConfig `json:"imagesUpstream,omitempty"`
+
+	// 上下文路由配置与全局能力覆盖。
+	ContextRouting            ContextRoutingConfig               `json:"contextRouting,omitempty"`
+	AgentModelProfiles        map[string]AgentModelProfile       `json:"agentModelProfiles,omitempty"`
+	UpstreamModelCapabilities map[string]UpstreamModelCapability `json:"upstreamModelCapabilities,omitempty"`
 
 	// Fuzzy 模式：启用时模糊处理错误，所有非 2xx 错误都尝试 failover
 	FuzzyModeEnabled bool `json:"fuzzyModeEnabled"`
@@ -374,6 +415,23 @@ func (cm *ConfigManager) GetConfig() Config {
 		cloned.ImagesUpstream = make([]UpstreamConfig, len(cm.config.ImagesUpstream))
 		for i := range cm.config.ImagesUpstream {
 			cloned.ImagesUpstream[i] = *cm.config.ImagesUpstream[i].Clone()
+		}
+	}
+
+	if cm.config.ContextRouting.Enabled != nil {
+		v := *cm.config.ContextRouting.Enabled
+		cloned.ContextRouting.Enabled = &v
+	}
+	if cm.config.AgentModelProfiles != nil {
+		cloned.AgentModelProfiles = make(map[string]AgentModelProfile, len(cm.config.AgentModelProfiles))
+		for k, v := range cm.config.AgentModelProfiles {
+			cloned.AgentModelProfiles[k] = cloneAgentModelProfile(v)
+		}
+	}
+	if cm.config.UpstreamModelCapabilities != nil {
+		cloned.UpstreamModelCapabilities = make(map[string]UpstreamModelCapability, len(cm.config.UpstreamModelCapabilities))
+		for k, v := range cm.config.UpstreamModelCapabilities {
+			cloned.UpstreamModelCapabilities[k] = cloneUpstreamModelCapability(v)
 		}
 	}
 

@@ -115,7 +115,10 @@ func handleMultiChannel(
 	startTime time.Time,
 ) {
 	metricsManager := channelScheduler.GetChatMetricsManager()
-	common.HandleMultiChannelFailover(
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildChatContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, model, cfg)
+	common.HandleMultiChannelFailoverWithContextRequirement(
 		c,
 		envCfg,
 		channelScheduler,
@@ -123,6 +126,7 @@ func handleMultiChannel(
 		"Chat",
 		userID,
 		model,
+		contextRequirement,
 		func(selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
 			upstream := selection.Upstream
 			channelIndex := selection.ChannelIndex
@@ -209,6 +213,14 @@ func handleSingleChannel(
 
 	if len(upstream.APIKeys) == 0 {
 		chatErrorResponse(c, 503, fmt.Sprintf("No API keys configured for upstream \"%s\"", upstream.Name), "service_unavailable")
+		return
+	}
+
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildChatContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, model, cfg)
+	if err := channelScheduler.ValidateUpstreamContext(scheduler.ChannelKindChat, model, upstream, contextRequirement); err != nil {
+		chatErrorResponse(c, 400, err.Error(), "context_window_exceeded")
 		return
 	}
 

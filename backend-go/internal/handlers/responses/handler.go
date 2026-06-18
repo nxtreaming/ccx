@@ -108,7 +108,13 @@ func handleMultiChannel(
 	provider := &providers.ResponsesProvider{SessionManager: sessionManager}
 	metricsManager := channelScheduler.GetResponsesMetricsManager()
 
-	common.HandleMultiChannelFailover(
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildResponsesContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, responsesReq.Model, cfg)
+	if isCompactionV2 && contextRequirement != nil {
+		contextRequirement.SkipWindowValidation = true
+	}
+	common.HandleMultiChannelFailoverWithContextRequirement(
 		c,
 		envCfg,
 		channelScheduler,
@@ -116,6 +122,7 @@ func handleMultiChannel(
 		"Responses",
 		userID,
 		responsesReq.Model,
+		contextRequirement,
 		func(selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
 			upstream := selection.Upstream
 			channelIndex := selection.ChannelIndex
@@ -234,6 +241,20 @@ func handleSingleChannel(
 		c.JSON(503, gin.H{
 			"error": fmt.Sprintf("当前 Responses 渠道 \"%s\" 未配置API密钥", upstream.Name),
 			"code":  "NO_API_KEYS",
+		})
+		return
+	}
+
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildResponsesContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, responsesReq.Model, cfg)
+	if isCompactionV2 && contextRequirement != nil {
+		contextRequirement.SkipWindowValidation = true
+	}
+	if err := channelScheduler.ValidateUpstreamContext(scheduler.ChannelKindResponses, responsesReq.Model, upstream, contextRequirement); err != nil {
+		c.JSON(400, gin.H{
+			"error": err.Error(),
+			"code":  "CONTEXT_WINDOW_EXCEEDED",
 		})
 		return
 	}

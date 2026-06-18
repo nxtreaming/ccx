@@ -106,10 +106,75 @@ Client
 - Trace 亲和性
 - 熔断与可用 key 状态
 - 模型过滤规则
+- 上下文窗口与最大输出能力
 
-实际选路顺序为：Promotion 渠道 > Trace 亲和 > 普通 priority 顺序。Trace 亲和会让位给更高优先级且健康的候选渠道，因此普通置顶 / reorder 会把低优先级亲和流量迁移到置顶渠道；Promotion 则是临时强制优先，会在首次选择时绕过健康检查尝试促销渠道。
+实际选路顺序为：基础可用性过滤 > 模型过滤 > 路由前缀过滤 > 上下文能力过滤 > 手动排序 > Promotion 渠道 > Trace 亲和 > 普通 priority 顺序。Trace 亲和会让位给更高优先级且健康的候选渠道，因此普通置顶 / reorder 会把低优先级亲和流量迁移到置顶渠道；Promotion 则是临时强制优先，会在首次选择时绕过健康检查尝试促销渠道。
 
 失败场景下会执行故障转移，并结合熔断状态和定时恢复逻辑控制重试范围。
+
+### 上下文路由
+
+上下文路由用于解决同一渠道组内不同实际模型上下文窗口不一致的问题。CCX 在调度前估算当前请求需要的上下文与输出预算，并结合下游 agent 请求模型的内置 profile 得到最小上下文窗口要求，再按渠道 `ModelMapping` 后的实际模型能力做资格过滤。该步骤只过滤不可用渠道，不改变用户在驾驶舱中设置的渠道顺序。
+
+能力来源优先级：
+
+```text
+下游 agentModelProfiles
+> CCX 内置 agent 模型 profile
+
+渠道 modelCapabilities
+> 全局 upstreamModelCapabilities
+> CCX 内置模型能力库
+> 渠道 defaultCapability
+> unknown 策略
+```
+
+关键行为：
+
+- `modelCapabilities` 的 key 匹配 `ModelMapping` 后的实际模型名，支持与 `supportedModels` 相同的通配符形式。
+- 下游 agent profile 只提供最小窗口要求；如果本次请求估算更大，则以本次请求需求为准。
+- 未知能力模型默认只允许承载不超过 `contextRouting.unknownSafeWindowTokens` 的请求，默认 200000 tokens。
+- 渠道设置 `allowUnknownContext=true` 后，未知能力模型也可承载大上下文请求。
+- 显式输出上限超过实际模型 `maxOutputTokens` 时会过滤该渠道。
+- `X-Channel` 指定渠道仍必须满足上下文与输出能力，不会静默切换到其他渠道。
+- Trace 亲和性按上下文桶隔离，避免 1M 请求选中的渠道污染小上下文请求。
+- Responses `compaction_trigger` 会跳过原始请求窗口校验，但仍校验显式输出上限，以保证本地 compact 流程有机会执行。
+
+配置示例：
+
+```json
+{
+  "contextRouting": {
+    "enabled": true,
+    "defaultOutputReserveTokens": 8192,
+    "unknownSafeWindowTokens": 200000
+  },
+  "upstreamModelCapabilities": {
+    "vendor-1m-*": {
+      "contextWindowTokens": 1000000,
+      "maxOutputTokens": 128000
+    }
+  },
+  "upstream": [
+    {
+      "name": "claude-1m",
+      "modelMapping": {
+        "sonnet": "claude-sonnet-4-6"
+      },
+      "modelCapabilities": {
+        "claude-sonnet-4-6": {
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 64000
+        }
+      },
+      "defaultCapability": {
+        "contextWindowTokens": 200000,
+        "maxOutputTokens": 64000
+      }
+    }
+  ]
+}
+```
 
 ## 可观测性
 

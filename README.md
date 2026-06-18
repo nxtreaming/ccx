@@ -14,6 +14,7 @@ CCX is a high-performance AI API proxy and protocol translation gateway for Clau
 - Web admin console for channel management, testing, logs, and monitoring
 - Support for Claude Messages, OpenAI Chat Completions, OpenAI Images, Codex Responses, and Gemini APIs
 - Smart scheduling with priorities, promotion windows, health checks, failover, and circuit recovery
+- Context routing filters candidate channels by actual model context window and max output capability
 - Per-channel API key rotation, proxy support, custom headers, model allowlists, and route prefixes
 - Responses session tracking for multi-turn workflows
 - Embedded frontend assets for simple binary deployment

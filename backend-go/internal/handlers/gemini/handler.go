@@ -139,7 +139,10 @@ func handleMultiChannel(
 	startTime time.Time,
 ) {
 	metricsManager := channelScheduler.GetGeminiMetricsManager()
-	common.HandleMultiChannelFailover(
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildGeminiContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, model, cfg)
+	common.HandleMultiChannelFailoverWithContextRequirement(
 		c,
 		envCfg,
 		channelScheduler,
@@ -147,6 +150,7 @@ func handleMultiChannel(
 		"Gemini",
 		userID,
 		model,
+		contextRequirement,
 		func(selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
 			upstream := selection.Upstream
 			channelIndex := selection.ChannelIndex
@@ -241,6 +245,20 @@ func handleSingleChannel(
 				Code:    503,
 				Message: fmt.Sprintf("No API keys configured for upstream \"%s\"", upstream.Name),
 				Status:  "UNAVAILABLE",
+			},
+		})
+		return
+	}
+
+	cfg := cfgManager.GetConfig()
+	contextRequirement := common.BuildGeminiContextRequirement(bodyBytes, cfg.ContextRouting)
+	common.ApplyAgentModelProfile(contextRequirement, model, cfg)
+	if err := channelScheduler.ValidateUpstreamContext(scheduler.ChannelKindGemini, model, upstream, contextRequirement); err != nil {
+		c.JSON(400, types.GeminiError{
+			Error: types.GeminiErrorDetail{
+				Code:    400,
+				Message: err.Error(),
+				Status:  "INVALID_ARGUMENT",
 			},
 		})
 		return

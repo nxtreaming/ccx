@@ -44,6 +44,23 @@ func HandleMultiChannelFailover(
 	onHandled OnMultiChannelHandledFunc,
 	handleAllFailed HandleAllFailedFunc,
 ) {
+	HandleMultiChannelFailoverWithContextRequirement(c, envCfg, channelScheduler, kind, apiType, userID, model, nil, trySelectedChannel, onHandled, handleAllFailed)
+}
+
+// HandleMultiChannelFailoverWithContextRequirement 处理带上下文需求的多渠道 failover。
+func HandleMultiChannelFailoverWithContextRequirement(
+	c *gin.Context,
+	envCfg *config.EnvConfig,
+	channelScheduler *scheduler.ChannelScheduler,
+	kind scheduler.ChannelKind,
+	apiType string,
+	userID string,
+	model string,
+	contextRequirement *scheduler.ContextRequirement,
+	trySelectedChannel TrySelectedChannelFunc,
+	onHandled OnMultiChannelHandledFunc,
+	handleAllFailed HandleAllFailedFunc,
+) {
 	if c == nil || envCfg == nil || channelScheduler == nil || trySelectedChannel == nil {
 		return
 	}
@@ -71,7 +88,15 @@ func HandleMultiChannelFailover(
 			// 继续正常流程
 		}
 
-		selection, err := channelScheduler.SelectChannel(c.Request.Context(), userID, failedChannels, kind, model, c.Param("routePrefix"), c.GetHeader("X-Channel"))
+		selection, err := channelScheduler.SelectChannelWithOptions(c.Request.Context(), scheduler.SelectionOptions{
+			UserID:             userID,
+			FailedChannels:     failedChannels,
+			Kind:               kind,
+			Model:              model,
+			RoutePrefix:        c.Param("routePrefix"),
+			ChannelName:        c.GetHeader("X-Channel"),
+			ContextRequirement: contextRequirement,
+		})
 		if err != nil {
 			lastError = err
 			break
@@ -96,7 +121,7 @@ func HandleMultiChannelFailover(
 			if result.SuccessKey != "" && (lastUserMsgStr != "" || userMsgCountInt > 0) {
 				// 含图请求成功不写普通 Trace 亲和，避免一次视觉请求覆盖文本亲和
 				if kind == scheduler.ChannelKindImages || !HasImageContentCached(c) {
-					channelScheduler.SetTraceAffinity(userID, channelIndex, kind)
+					channelScheduler.SetTraceAffinityForRequirement(userID, channelIndex, kind, contextRequirement)
 				}
 				channelName := ""
 				if upstream != nil {

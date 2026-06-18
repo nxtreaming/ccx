@@ -53,6 +53,13 @@ export interface DisabledKeyInfo {
   disabledAt: string
 }
 
+export interface UpstreamModelCapability {
+  contextWindowTokens?: number
+  maxOutputTokens?: number
+  thinkingMode?: string
+  reasoningEfforts?: string[]
+}
+
 export interface Channel {
   name: string
   serviceType: 'openai' | 'gemini' | 'claude' | 'responses'
@@ -65,6 +72,9 @@ export interface Channel {
   website?: string
   insecureSkipVerify?: boolean
   modelMapping?: Record<string, string>
+  modelCapabilities?: Record<string, UpstreamModelCapability>
+  defaultCapability?: UpstreamModelCapability
+  allowUnknownContext?: boolean
   reasoningMapping?: Record<string, 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
   reasoningParamStyle?: 'reasoning' | 'reasoning_effort' | 'thinking'
   textVerbosity?: 'low' | 'medium' | 'high' | ''

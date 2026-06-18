@@ -236,6 +236,13 @@ func (u *UpstreamConfig) Clone() *UpstreamConfig {
 			cloned.ModelMapping[k] = v
 		}
 	}
+	if u.ModelCapabilities != nil {
+		cloned.ModelCapabilities = make(map[string]UpstreamModelCapability, len(u.ModelCapabilities))
+		for k, v := range u.ModelCapabilities {
+			cloned.ModelCapabilities[k] = cloneUpstreamModelCapability(v)
+		}
+	}
+	cloned.DefaultCapability = cloneUpstreamModelCapability(u.DefaultCapability)
 	if u.CustomHeaders != nil {
 		cloned.CustomHeaders = make(map[string]string, len(u.CustomHeaders))
 		for k, v := range u.CustomHeaders {
@@ -280,6 +287,35 @@ func (u *UpstreamConfig) Clone() *UpstreamConfig {
 	}
 
 	return &cloned
+}
+
+func applyModelCapabilityUpdates(upstream *UpstreamConfig, updates UpstreamUpdate) {
+	if upstream == nil {
+		return
+	}
+	if updates.ModelCapabilities != nil {
+		upstream.ModelCapabilities = updates.ModelCapabilities
+	}
+	if updates.DefaultCapability != nil {
+		upstream.DefaultCapability = *updates.DefaultCapability
+	}
+	if updates.AllowUnknownContext != nil {
+		upstream.AllowUnknownContext = *updates.AllowUnknownContext
+	}
+}
+
+func cloneAgentModelProfile(profile AgentModelProfile) AgentModelProfile {
+	if profile.ReasoningEfforts != nil {
+		profile.ReasoningEfforts = append([]string(nil), profile.ReasoningEfforts...)
+	}
+	return profile
+}
+
+func cloneUpstreamModelCapability(capability UpstreamModelCapability) UpstreamModelCapability {
+	if capability.ReasoningEfforts != nil {
+		capability.ReasoningEfforts = append([]string(nil), capability.ReasoningEfforts...)
+	}
+	return capability
 }
 
 // SupportsModel 检查渠道是否支持指定模型

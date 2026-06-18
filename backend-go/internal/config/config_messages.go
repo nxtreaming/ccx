@@ -183,6 +183,7 @@ func (cm *ConfigManager) UpdateUpstream(index int, updates UpstreamUpdate) (shou
 	if updates.ModelMapping != nil {
 		upstream.ModelMapping = updates.ModelMapping
 	}
+	applyModelCapabilityUpdates(upstream, updates)
 	if updates.ReasoningMapping != nil {
 		upstream.ReasoningMapping = updates.ReasoningMapping
 	}
