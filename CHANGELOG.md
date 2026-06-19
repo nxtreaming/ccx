@@ -1,9 +1,18 @@
-## [Unreleased]
+## [v2.9.8] - 2026-06-19
+
+### 新增
+
+- **OpenCode Zen/Go 渠道预设更新至 glm-5.2** - 桌面端 OpenCode Zen/Go 预设的 Claude 与 Codex 目标模型映射更新为 glm-5.2 / deepseek-v4-flash，并补齐对应 reasoning 映射
 
 ### 修复
 
 - **视觉回退模型上下文能力自动添加** - 前端和桌面端在上下文能力自动添加时纳入视觉回退模型，并按大小写不敏感方式去重，避免回退模型缺失能力配置行
 - **前端 lint 存量问题清理** - 修复 Web 前端 ESLint 存量错误与警告，清理编辑渠道弹窗拆分后的未使用旧逻辑并补齐相关类型声明
+- **Responses SSE 扫描缓冲区上限提升** - 将 Responses 流式 SSE 单行扫描上限提升至 32MB，避免图片/产物等大事件被截断导致流式失败
+
+### 其他
+
+- **upstream-check seen 标签数量限制** - 限制 upstream-check skill 记录的 seen upstream tags 数量，避免状态无限增长
 
 ## [v2.9.7] - 2026-06-19
 
