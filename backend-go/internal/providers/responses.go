@@ -77,12 +77,19 @@ func (p *ResponsesProvider) ConvertBodyToProviderRequest(
 
 	switch upstream.ServiceType {
 	case "gemini":
-		utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
+		if utils.HasAuthenticationHeaderOverride(upstream.AuthHeader) {
+			utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
+		} else {
+			utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
+		}
 	case "claude":
-		req.Header.Set("x-api-key", apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, "x-api-key")
+		if utils.HasAuthenticationHeaderOverride(upstream.AuthHeader) {
+			utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
+		}
 		req.Header.Set("anthropic-version", "2023-06-01")
 	default:
-		utils.SetAuthenticationHeader(req.Header, apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 	}
 
 	req.Header.Set("Content-Type", "application/json")

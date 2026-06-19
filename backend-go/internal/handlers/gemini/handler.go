@@ -509,16 +509,24 @@ func buildProviderRequest(
 	// 设置认证头
 	switch upstream.ServiceType {
 	case "gemini":
-		utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
+		if utils.HasAuthenticationHeaderOverride(upstream.AuthHeader) {
+			utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
+		} else {
+			utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
+		}
 	case "claude":
-		utils.SetAuthenticationHeader(req.Header, apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 		req.Header.Set("anthropic-version", "2023-06-01")
 	case "openai":
-		utils.SetAuthenticationHeader(req.Header, apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 	case "responses":
-		utils.SetAuthenticationHeader(req.Header, apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 	default:
-		utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
+		if utils.HasAuthenticationHeaderOverride(upstream.AuthHeader) {
+			utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
+		} else {
+			utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
+		}
 	}
 
 	// 应用自定义请求头

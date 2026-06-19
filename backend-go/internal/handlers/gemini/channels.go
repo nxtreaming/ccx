@@ -330,6 +330,7 @@ type GetModelsRequest struct {
 	ProxyURL           string            `json:"proxyUrl"`
 	InsecureSkipVerify *bool             `json:"insecureSkipVerify"`
 	CustomHeaders      map[string]string `json:"customHeaders"`
+	AuthHeader         string            `json:"authHeader"`
 }
 
 // GetChannelModels 获取指定渠道的模型列表（支持临时 Key）
@@ -355,6 +356,7 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 		var channelName string
 		var insecureSkipVerify bool
 		var proxyURL string
+		var authHeader string
 
 		if req.BaseURL != "" {
 			// 新增模式：使用临时 baseUrl
@@ -374,6 +376,7 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			if req.ProxyURL != "" {
 				proxyURL = req.ProxyURL
 			}
+			authHeader = req.AuthHeader
 			log.Printf("[Gemini-Models] 使用临时 baseUrl: %s", baseURL)
 		} else {
 			// 编辑模式：从配置中读取渠道信息
@@ -388,6 +391,7 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			channelName = channel.Name
 			insecureSkipVerify = channel.InsecureSkipVerify
 			proxyURL = channel.ProxyURL
+			authHeader = channel.AuthHeader
 			if req.BaseURL != "" {
 				if err := utils.ValidateBaseURL(req.BaseURL); err != nil {
 					log.Printf("[Gemini-Models] SSRF 防护拦截: %v", err)
@@ -401,6 +405,9 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			}
 			if req.ProxyURL != "" {
 				proxyURL = req.ProxyURL
+			}
+			if req.AuthHeader != "" {
+				authHeader = req.AuthHeader
 			}
 		}
 
@@ -426,7 +433,11 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create request: %v", err)})
 			return
 		}
-		httpReq.Header.Set("x-goog-api-key", apiKey)
+		if utils.HasAuthenticationHeaderOverride(authHeader) {
+			utils.SetAuthenticationHeaderWithOverride(httpReq.Header, apiKey, authHeader)
+		} else {
+			httpReq.Header.Set("x-goog-api-key", apiKey)
+		}
 		httpReq.Header.Set("Content-Type", "application/json")
 		utils.ApplyCustomHeaders(httpReq.Header, req.CustomHeaders)
 

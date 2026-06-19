@@ -556,11 +556,11 @@ func buildProviderRequest(
 	// 设置认证头
 	switch upstream.ServiceType {
 	case "claude":
-		utils.SetAuthenticationHeader(req.Header, apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 		req.Header.Set("anthropic-version", "2023-06-01")
 	default:
 		// OpenAI / Gemini / Responses 等都使用 Bearer token
-		utils.SetAuthenticationHeader(req.Header, apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 	}
 
 	// 应用自定义请求头

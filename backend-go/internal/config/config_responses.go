@@ -70,6 +70,11 @@ func (cm *ConfigManager) AddResponsesUpstream(upstream UpstreamConfig) error {
 	}
 
 	upstream.ServiceType = normalizeUpstreamServiceType(upstream.ServiceType, "responses")
+	authHeader, err := applyAuthHeader(upstream.AuthHeader)
+	if err != nil {
+		return err
+	}
+	upstream.AuthHeader = authHeader
 	if err := validateRequestTimeoutMs(upstream.RequestTimeoutMs); err != nil {
 		return err
 	}
@@ -132,6 +137,13 @@ func (cm *ConfigManager) UpdateResponsesUpstream(index int, updates UpstreamUpda
 	}
 	if updates.ServiceType != nil {
 		upstream.ServiceType = serviceType
+	}
+	if updates.AuthHeader != nil {
+		authHeader, err := applyAuthHeader(*updates.AuthHeader)
+		if err != nil {
+			return false, err
+		}
+		upstream.AuthHeader = authHeader
 	}
 	if updates.Description != nil {
 		upstream.Description = *updates.Description

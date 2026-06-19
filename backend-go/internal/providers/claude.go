@@ -726,7 +726,7 @@ func (p *ClaudeProvider) ConvertToProviderRequest(c *gin.Context, upstream *conf
 	// 使用统一的头部处理逻辑
 	req.Header = utils.PrepareUpstreamHeaders(c, req.URL.Host)
 	utils.ApplyCustomHeaders(req.Header, upstream.CustomHeaders) // 先应用自定义头，后覆盖认证（不可被自定义头覆盖）
-	utils.SetAuthenticationHeader(req.Header, apiKey)
+	utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 	utils.EnsureCompatibleUserAgent(req.Header, "claude")
 
 	return req, bodyBytes, nil

@@ -280,10 +280,10 @@ func buildTestRequestWithModel(protocol string, channel *config.UpstreamConfig, 
 
 	req.Header.Set("Content-Type", "application/json")
 
-	if isGemini {
+	if isGemini && !utils.HasAuthenticationHeaderOverride(channel.AuthHeader) {
 		utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
 	} else {
-		utils.SetAuthenticationHeader(req.Header, apiKey)
+		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, channel.AuthHeader)
 		if protocol == "messages" {
 			req.Header.Set("anthropic-version", "2023-06-01")
 			req.Header.Set("anthropic-beta", "claude-code-20250219,adaptive-thinking-2026-01-28,prompt-caching-scope-2026-01-05,effort-2025-11-24")

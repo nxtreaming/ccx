@@ -137,6 +137,68 @@ func TestSetAuthenticationHeader(t *testing.T) {
 	}
 }
 
+func TestSetAuthenticationHeaderWithOverride(t *testing.T) {
+	tests := []struct {
+		name              string
+		apiKey            string
+		authHeader        string
+		wantXApiKey       string
+		wantAuthorization string
+		wantOverride      bool
+	}{
+		{
+			name:              "空值保持智能选择",
+			apiKey:            "sk-1234567890abcdef",
+			authHeader:        "",
+			wantAuthorization: "Bearer sk-1234567890abcdef",
+		},
+		{
+			name:        "auto保持智能选择",
+			apiKey:      "sk-ant-api03-1234567890",
+			authHeader:  "auto",
+			wantXApiKey: "sk-ant-api03-1234567890",
+		},
+		{
+			name:              "bearer覆盖Claude官方格式",
+			apiKey:            "sk-ant-api03-1234567890",
+			authHeader:        "bearer",
+			wantAuthorization: "Bearer sk-ant-api03-1234567890",
+			wantOverride:      true,
+		},
+		{
+			name:         "x-api-key覆盖通用格式",
+			apiKey:       "sk-1234567890abcdef",
+			authHeader:   "x-api-key",
+			wantXApiKey:  "sk-1234567890abcdef",
+			wantOverride: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headers := http.Header{
+				"Authorization":  []string{"Bearer old"},
+				"X-Api-Key":      []string{"old"},
+				"X-Goog-Api-Key": []string{"old"},
+			}
+			SetAuthenticationHeaderWithOverride(headers, tt.apiKey, tt.authHeader)
+
+			if got := headers.Get("x-api-key"); got != tt.wantXApiKey {
+				t.Errorf("x-api-key = %v, want %v", got, tt.wantXApiKey)
+			}
+			if got := headers.Get("Authorization"); got != tt.wantAuthorization {
+				t.Errorf("Authorization = %v, want %v", got, tt.wantAuthorization)
+			}
+			if headers.Get("x-goog-api-key") != "" {
+				t.Errorf("x-goog-api-key should be empty, got %v", headers.Get("x-goog-api-key"))
+			}
+			if got := HasAuthenticationHeaderOverride(tt.authHeader); got != tt.wantOverride {
+				t.Errorf("HasAuthenticationHeaderOverride() = %v, want %v", got, tt.wantOverride)
+			}
+		})
+	}
+}
+
 func TestSetGeminiAuthenticationHeader(t *testing.T) {
 	headers := http.Header{}
 	apiKey := "AIzaSyABC123DEF456"

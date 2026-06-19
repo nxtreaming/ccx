@@ -16,6 +16,7 @@ func TestResponsesProvider_ConvertToProviderRequest_AuthHeaderByServiceType(t *t
 		name           string
 		serviceType    string
 		apiKey         string
+		authHeader     string
 		wantXAPIKey    string
 		wantAuthBearer string
 		wantGoogKey    string
@@ -46,6 +47,24 @@ func TestResponsesProvider_ConvertToProviderRequest_AuthHeaderByServiceType(t *t
 			wantAnthropicV: "",
 		},
 		{
+			name:           "claude bearer override",
+			serviceType:    "claude",
+			apiKey:         "sk-ant-api03-test",
+			authHeader:     "bearer",
+			wantXAPIKey:    "",
+			wantAuthBearer: "Bearer sk-ant-api03-test",
+			wantAnthropicV: "2023-06-01",
+		},
+		{
+			name:           "openai x-api-key override",
+			serviceType:    "openai",
+			apiKey:         "sk-openai-key",
+			authHeader:     "x-api-key",
+			wantXAPIKey:    "sk-openai-key",
+			wantAuthBearer: "",
+			wantAnthropicV: "",
+		},
+		{
 			name:        "gemini uses x-goog-api-key",
 			serviceType: "gemini",
 			apiKey:      "gemini-key-xyz",
@@ -68,6 +87,7 @@ func TestResponsesProvider_ConvertToProviderRequest_AuthHeaderByServiceType(t *t
 			upstream := &config.UpstreamConfig{
 				BaseURL:     "https://api.example.com",
 				ServiceType: tt.serviceType,
+				AuthHeader:  tt.authHeader,
 			}
 
 			provider := &ResponsesProvider{}

@@ -279,18 +279,26 @@ func buildPingRequest(upstream config.UpstreamConfig, baseURL string) (*http.Req
 	case "claude":
 		req, _ = http.NewRequest(http.MethodOptions, buildMessagesURL(baseURL), nil)
 		if len(upstream.APIKeys) > 0 {
-			utils.SetAuthenticationHeader(req.Header, upstream.APIKeys[0])
+			if utils.HasAuthenticationHeaderOverride(upstream.AuthHeader) {
+				utils.SetAuthenticationHeaderWithOverride(req.Header, upstream.APIKeys[0], upstream.AuthHeader)
+			} else {
+				utils.SetAuthenticationHeaderWithOverride(req.Header, upstream.APIKeys[0], "x-api-key")
+			}
 			req.Header.Set("anthropic-version", "2023-06-01")
 		}
 	case "gemini":
 		req, _ = http.NewRequest(http.MethodGet, buildGeminiModelsURL(baseURL), nil)
 		if len(upstream.APIKeys) > 0 {
-			req.Header.Set("x-goog-api-key", upstream.APIKeys[0])
+			if utils.HasAuthenticationHeaderOverride(upstream.AuthHeader) {
+				utils.SetAuthenticationHeaderWithOverride(req.Header, upstream.APIKeys[0], upstream.AuthHeader)
+			} else {
+				req.Header.Set("x-goog-api-key", upstream.APIKeys[0])
+			}
 		}
 	default:
 		req, _ = http.NewRequest(http.MethodGet, buildModelsURL(baseURL), nil)
 		if len(upstream.APIKeys) > 0 {
-			utils.SetAuthenticationHeader(req.Header, upstream.APIKeys[0])
+			utils.SetAuthenticationHeaderWithOverride(req.Header, upstream.APIKeys[0], upstream.AuthHeader)
 		}
 	}
 	return req, nil
@@ -349,6 +357,7 @@ type GetModelsRequest struct {
 	ProxyURL           string            `json:"proxyUrl"`
 	InsecureSkipVerify *bool             `json:"insecureSkipVerify"`
 	CustomHeaders      map[string]string `json:"customHeaders"`
+	AuthHeader         string            `json:"authHeader"`
 }
 
 // GetChannelModels 获取指定渠道的模型列表（支持临时 Key）
@@ -375,6 +384,7 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 		var serviceType string
 		var insecureSkipVerify bool
 		var proxyURL string
+		var authHeader string
 
 		if req.BaseURL != "" {
 			// 新增模式：使用临时 baseUrl
@@ -395,6 +405,7 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			if req.ProxyURL != "" {
 				proxyURL = req.ProxyURL
 			}
+			authHeader = req.AuthHeader
 			log.Printf("[Responses-Models] 使用临时 baseUrl: %s", baseURL)
 		} else {
 			// 编辑模式：从配置中读取渠道信息
@@ -410,6 +421,7 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			serviceType = channel.ServiceType
 			insecureSkipVerify = channel.InsecureSkipVerify
 			proxyURL = channel.ProxyURL
+			authHeader = channel.AuthHeader
 			if req.BaseURL != "" {
 				if err := utils.ValidateBaseURL(req.BaseURL); err != nil {
 					log.Printf("[Responses-Models] SSRF 防护拦截: %v", err)
@@ -423,6 +435,9 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			}
 			if req.ProxyURL != "" {
 				proxyURL = req.ProxyURL
+			}
+			if req.AuthHeader != "" {
+				authHeader = req.AuthHeader
 			}
 		}
 
@@ -450,12 +465,20 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 		}
 		switch serviceType {
 		case "claude":
-			httpReq.Header.Set("x-api-key", apiKey)
+			if utils.HasAuthenticationHeaderOverride(authHeader) {
+				utils.SetAuthenticationHeaderWithOverride(httpReq.Header, apiKey, authHeader)
+			} else {
+				utils.SetAuthenticationHeaderWithOverride(httpReq.Header, apiKey, "x-api-key")
+			}
 			httpReq.Header.Set("anthropic-version", "2023-06-01")
 		case "gemini":
-			httpReq.Header.Set("x-goog-api-key", apiKey)
+			if utils.HasAuthenticationHeaderOverride(authHeader) {
+				utils.SetAuthenticationHeaderWithOverride(httpReq.Header, apiKey, authHeader)
+			} else {
+				httpReq.Header.Set("x-goog-api-key", apiKey)
+			}
 		default:
-			httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+			utils.SetAuthenticationHeaderWithOverride(httpReq.Header, apiKey, authHeader)
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 		utils.ApplyCustomHeaders(httpReq.Header, req.CustomHeaders)

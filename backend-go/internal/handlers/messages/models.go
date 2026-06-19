@@ -453,10 +453,10 @@ func tryModelsRequest(c *gin.Context, cfgManager *config.ConfigManager, channelS
 				log.Printf("[%s-Models] 创建请求失败: channel=%s, url=%s, error=%v", channelType, upstream.Name, candidateURL, err)
 				continue
 			}
-			if upstream.ServiceType == "gemini" || kind == scheduler.ChannelKindGemini {
+			if (upstream.ServiceType == "gemini" || kind == scheduler.ChannelKindGemini) && !utils.HasAuthenticationHeaderOverride(upstream.AuthHeader) {
 				utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
 			} else {
-				utils.SetAuthenticationHeader(req.Header, apiKey)
+				utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 			}
 			req.Header.Set("Content-Type", "application/json")
 			utils.ApplyCustomHeaders(req.Header, upstream.CustomHeaders)

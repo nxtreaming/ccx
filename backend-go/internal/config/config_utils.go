@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -33,6 +34,30 @@ func normalizeUpstreamServiceType(serviceType, fallback string) string {
 		return trimmed
 	}
 	return fallback
+}
+
+func normalizeAuthHeader(authHeader string) string {
+	return strings.ToLower(strings.TrimSpace(authHeader))
+}
+
+func validateAuthHeader(authHeader string) error {
+	switch normalizeAuthHeader(authHeader) {
+	case "", "auto", "bearer", "x-api-key":
+		return nil
+	default:
+		return fmt.Errorf("authHeader 仅支持 auto、bearer 或 x-api-key，当前为 %s", authHeader)
+	}
+}
+
+func applyAuthHeader(authHeader string) (string, error) {
+	normalized := normalizeAuthHeader(authHeader)
+	if err := validateAuthHeader(normalized); err != nil {
+		return "", err
+	}
+	if normalized == "auto" {
+		return "", nil
+	}
+	return normalized, nil
 }
 
 // deduplicateBaseURLs 去重 BaseURLs，忽略尾部 / 和默认版本前缀差异，保留 # 语义。

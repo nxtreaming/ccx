@@ -158,6 +158,34 @@ func SetAuthenticationHeader(headers http.Header, apiKey string) {
 	}
 }
 
+// SetAuthenticationHeaderWithOverride 设置认证头部，authHeader 为空或 auto 时保留原有智能选择逻辑。
+func SetAuthenticationHeaderWithOverride(headers http.Header, apiKey, authHeader string) {
+	switch strings.ToLower(strings.TrimSpace(authHeader)) {
+	case "bearer":
+		headers.Del("authorization")
+		headers.Del("x-api-key")
+		headers.Del("x-goog-api-key")
+		headers.Set("Authorization", "Bearer "+apiKey)
+	case "x-api-key":
+		headers.Del("authorization")
+		headers.Del("x-api-key")
+		headers.Del("x-goog-api-key")
+		headers.Set("x-api-key", apiKey)
+	default:
+		SetAuthenticationHeader(headers, apiKey)
+	}
+}
+
+// HasAuthenticationHeaderOverride 判断是否配置了显式认证头覆盖。
+func HasAuthenticationHeaderOverride(authHeader string) bool {
+	switch strings.ToLower(strings.TrimSpace(authHeader)) {
+	case "bearer", "x-api-key":
+		return true
+	default:
+		return false
+	}
+}
+
 // SetGeminiAuthenticationHeader 设置Gemini认证头部
 func SetGeminiAuthenticationHeader(headers http.Header, apiKey string) {
 	headers.Del("authorization")

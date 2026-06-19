@@ -23,6 +23,7 @@ type UpstreamConfig struct {
 	HistoricalAPIKeys   []string                           `json:"historicalApiKeys,omitempty"` // 历史 API Key（用于统计聚合，换 Key 后保留旧 Key 的统计数据）
 	DisabledAPIKeys     []DisabledKeyInfo                  `json:"disabledApiKeys,omitempty"`   // 被拉黑的 API Key（持久化，需手动恢复）
 	ServiceType         string                             `json:"serviceType"`                 // gemini, openai, claude
+	AuthHeader          string                             `json:"authHeader,omitempty"`        // 认证头覆盖：auto(空)/bearer/x-api-key
 	Name                string                             `json:"name,omitempty"`
 	Description         string                             `json:"description,omitempty"`
 	Website             string                             `json:"website,omitempty"`
@@ -238,6 +239,7 @@ func (u *UpstreamConfig) GetEffectiveResponseHeaderTimeoutMs(fallbackMs int) int
 type UpstreamUpdate struct {
 	Name                          *string                            `json:"name"`
 	ServiceType                   *string                            `json:"serviceType"`
+	AuthHeader                    *string                            `json:"authHeader"`
 	BaseURL                       *string                            `json:"baseUrl"`
 	BaseURLs                      []string                           `json:"baseUrls"`
 	APIKeys                       []string                           `json:"apiKeys"`
