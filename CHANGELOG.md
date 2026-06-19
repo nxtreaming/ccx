@@ -1,4 +1,21 @@
+## [v2.9.6] - 2026-06-19
+
+### 修复
+
+- **移除 agent profile 窗口硬最低限制** - 移除桌面端 agent profile 窗口硬最低限制，新增上下文估算日志
+- **简化模型能力定价编辑器** - 简化前端 model capability pricing editor 交互
+- **修复 capability test 模型映射复用** - 修复 capability test 模型映射复用问题
+- **优化模型能力行布局** - 优化桌面端 model capability row layout
+- **改善 capability test 状态处理** - 改善桌面端 capability test status handling
+- **同步桌面端模型能力配置** - 同步桌面端 model capabilities 配置
+
 ## [v2.9.5] - 2026-06-19
+
+### 新增
+
+- **桌面端模型能力编辑器改进** - 改进桌面端 model capability editor 交互与布局
+- **前端模型能力编辑器改进** - 改进前端 model capability editor 交互与布局
+- **DeepSeek V4 能力更新** - 更新 model registry 中 DeepSeek V4 模型能力信息
 
 ### 其他
 
