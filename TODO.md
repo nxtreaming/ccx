@@ -41,8 +41,6 @@
 
 ---
 
-> **上游版本变更**
+## [ ] web端编辑渠道对话框需要考虑屏幕宽度 适当缩减对话框高度
 
-## [ ] Codex rust-v0.141.0 上游协议/工具变更评估
-
-发现协议/工具/用法变更：plugin/MCP、Realtime speech/control、ResponseItem metadata、dynamic tool namespaces、thread/environment/session 行为。请评估对 ccx Responses 渠道的影响。
+有用户反应用宽屏幕 100% 比例下看不到保存按钮 要换到90% 比例才能看到 他的分辨率是1920x1080 默认用125%显示比例
