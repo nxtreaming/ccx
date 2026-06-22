@@ -931,12 +931,14 @@ var channelTargetConfigs = map[string]map[string]channelTargetConfig{
 			VisionFallbackModel:           "MiniMax-M2.7",
 		},
 		ProviderRunAPI: {
-			CodexToolCompat:       boolRef(false),
-			StripCodexClientTools: boolRef(false),
+			CodexToolCompat:            boolRef(false),
+			StripCodexClientTools:      boolRef(false),
+			StripImageGenerationTool:   true,
 		},
 		ProviderUnity2: {
-			CodexToolCompat:       boolRef(false),
-			StripCodexClientTools: boolRef(false),
+			CodexToolCompat:            boolRef(false),
+			StripCodexClientTools:      boolRef(false),
+			StripImageGenerationTool:   true,
 		},
 		ProviderMiniMax: {
 			ModelMapping:                  map[string]string{"codex": "MiniMax-M2.7", "gpt": "MiniMax-M3", "mini": "MiniMax-M2.7"},
