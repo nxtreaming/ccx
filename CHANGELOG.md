@@ -17,6 +17,7 @@
 
 ### 修复
 
+- **Codex Responses 共享预设默认模型** - 将 Kimi 默认模型同步为 `kimi-k2.7` 并补齐能力注册，GLM 默认模型升级为 `glm-5.2`，避免 Web/desktop 一键预设回退到旧模型
 - **Unity2.ai 和 RunAPI 响应剥离图片生成工具** - 为 Unity2.ai 和 RunAPI 响应剥离 image generation tool
 - **Unity2.ai 使用原生 responses 协议** - Unity2.ai 改用原生 responses 协议
 - **Unity2.ai 添加 anthropic plan 支持 Messages 目标** - 为 Unity2.ai 添加 anthropic plan 以支持 Messages target

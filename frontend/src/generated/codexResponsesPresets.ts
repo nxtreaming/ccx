@@ -188,8 +188,8 @@ export const codexResponsesPresets: Record<string, CodexResponsesPreset> = {
   },
   "kimi": {
     "modelMapping": {
-      "codex": "kimi-k2.6",
-      "gpt": "kimi-k2.6"
+      "codex": "kimi-k2.7",
+      "gpt": "kimi-k2.7"
     },
     "reasoningMapping": {},
     "reasoningParamStyle": "",
@@ -204,8 +204,8 @@ export const codexResponsesPresets: Record<string, CodexResponsesPreset> = {
   },
   "glm": {
     "modelMapping": {
-      "codex": "glm-5.1",
-      "gpt": "glm-5.1"
+      "codex": "glm-5.2",
+      "gpt": "glm-5.2"
     },
     "reasoningMapping": {},
     "reasoningParamStyle": "",
