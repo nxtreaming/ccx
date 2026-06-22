@@ -44,6 +44,11 @@ func handleSuccess(
 			}
 		}
 	}
+	if rawTools, ok := c.Get("codex_merged_raw_tools"); ok {
+		if injected, err := sjson.SetBytes(originalRequestJSON, "tools", rawTools); err == nil {
+			originalRequestJSON = injected
+		}
+	}
 
 	if isStream {
 		return handleStreamSuccess(c, resp, upstreamType, envCfg, startTime, originalReq, originalRequestJSON, timeouts)
@@ -96,12 +101,19 @@ func handleSuccess(
 			}
 		}
 		if codexEnabled {
-			codexCtx := converters.BuildCodexToolContext(originalReq.Tools)
-			if len(originalReq.RawTools) > 0 {
-				codexCtx = converters.BuildCodexToolContextFromRaw(originalReq.RawTools)
+			codexCtx, ok := c.Get("codex_tool_context")
+			if !ok {
+				codexCtx, ok = originalReq.TransformerMetadata["codex_tool_context"]
 			}
-			codexCtx.RemapCustomToolCallsInResponse(responsesResp)
-			codexCtx.RemapNamespaceFunctionCallsInResponse(responsesResp)
+			typedCtx, ok := codexCtx.(converters.CodexToolContext)
+			if !ok {
+				typedCtx = converters.BuildCodexToolContext(originalReq.Tools)
+			}
+			if !ok && len(originalReq.RawTools) > 0 {
+				typedCtx = converters.BuildCodexToolContextFromRaw(originalReq.RawTools)
+			}
+			typedCtx.RemapCustomToolCallsInResponse(responsesResp)
+			typedCtx.RemapNamespaceFunctionCallsInResponse(responsesResp)
 		}
 	}
 

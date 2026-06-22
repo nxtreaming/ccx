@@ -197,6 +197,74 @@ func TestOpenAIChatConverter_ConvertsToolSearchWhenCodexCompatEnabled(t *testing
 	assert.Equal(t, "do_thing", tools[1]["function"].(map[string]interface{})["name"])
 }
 
+func TestOpenAIChatConverter_MergesToolSearchOutputToolsWhenCodexCompatEnabled(t *testing.T) {
+	req := &types.ResponsesRequest{
+		Model: "gpt-5.5",
+		Input: []types.ResponsesItem{
+			{
+				Type: "tool_search_output",
+				Tools: []interface{}{
+					map[string]interface{}{
+						"type":        "namespace",
+						"name":        "multi_agent_v1",
+						"description": "Multi-agent tools",
+						"tools": []interface{}{
+							map[string]interface{}{
+								"type":        "function",
+								"name":        "spawn_agent",
+								"description": "Spawn an agent",
+								"parameters":  map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+							},
+							map[string]interface{}{
+								"type":        "function",
+								"name":        "wait_agent",
+								"description": "Wait for an agent",
+								"parameters":  map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+							},
+						},
+					},
+				},
+			},
+			{Type: "message", Role: "user", Content: "试试子代理"},
+		},
+		RawTools: []interface{}{
+			map[string]interface{}{
+				"type":        "tool_search",
+				"execution":   "client",
+				"description": "Search over deferred tool metadata",
+				"parameters": map[string]interface{}{
+					"type":       "object",
+					"properties": map[string]interface{}{},
+				},
+			},
+		},
+		TransformerMetadata: map[string]interface{}{
+			"codex_tool_compat_enabled": true,
+		},
+	}
+
+	converted, err := (&OpenAIChatConverter{}).ToProviderRequest(&session.Session{}, req)
+	assert.NoError(t, err)
+
+	requestMap := converted.(map[string]interface{})
+	tools := requestMap["tools"].([]map[string]interface{})
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool["function"].(map[string]interface{})["name"].(string))
+	}
+
+	assert.Contains(t, names, "tool_search")
+	assert.Contains(t, names, "multi_agent_v1__spawn_agent")
+	assert.Contains(t, names, "multi_agent_v1__wait_agent")
+
+	ctx, ok := req.TransformerMetadata["codex_tool_context"].(CodexToolContext)
+	assert.True(t, ok)
+	assert.True(t, ctx.HasNamespaceTools)
+	name, namespace := ctx.OpenAINameForFunctionTool("multi_agent_v1__spawn_agent")
+	assert.Equal(t, "spawn_agent", name)
+	assert.Equal(t, "multi_agent_v1", namespace)
+}
+
 func TestOpenAIChatConverter_PreservesStringToolsWhenCodexCompatDisabled(t *testing.T) {
 	req := &types.ResponsesRequest{
 		Model:    "gpt-5.5",

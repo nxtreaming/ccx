@@ -195,6 +195,14 @@ func (p *ResponsesProvider) buildProviderRequestBody(c *gin.Context, requestPath
 		if err != nil {
 			return nil, nil, fmt.Errorf("convert request failed: %w", err)
 		}
+		if c != nil {
+			if ctx, ok := responsesReq.TransformerMetadata["codex_tool_context"]; ok {
+				c.Set("codex_tool_context", ctx)
+			}
+			if tools, ok := responsesReq.TransformerMetadata["codex_merged_raw_tools"]; ok {
+				c.Set("codex_merged_raw_tools", tools)
+			}
+		}
 
 		// converter 路径：注入 reasoning/thinking 参数
 		if reqMap, ok := convertedReq.(map[string]interface{}); ok {

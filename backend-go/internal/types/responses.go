@@ -31,20 +31,21 @@ type ResponsesRequest struct {
 
 // ResponsesItem Responses API 消息项
 type ResponsesItem struct {
-	ID        string      `json:"id,omitempty"`
-	Type      string      `json:"type"`           // message, text, function_call, function_call_output（tool_call/tool_result 仅兼容 legacy Claude 输入）
-	Role      string      `json:"role,omitempty"` // user, assistant (用于 type=message)
-	Status    string      `json:"status,omitempty"`
-	Execution string      `json:"execution,omitempty"`
-	Content   interface{} `json:"content,omitempty"` // string 或 []ContentBlock
-	Summary   interface{} `json:"summary,omitempty"`
-	ToolUse   *ToolUse    `json:"tool_use,omitempty"`
-	CallID    string      `json:"call_id,omitempty"`
-	Name      string      `json:"name,omitempty"`
-	Namespace string      `json:"namespace,omitempty"`
-	Input     string      `json:"input,omitempty"`
-	Arguments string      `json:"arguments,omitempty"`
-	Output    interface{} `json:"output,omitempty"`
+	ID        string        `json:"id,omitempty"`
+	Type      string        `json:"type"`           // message, text, function_call, function_call_output（tool_call/tool_result 仅兼容 legacy Claude 输入）
+	Role      string        `json:"role,omitempty"` // user, assistant (用于 type=message)
+	Status    string        `json:"status,omitempty"`
+	Execution string        `json:"execution,omitempty"`
+	Content   interface{}   `json:"content,omitempty"` // string 或 []ContentBlock
+	Summary   interface{}   `json:"summary,omitempty"`
+	ToolUse   *ToolUse      `json:"tool_use,omitempty"`
+	CallID    string        `json:"call_id,omitempty"`
+	Name      string        `json:"name,omitempty"`
+	Namespace string        `json:"namespace,omitempty"`
+	Input     string        `json:"input,omitempty"`
+	Arguments string        `json:"arguments,omitempty"`
+	Output    interface{}   `json:"output,omitempty"`
+	Tools     []interface{} `json:"tools,omitempty"`
 	// Codex RemoteCompactionV2 使用 compaction.encrypted_content 承载压缩摘要。
 	EncryptedContent string `json:"encrypted_content,omitempty"`
 }

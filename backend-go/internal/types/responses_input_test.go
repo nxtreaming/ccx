@@ -1,6 +1,9 @@
 package types
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestParseResponsesInput_NormalizesLegacyResponsesItemsSlice(t *testing.T) {
 	items, err := ParseResponsesInput([]ResponsesItem{
@@ -99,6 +102,39 @@ func TestParseResponsesInput_PreservesCompactionEncryptedContent(t *testing.T) {
 	}
 }
 
+func TestParseResponsesInput_PreservesToolSearchOutputTools(t *testing.T) {
+	items, err := ParseResponsesInput([]interface{}{
+		map[string]interface{}{
+			"type":      "tool_search_output",
+			"execution": "client",
+			"tools": []interface{}{
+				map[string]interface{}{
+					"type": "namespace",
+					"name": "multi_agent_v1",
+					"tools": []interface{}{
+						map[string]interface{}{
+							"type": "function",
+							"name": "spawn_agent",
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ParseResponsesInput failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Type != "tool_search_output" || items[0].Execution != "client" {
+		t.Fatalf("tool_search_output metadata not preserved: %#v", items[0])
+	}
+	if len(items[0].Tools) != 1 {
+		t.Fatalf("tool_search_output tools not preserved: %#v", items[0].Tools)
+	}
+}
+
 func TestNormalizeResponsesItem_IsIdempotent(t *testing.T) {
 	original := ResponsesItem{
 		Type:      "function_call",
@@ -109,7 +145,7 @@ func TestNormalizeResponsesItem_IsIdempotent(t *testing.T) {
 	once := NormalizeResponsesItem(original)
 	twice := NormalizeResponsesItem(once)
 
-	if once != twice {
+	if !reflect.DeepEqual(once, twice) {
 		t.Fatalf("normalize should be idempotent, once=%#v twice=%#v", once, twice)
 	}
 }

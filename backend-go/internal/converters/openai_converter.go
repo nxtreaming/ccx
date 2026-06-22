@@ -59,15 +59,23 @@ func (c *OpenAIChatConverter) ToProviderRequest(sess *session.Session, req *type
 		}
 	}
 	var codexToolCtx CodexToolContext
+	rawTools := req.RawTools
 	if codexEnabled {
-		codexToolCtx = BuildCodexToolContextFromRaw(req.RawTools)
+		rawTools = MergeCodexToolSearchOutputTools(req.RawTools, sess, req.Input)
+		codexToolCtx = BuildCodexToolContextFromRaw(rawTools)
+		if len(rawTools) > 0 {
+			if req.TransformerMetadata == nil {
+				req.TransformerMetadata = make(map[string]interface{})
+			}
+			req.TransformerMetadata["codex_merged_raw_tools"] = rawTools
+		}
 	}
-	if len(req.RawTools) > 0 {
+	if len(rawTools) > 0 {
 		if codexEnabled {
-			if tools := responsesRawToolsToOpenAIWithContext(req.RawTools, codexToolCtx); len(tools) > 0 {
+			if tools := responsesRawToolsToOpenAIWithContext(rawTools, codexToolCtx); len(tools) > 0 {
 				openaiReq["tools"] = tools
 			}
-		} else if tools := responsesRawToolsToOpenAI(req.RawTools); len(tools) > 0 {
+		} else if tools := responsesRawToolsToOpenAI(rawTools); len(tools) > 0 {
 			openaiReq["tools"] = tools
 		}
 	} else if len(req.Tools) > 0 {
@@ -99,7 +107,7 @@ func (c *OpenAIChatConverter) ToProviderRequest(sess *session.Session, req *type
 	}
 
 	// Store CodexToolContext in TransformerMetadata for response conversion.
-	if codexToolCtx.HasCustomTools {
+	if codexToolCtx.HasCustomTools || codexToolCtx.HasNamespaceTools || codexToolCtx.HasBuiltinFunctionTools {
 		if req.TransformerMetadata == nil {
 			req.TransformerMetadata = make(map[string]interface{})
 		}

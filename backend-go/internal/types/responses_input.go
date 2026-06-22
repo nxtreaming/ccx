@@ -55,6 +55,7 @@ func responsesItemFromMap(itemMap map[string]interface{}) ResponsesItem {
 		Type:             stringFromMap(itemMap, "type"),
 		Role:             stringFromMap(itemMap, "role"),
 		Status:           stringFromMap(itemMap, "status"),
+		Execution:        stringFromMap(itemMap, "execution"),
 		Content:          itemMap["content"],
 		Summary:          itemMap["summary"],
 		CallID:           stringFromMap(itemMap, "call_id"),
@@ -63,6 +64,7 @@ func responsesItemFromMap(itemMap map[string]interface{}) ResponsesItem {
 		Input:            stringFromMap(itemMap, "input"),
 		Arguments:        stringFromMap(itemMap, "arguments"),
 		Output:           itemMap["output"],
+		Tools:            interfaceSliceFromMap(itemMap, "tools"),
 		EncryptedContent: stringFromMap(itemMap, "encrypted_content"),
 	}
 
@@ -185,6 +187,11 @@ func normalizeToolResultItem(item ResponsesItem) ResponsesItem {
 
 func stringFromMap(data map[string]interface{}, key string) string {
 	value, _ := data[key].(string)
+	return value
+}
+
+func interfaceSliceFromMap(data map[string]interface{}, key string) []interface{} {
+	value, _ := data[key].([]interface{})
 	return value
 }
 
