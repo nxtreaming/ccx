@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Alert } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -42,6 +42,7 @@ const settingsReady = ref(false)
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 let conversationTimer: ReturnType<typeof setInterval> | undefined
+const cardElements = new Map<string, HTMLElement>()
 
 const boardMeta = computed<Array<{ key: BoardColumnKey; label: string; hint: string; color: string }>>(() => [
   { key: 'streaming', label: tf('cockpit.board.streaming', 'Streaming'), hint: tf('cockpit.board.streamingHint', 'Live streaming conversations'), color: '#ef4444' },
@@ -143,6 +144,12 @@ function getChannelsForKind(kind: string) {
   return channelsByKind.value[kind] || []
 }
 
+function getConversationTitle(id?: string) {
+  if (!id) return ''
+  const conversation = conversations.value.find(item => item.id === id)
+  return conversation?.title || conversation?.userId || id
+}
+
 function overrideDurationAsNumber(): number {
   return Number(overrideDuration.value)
 }
@@ -224,6 +231,40 @@ function toggleExpand(id: string) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   expandedCards.value = next
+}
+
+function setConversationCardRef(id: string, el: Element | null) {
+  if (el instanceof HTMLElement) {
+    cardElements.set(id, el)
+    return
+  }
+  cardElements.delete(id)
+}
+
+async function handleNavigateConversation(id: string) {
+  if (!id) return
+
+  const target = conversations.value.find(item => item.id === id)
+  if (!target) {
+    showNotice('destructive', `未找到关联对话 ${id.slice(0, 8)}`)
+    return
+  }
+
+  kindFilter.value = ''
+  searchQuery.value = ''
+  const next = new Set(expandedCards.value)
+  next.add(id)
+  expandedCards.value = next
+
+  await nextTick()
+  const el = cardElements.get(id)
+  if (!el) return
+
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('conversation-card-target')
+  window.setTimeout(() => {
+    el.classList.remove('conversation-card-target')
+  }, 1800)
 }
 
 function syncClockTimer() {
@@ -414,24 +455,37 @@ onBeforeUnmount(() => {
               --
             </div>
 
-            <ConversationCard
+            <div
               v-for="conversation in column.items"
               :key="conversation.id"
-              :conversation="conversation"
-              :override="overrides[conversation.id]"
-              :available-channels="getChannelsForKind(conversation.kind)"
-              :expanded="expandedCards.has(conversation.id)"
-              :now-ms="nowMs"
-              @toggle-expand="toggleExpand(conversation.id)"
-              @set-override="handleSetOverride"
-              @remove-override="handleRemoveOverride"
-              @feedback="handleFeedback"
-              @success="handleSuccess"
-              @error="handleError"
-            />
+              :ref="el => setConversationCardRef(conversation.id, el as Element | null)"
+            >
+              <ConversationCard
+                :conversation="conversation"
+                :override="overrides[conversation.id]"
+                :available-channels="getChannelsForKind(conversation.kind)"
+                :expanded="expandedCards.has(conversation.id)"
+                :now-ms="nowMs"
+                :related-parent-title="getConversationTitle(conversation.parentConversationId)"
+                @toggle-expand="toggleExpand(conversation.id)"
+                @set-override="handleSetOverride"
+                @remove-override="handleRemoveOverride"
+                @feedback="handleFeedback"
+                @navigate-conversation="handleNavigateConversation"
+                @success="handleSuccess"
+                @error="handleError"
+              />
+            </div>
           </div>
         </section>
       </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+:deep(.conversation-card-target .conversation-card) {
+  border-color: var(--color-primary);
+  box-shadow: 6px 6px 0 0 var(--color-primary);
+}
+</style>

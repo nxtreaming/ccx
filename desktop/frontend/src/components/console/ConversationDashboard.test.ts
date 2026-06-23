@@ -137,18 +137,35 @@ vi.mock('./ConversationCard.vue', () => ({
       availableChannels: { type: Array, default: () => [] },
       expanded: { type: Boolean, default: false },
       nowMs: { type: Number, required: true },
+      relatedParentTitle: { type: String, default: '' },
     },
-    setup(props) {
-      return () =>
-        h(
+    emits: ['navigateConversation'],
+    setup(props, { emit }) {
+      return () => {
+        const conversation = props.conversation as ConversationInfo
+        const children: any[] = [
+          conversation.title || conversation.userId,
+        ]
+        if (conversation.parentConversationId) {
+          children.push(
+            h('button', {
+              type: 'button',
+              'data-testid': `navigate-parent-${conversation.id}`,
+              onClick: () => emit('navigateConversation', conversation.parentConversationId),
+            }, '主对话'),
+          )
+        }
+        return h(
           'article',
           {
             'data-testid': 'conversation-card',
-            'data-id': (props.conversation as ConversationInfo).id,
-            'data-kind': (props.conversation as ConversationInfo).kind,
+            'data-id': conversation.id,
+            'data-kind': conversation.kind,
+            'data-expanded': String(props.expanded),
           },
-          (props.conversation as ConversationInfo).title || (props.conversation as ConversationInfo).userId,
+          children,
         )
+      }
     },
   }),
 }))
@@ -216,6 +233,9 @@ describe('ConversationDashboard', () => {
       lastActiveAt: overrides.lastActiveAt ?? '2026-06-23T08:00:00.000Z',
       latestFeedback: overrides.latestFeedback,
       latestFeedbackAt: overrides.latestFeedbackAt,
+      parentThreadId: overrides.parentThreadId,
+      parentConversationId: overrides.parentConversationId,
+      childConversationIds: overrides.childConversationIds,
       hasSubagents: overrides.hasSubagents,
       subagentCount: overrides.subagentCount,
       mainChannel: overrides.mainChannel,
@@ -342,6 +362,50 @@ describe('ConversationDashboard', () => {
 
     expect(root.textContent).toContain('cockpit.empty')
     expect(root.querySelectorAll('[data-testid^="cockpit-column-"]').length).toBe(0)
+    expect(vueErrors).toEqual([])
+    expect(errors).toEqual([])
+  })
+
+  it('navigates from a subagent card back to its parent conversation', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+    conversations.value = [
+      createConversation({
+        id: 'parent',
+        title: 'Parent Conversation',
+        kind: 'messages',
+        childConversationIds: ['child'],
+        lastActiveAt: '2026-06-23T10:00:00.000Z',
+      }),
+      createConversation({
+        id: 'child',
+        title: 'Child Agent',
+        kind: 'responses',
+        parentConversationId: 'parent',
+        parentThreadId: 'parent-thread',
+        lastActiveAt: '2026-06-23T11:00:00.000Z',
+      }),
+    ]
+
+    const { vueErrors } = mountDashboard()
+    await nextTick()
+
+    clickButton('RESPONSES')
+    await nextTick()
+    expect(getAllColumnCards()).toEqual(['Child Agent主对话'])
+
+    const button = root.querySelector('[data-testid="navigate-parent-child"]') as HTMLButtonElement | null
+    expect(button).toBeTruthy()
+    button!.click()
+    await nextTick()
+
+    const parent = root.querySelector('[data-testid="conversation-card"][data-id="parent"]')
+    expect(parent?.getAttribute('data-expanded')).toBe('true')
+    expect(getAllColumnCards()).toContain('Parent Conversation')
+    expect(scrollIntoView).toHaveBeenCalled()
     expect(vueErrors).toEqual([])
     expect(errors).toEqual([])
   })
