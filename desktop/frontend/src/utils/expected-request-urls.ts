@@ -29,14 +29,14 @@ export function buildExpectedRequestUrls(
   if (channelType === 'images') {
     endpoint = '/images/generations'
   } else if (channelType === 'responses') {
-    if (serviceType === 'responses') endpoint = '/responses'
+    if (serviceType === 'responses' || serviceType === 'copilot') endpoint = '/responses'
     else if (serviceType === 'claude') endpoint = '/messages'
     else if (serviceType === 'gemini') endpoint = '/models/{model}:generateContent'
     else endpoint = '/chat/completions'
   } else {
     if (serviceType === 'claude') endpoint = '/messages'
     else if (serviceType === 'gemini') endpoint = '/models/{model}:generateContent'
-    else if (serviceType === 'responses') endpoint = '/responses'
+    else if (serviceType === 'responses' || serviceType === 'copilot') endpoint = '/responses'
     else endpoint = '/chat/completions'
   }
 

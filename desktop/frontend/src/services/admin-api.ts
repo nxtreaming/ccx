@@ -23,6 +23,34 @@ export interface TimeWindowStats {
 export type CircuitState = 'closed' | 'open' | 'half_open'
 export type ChannelAuthHeader = 'auto' | 'bearer' | 'x-api-key'
 
+export interface CopilotDeviceCodeResponse {
+  deviceCode: string
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+  interval: number
+}
+
+export interface CopilotTokenResponse {
+  accessToken?: string
+  tokenType?: string
+  scope?: string
+  error?: string
+  errorDescription?: string
+}
+
+export interface CopilotDiagnoseResult {
+  githubUser?: { login?: string; id?: number }
+  githubUserError?: string
+  copilotBaseUrl?: string
+  tokenError?: string
+  tokenErrorKind?: string
+  modelsUrl?: string
+  modelsStatus?: number
+  modelsError?: string
+  modelsBodyPrefix?: string
+}
+
 export interface ChannelMetrics {
   channelIndex: number
   requestCount: number
@@ -104,7 +132,7 @@ export interface ModelPricingTier {
 
 export interface Channel {
   name: string
-  serviceType: 'openai' | 'gemini' | 'claude' | 'responses'
+  serviceType: 'openai' | 'gemini' | 'claude' | 'responses' | 'copilot'
   authHeader?: ChannelAuthHeader | ''
   baseUrl: string
   baseUrls?: string[]

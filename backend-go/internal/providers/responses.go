@@ -108,9 +108,11 @@ func (p *ResponsesProvider) ConvertBodyToProviderRequest(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	utils.ApplyCustomHeaders(req.Header, upstream.CustomHeaders)
 	if upstream.ServiceType == "copilot" {
+		utils.ApplyCustomHeadersProtected(req.Header, upstream.CustomHeaders, utils.CopilotProtectedHeaders)
 		copilot.ApplyRuntimeHeaders(req.Header, requestAPIKey)
+	} else {
+		utils.ApplyCustomHeaders(req.Header, upstream.CustomHeaders)
 	}
 
 	return req, bodyBytes, nil

@@ -229,11 +229,30 @@ func buildProviderRequest(
 			return nil, err
 		}
 		requestBody = converters.ConvertChatRequestToResponsesRequest(chatBody)
-		// copilot 不自动补 /v1 前缀
 		if upstream.ServiceType == "copilot" || skipVersionPrefix {
 			url = fmt.Sprintf("%s/responses", strings.TrimRight(baseURL, "/"))
 		} else {
 			url = fmt.Sprintf("%s/v1/responses", strings.TrimRight(baseURL, "/"))
+		}
+		// copilot 使用 token exchange 返回的动态端点，而非渠道静态 baseURL
+		if upstream.ServiceType == "copilot" {
+			copilotToken, copilotBaseURL, err := copilot.ResolveToken(c.Request.Context(), apiKey)
+			if err != nil {
+				return nil, fmt.Errorf("Copilot token 交换失败: %w", err)
+			}
+			if copilotBaseURL != "" {
+				url = strings.TrimRight(copilotBaseURL, "/") + "/responses"
+			}
+			req, err := http.NewRequestWithContext(c.Request.Context(), "POST", url, bytes.NewReader(requestBody))
+			if err != nil {
+				return nil, err
+			}
+			req.Header = utils.PrepareUpstreamHeaders(c, req.URL.Host)
+			req.Header.Set("Content-Type", "application/json")
+			copilot.ApplyRuntimeHeaders(req.Header, copilotToken)
+			utils.ApplyCustomHeadersProtected(req.Header, upstream.CustomHeaders, utils.CopilotProtectedHeaders)
+			copilot.ApplyRuntimeHeaders(req.Header, copilotToken)
+			return req, nil
 		}
 
 	case "claude":
@@ -299,15 +318,7 @@ func buildProviderRequest(
 	req.Header.Set("Content-Type", "application/json")
 
 	// 设置认证头
-	var copilotToken string
 	switch upstream.ServiceType {
-	case "copilot":
-		var err error
-		copilotToken, _, err = copilot.ResolveToken(c.Request.Context(), apiKey)
-		if err != nil {
-			return nil, fmt.Errorf("Copilot token 交换失败: %w", err)
-		}
-		copilot.ApplyRuntimeHeaders(req.Header, copilotToken)
 	case "claude":
 		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, upstream.AuthHeader)
 		req.Header.Set("anthropic-version", "2023-06-01")
@@ -317,10 +328,6 @@ func buildProviderRequest(
 
 	// 应用自定义请求头
 	utils.ApplyCustomHeaders(req.Header, upstream.CustomHeaders)
-	// copilot 认证头必须在自定义头之后再次设置，防止 customHeaders 覆盖 token
-	if upstream.ServiceType == "copilot" {
-		copilot.ApplyRuntimeHeaders(req.Header, copilotToken)
-	}
 
 	return req, nil
 }

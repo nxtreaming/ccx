@@ -1,8 +1,9 @@
-export type ServiceType = 'openai' | 'gemini' | 'claude' | 'responses' | ''
+export type ServiceType = 'openai' | 'gemini' | 'claude' | 'responses' | 'copilot' | ''
 
 const versionSuffixPattern = /\/v\d+[a-z]*$/
 
-export function getDefaultVersionPrefix(serviceType: ServiceType): '/v1' | '/v1beta' {
+export function getDefaultVersionPrefix(serviceType: ServiceType): '/v1' | '/v1beta' | '' {
+  if (serviceType === 'copilot') return ''
   return serviceType === 'gemini' ? '/v1beta' : '/v1'
 }
 

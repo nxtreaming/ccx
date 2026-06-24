@@ -293,6 +293,33 @@ func ApplyCustomHeaders(headers http.Header, customHeaders map[string]string) {
 	}
 }
 
+// CopilotProtectedHeaders 是 Copilot 运行时依赖的敏感头，customHeaders 不得覆盖。
+var CopilotProtectedHeaders = map[string]bool{
+	"authorization":          true,
+	"x-api-key":              true,
+	"openai-organization":    true,
+	"openai-intent":          true,
+	"copilot-integration-id": true,
+	"editor-version":         true,
+	"editor-plugin-version":  true,
+	"user-agent":             true,
+}
+
+// ApplyCustomHeadersProtected 应用自定义请求头，但跳过受保护的头（大小写不敏感匹配）。
+func ApplyCustomHeadersProtected(headers http.Header, customHeaders map[string]string, protected map[string]bool) {
+	for key, value := range customHeaders {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		if protected[strings.ToLower(key)] {
+			continue
+		}
+		headers.Set(key, value)
+	}
+}
+
 // EnsureCompatibleUserAgent 确保兼容的User-Agent（仅在必要时设置）
 func EnsureCompatibleUserAgent(headers http.Header, serviceType string) {
 	userAgent := headers.Get("User-Agent")

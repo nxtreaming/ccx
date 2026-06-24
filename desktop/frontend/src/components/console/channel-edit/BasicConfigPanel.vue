@@ -7,7 +7,7 @@ import { useLanguage } from '@/composables/useLanguage'
 
 interface FormData {
   name: string
-  serviceType: 'openai' | 'claude' | 'gemini' | 'responses' | ''
+  serviceType: 'openai' | 'claude' | 'gemini' | 'responses' | 'copilot' | ''
   baseUrl: string
   baseUrlsText: string
   website: string

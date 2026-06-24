@@ -1,4 +1,4 @@
-export type ChannelServiceType = 'openai' | 'gemini' | 'claude' | 'responses' | ''
+export type ChannelServiceType = 'openai' | 'gemini' | 'claude' | 'responses' | 'copilot' | ''
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type ReasoningParamStyle = 'reasoning' | 'reasoning_effort' | 'thinking'
 export type TextVerbosity = 'low' | 'medium' | 'high' | ''
@@ -11,11 +11,11 @@ export interface AdvancedChannelOptions {
 }
 
 export const supportsAdvancedChannelOptions = (serviceType: ChannelServiceType): boolean => {
-  return serviceType === 'openai' || serviceType === 'responses'
+  return serviceType === 'openai' || serviceType === 'responses' || serviceType === 'copilot'
 }
 
 export const supportsReasoningMapping = (serviceType: ChannelServiceType): boolean => {
-  return serviceType === 'openai' || serviceType === 'responses' || serviceType === 'claude'
+  return serviceType === 'openai' || serviceType === 'responses' || serviceType === 'copilot' || serviceType === 'claude'
 }
 
 export const normalizeAdvancedChannelOptions = (

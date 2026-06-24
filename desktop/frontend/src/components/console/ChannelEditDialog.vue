@@ -7,7 +7,8 @@ import {
 } from 'lucide-vue-next'
 import { useConsoleChannels } from '@/composables/useConsoleChannels'
 import { useLanguage } from '@/composables/useLanguage'
-import { AdminApiError } from '@/composables/useAdminApi'
+import { AdminApiError, useAdminApi } from '@/composables/useAdminApi'
+import type { CopilotDeviceCodeResponse, CopilotTokenResponse } from '@/services/admin-api'
 import {
   buildChannelPayload,
   createModelCapabilityRow,
@@ -69,6 +70,69 @@ const copiedKeyIndex = ref<number | null>(null)
 const duplicateKeyIndex = ref<number | null>(null)
 let duplicateKeyTimer: ReturnType<typeof setTimeout> | null = null
 const localRestoredKeys = ref<Set<string>>(new Set())
+
+// GitHub Copilot OAuth 状态
+const adminApi = useAdminApi()
+const copilotOAuthLoading = ref(false)
+const copilotPolling = ref(false)
+const copilotOAuthError = ref('')
+const copilotOAuthSuccess = ref(false)
+const copilotUserCode = ref('')
+const copilotVerificationUri = ref('')
+const copilotDeviceCode = ref('')
+let copilotPollTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearCopilotPollTimer() {
+  if (copilotPollTimer !== null) { clearTimeout(copilotPollTimer); copilotPollTimer = null }
+}
+
+async function pollCopilotToken(intervalSeconds: number) {
+  if (!copilotDeviceCode.value) return
+  copilotPolling.value = true
+  try {
+    const token = await adminApi.post<CopilotTokenResponse>('/copilot/oauth/token', { deviceCode: copilotDeviceCode.value })
+    if (token.accessToken) {
+      if (!existingApiKeys.value.includes(token.accessToken)) existingApiKeys.value.push(token.accessToken)
+      copilotOAuthSuccess.value = true
+      copilotOAuthError.value = ''
+      copilotPolling.value = false
+      copilotOAuthLoading.value = false
+      clearCopilotPollTimer()
+      return
+    }
+    if (token.error === 'expired_token') {
+      copilotOAuthError.value = t('copilotOAuth.expired')
+      copilotPolling.value = false; copilotOAuthLoading.value = false; clearCopilotPollTimer(); return
+    }
+    if (token.error && token.error !== 'authorization_pending') {
+      copilotOAuthError.value = token.errorDescription || token.error
+      copilotPolling.value = false; copilotOAuthLoading.value = false; clearCopilotPollTimer(); return
+    }
+  } catch (err) {
+    copilotOAuthError.value = err instanceof Error ? err.message : String(err)
+    copilotPolling.value = false; copilotOAuthLoading.value = false; clearCopilotPollTimer(); return
+  }
+  copilotPollTimer = setTimeout(() => pollCopilotToken(intervalSeconds), Math.max(intervalSeconds, 5) * 1000)
+}
+
+async function startCopilotOAuth() {
+  clearCopilotPollTimer()
+  copilotOAuthLoading.value = true
+  copilotOAuthError.value = ''
+  copilotOAuthSuccess.value = false
+  try {
+    const device = await adminApi.post<CopilotDeviceCodeResponse>('/copilot/oauth/device/code')
+    copilotDeviceCode.value = device.deviceCode
+    copilotUserCode.value = device.userCode
+    copilotVerificationUri.value = device.verificationUri
+    window.open(device.verificationUri, '_blank', 'noopener,noreferrer')
+    await pollCopilotToken(device.interval || 5)
+  } catch (err) {
+    copilotOAuthError.value = err instanceof Error ? err.message : String(err)
+    copilotOAuthLoading.value = false; copilotPolling.value = false
+  }
+}
+
 type KeyModelsStatus = {
   loading?: boolean
   success?: boolean
@@ -321,7 +385,7 @@ const reasoningEffortOptions = computed(() => [
 const form = reactive({
   name: '',
   description: '',
-  serviceType: '' as 'openai' | 'claude' | 'gemini' | 'responses' | '',
+  serviceType: '' as 'openai' | 'claude' | 'gemini' | 'responses' | 'copilot' | '',
   authHeader: 'auto' as 'auto' | 'bearer' | 'x-api-key' | '',
   baseUrl: '',
   baseUrlsText: '',
@@ -596,8 +660,8 @@ const errors = computed(() => {
   if (!isEditMode.value && !generatedChannelName.value.trim()) errs.name = t('channelEditor.basic.name.required')
   if (!form.serviceType) errs.serviceType = t('channelEditor.basic.serviceType.required')
   if (!form.baseUrlsText.trim()) errs.baseUrl = t('channelEditor.basic.baseUrl.required')
-  // API Key 必填：现有 key + 新增 key，编辑模式下可恢复的 disabled key 也算
-  if (!hasConfigurableKeys.value) errs.apiKeys = t('channelEditor.auth.apiKeyRequired')
+  // copilot 渠道通过 OAuth 登录，apiKeys 由登录流程填充，此处豁免必填校验
+  if (!hasConfigurableKeys.value && form.serviceType !== 'copilot') errs.apiKeys = t('channelEditor.auth.apiKeyRequired')
   if (String(form.requestTimeoutMs).trim()) {
     const timeout = Number(form.requestTimeoutMs)
     if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 300000) {
@@ -977,6 +1041,7 @@ const serviceTypeOptions = computed(() => {
     { label: 'Claude', value: 'claude' },
     { label: 'Gemini', value: 'gemini' },
     { label: 'Responses (Codex)', value: 'responses' },
+    { label: 'GitHub Copilot', value: 'copilot' },
   ]
   const first = props.channelType === 'messages' ? 'claude'
     : props.channelType === 'responses' ? 'responses'
@@ -1747,6 +1812,31 @@ void toggleSupportedModelFilter
                         @copy-api-key="copyApiKey"
                         @handle-disabled-key-restore="handleDisabledKeyRestore"
                       />
+
+                      <!-- GitHub Copilot OAuth 登录（仅 copilot 渠道显示） -->
+                      <div v-if="form.serviceType === 'copilot'" class="mt-4 rounded-xl border border-border/60 bg-card/40 p-5 space-y-3">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary">GitHub Copilot</h4>
+                        <div v-if="copilotUserCode" class="flex items-center gap-2 text-sm">
+                          <span class="text-muted-foreground">{{ t('copilotOAuth.userCode') }}</span>
+                          <code class="px-2 py-0.5 rounded bg-muted font-mono text-xs">{{ copilotUserCode }}</code>
+                          <a :href="copilotVerificationUri" target="_blank" rel="noopener noreferrer" class="text-primary text-xs underline">{{ t('copilotOAuth.openAuthorize') }}</a>
+                        </div>
+                        <p v-if="copilotOAuthSuccess" class="text-xs text-emerald-600">{{ t('copilotOAuth.success') }}</p>
+                        <p v-if="copilotOAuthError" class="text-xs text-destructive">{{ copilotOAuthError }}</p>
+                        <div class="flex items-center gap-2">
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+                            :disabled="copilotOAuthLoading || copilotPolling"
+                            @click="startCopilotOAuth"
+                          >
+                            <span v-if="copilotOAuthLoading || copilotPolling" class="animate-spin">⏳</span>
+                            {{ t('copilotOAuth.button') }}
+                          </button>
+                          <span v-if="copilotPolling" class="text-xs text-muted-foreground">{{ t('copilotOAuth.waiting') }}</span>
+                          <button v-if="copilotPolling || copilotOAuthLoading" type="button" class="text-xs text-muted-foreground underline" @click="clearCopilotPollTimer(); copilotPolling = false; copilotOAuthLoading = false">{{ t('copilotOAuth.cancel') }}</button>
+                        </div>
+                      </div>
                     </section>
 
                     <!-- Section: 高级选项 -->

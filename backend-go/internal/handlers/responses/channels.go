@@ -301,11 +301,15 @@ func buildPingRequest(upstream config.UpstreamConfig, baseURL string) (*http.Req
 		if len(upstream.APIKeys) == 0 {
 			return nil, fmt.Errorf("Copilot 渠道缺少 GitHub OAuth token")
 		}
-		copilotToken, _, err := copilot.ResolveToken(context.Background(), upstream.APIKeys[0])
+		copilotToken, copilotBaseURL, err := copilot.ResolveToken(context.Background(), upstream.APIKeys[0])
 		if err != nil {
 			return nil, fmt.Errorf("Copilot token 交换失败: %w", err)
 		}
-		req, _ = http.NewRequest(http.MethodGet, strings.TrimSuffix(baseURL, "/")+"/models", nil)
+		targetBase := copilotBaseURL
+		if targetBase == "" {
+			targetBase = strings.TrimSuffix(baseURL, "/")
+		}
+		req, _ = http.NewRequest(http.MethodGet, strings.TrimSuffix(targetBase, "/")+"/models", nil)
 		copilot.ApplyRuntimeHeaders(req.Header, copilotToken)
 	default:
 		req, _ = http.NewRequest(http.MethodGet, buildModelsURL(baseURL), nil)
@@ -496,17 +500,30 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 				httpReq.Header.Set("x-goog-api-key", apiKey)
 			}
 		case "copilot":
-			copilotToken, _, err := copilot.ResolveToken(c.Request.Context(), apiKey)
+			copilotToken, copilotBaseURL, err := copilot.ResolveToken(c.Request.Context(), apiKey)
 			if err != nil {
 				c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("Failed to exchange Copilot token: %v", err)})
 				return
+			}
+			// 使用 token exchange 返回的动态端点覆盖请求 URL
+			if copilotBaseURL != "" {
+				url = strings.TrimRight(copilotBaseURL, "/") + "/models"
+				httpReq, err = http.NewRequestWithContext(c.Request.Context(), "GET", url, nil)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create request: %v", err)})
+					return
+				}
 			}
 			copilot.ApplyRuntimeHeaders(httpReq.Header, copilotToken)
 		default:
 			utils.SetAuthenticationHeaderWithOverride(httpReq.Header, apiKey, authHeader)
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
-		utils.ApplyCustomHeaders(httpReq.Header, req.CustomHeaders)
+		if serviceType == "copilot" {
+			utils.ApplyCustomHeadersProtected(httpReq.Header, req.CustomHeaders, utils.CopilotProtectedHeaders)
+		} else {
+			utils.ApplyCustomHeaders(httpReq.Header, req.CustomHeaders)
+		}
 
 		resp, err := client.Do(httpReq)
 		if err != nil {
