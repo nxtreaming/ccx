@@ -67,7 +67,7 @@ func Handler(envCfg *config.EnvConfig, cfgManager *config.ConfigManager, channel
 		// 提取统一会话标识用于 Trace 亲和性（保持 metadata.user_id 默认规范化后的既有路由语义）
 		affinityBody := common.NormalizeMetadataUserID(bodyBytes)
 		userID := utils.ExtractUnifiedSessionID(c, affinityBody)
-		agentCtx := utils.ExtractAgentContext(c, affinityBody)
+		agentCtx := utils.ExtractAgentContext(c, bodyBytes)
 		common.SetRequestLogContextWithAgent(c, userID, countUserMessages(claudeReq.Messages), agentCtx)
 		c.Set("agentContext", agentCtx)
 
@@ -695,7 +695,7 @@ func CountTokensHandler(envCfg *config.EnvConfig, cfgManager *config.ConfigManag
 		var claudeReq types.ClaudeRequest
 		_ = json.Unmarshal(bodyBytes, &claudeReq)
 		userID := utils.ExtractUnifiedSessionID(c, common.NormalizeMetadataUserID(bodyBytes))
-		agentCtx := utils.ExtractAgentContext(c, common.NormalizeMetadataUserID(bodyBytes))
+		agentCtx := utils.ExtractAgentContext(c, bodyBytes)
 		common.SetRequestLogContextWithAgent(c, userID, countUserMessages(claudeReq.Messages), agentCtx)
 		c.Set("agentContext", agentCtx)
 

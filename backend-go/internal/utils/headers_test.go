@@ -218,6 +218,33 @@ func TestSetGeminiAuthenticationHeader(t *testing.T) {
 	}
 }
 
+func TestExtractAgentContextClaudeCodeSubagentFromRawMetadata(t *testing.T) {
+	body := []byte(`{
+		"model": "claude-sonnet-4-20250514",
+		"metadata": {
+			"user_id": "{\"device_id\":\"dev-123\",\"session_id\":\"sess-456\"}"
+		},
+		"messages": [
+			{"role": "user", "content": "检查这个模块"}
+		],
+		"tools": [{}, {}, {}, {}, {}]
+	}`)
+
+	ctx := ExtractAgentContext(nil, body)
+	if ctx == nil {
+		t.Fatal("expected agent context")
+	}
+	if ctx.AgentRole != "subagent" {
+		t.Fatalf("expected AgentRole=subagent, got %q", ctx.AgentRole)
+	}
+	if ctx.AgentType != "claude_code_subagent" {
+		t.Fatalf("expected AgentType=claude_code_subagent, got %q", ctx.AgentType)
+	}
+	if ctx.Confidence != "heuristic" {
+		t.Fatalf("expected Confidence=heuristic, got %q", ctx.Confidence)
+	}
+}
+
 func TestEnsureCompatibleUserAgent(t *testing.T) {
 	tests := []struct {
 		name            string

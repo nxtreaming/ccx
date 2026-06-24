@@ -55,7 +55,7 @@ func Handler(
 		// 提取统一会话标识用于 Trace 亲和性（保持 metadata.user_id 默认规范化后的既有路由语义）
 		affinityBody := common.NormalizeMetadataUserID(bodyBytes)
 		userID := utils.ExtractUnifiedSessionID(c, affinityBody)
-		agentCtx := utils.ExtractAgentContext(c, affinityBody)
+		agentCtx := utils.ExtractAgentContext(c, bodyBytes)
 		c.Set("agentContext", agentCtx)
 
 		// 统计 user 输入用于驾驶舱标题与轮数
