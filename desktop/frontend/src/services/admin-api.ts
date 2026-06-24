@@ -644,8 +644,6 @@ export interface ConversationInfo {
   lastRequestId: string
   createdAt: string
   lastActiveAt: string
-  latestFeedback?: string
-  latestFeedbackAt?: string
   parentThreadId?: string
   parentConversationId?: string
   childConversationIds?: string[]

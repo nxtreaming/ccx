@@ -27,8 +27,6 @@ type persistedConversation struct {
 	Models               []string   `json:"models,omitempty"`
 	LastModel            string     `json:"lastModel,omitempty"`
 	LastRequestID        string     `json:"lastRequestId,omitempty"`
-	LatestFeedback       string     `json:"latestFeedback,omitempty"`
-	LatestFeedbackAt     *time.Time `json:"latestFeedbackAt,omitempty"`
 	HasSubagents         bool       `json:"hasSubagents,omitempty"`
 	SubagentCount        int        `json:"subagentCount,omitempty"`
 	MainChannel          int        `json:"mainChannel,omitempty"`
@@ -96,8 +94,6 @@ func savePersistedState(path string, conversations map[string]*Conversation) err
 			Models:               conv.Models,
 			LastModel:            conv.LastModel,
 			LastRequestID:        conv.LastRequestID,
-			LatestFeedback:       conv.LatestFeedback,
-			LatestFeedbackAt:     conv.LatestFeedbackAt,
 			HasSubagents:         conv.HasSubagents,
 			SubagentCount:        conv.SubagentCount,
 			MainChannel:          conv.MainChannel,

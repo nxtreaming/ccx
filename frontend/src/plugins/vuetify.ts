@@ -135,7 +135,6 @@ import {
   mdiRobot,
   mdiRobotOutline,
   mdiMessageProcessing,
-  mdiMessageReplyText,
   mdiDiamondStone,
   mdiApi,
   mdiLightningBolt,
@@ -348,7 +347,6 @@ const iconMap: Record<string, string> = {
   'robot': mdiRobot,
   'robot-outline': mdiRobotOutline,
   'message-processing': mdiMessageProcessing,
-  'message-reply-text': mdiMessageReplyText,
   'diamond-stone': mdiDiamondStone,
   'api': mdiApi,
 

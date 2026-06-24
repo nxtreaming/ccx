@@ -104,7 +104,6 @@
               @toggle-expand="toggleExpand(item.conversation.id)"
               @set-override="handleSetOverride"
               @remove-override="handleRemoveOverride"
-              @feedback="handleFeedback"
               @success="(msg: string) => emit('success', msg)"
               @error="(msg: string) => emit('error', msg)"
             />
@@ -290,17 +289,6 @@ async function handleRemoveOverride(convId: string) {
   } catch (e) {
     console.error('[ConversationDashboard] remove override error:', e)
     emit('error', e instanceof Error ? e.message : 'Remove override failed')
-  }
-}
-
-async function handleFeedback(payload: { conversationId: string; message: string }) {
-  try {
-    await api.addConversationFeedback(payload.conversationId, payload.message)
-    emit('success', t('cockpit.feedbackQueued', { id: payload.conversationId.slice(0, 8) }))
-    await fetchConversations()
-  } catch (e) {
-    console.error('[ConversationDashboard] add feedback error:', e)
-    emit('error', e instanceof Error ? e.message : 'Feedback failed')
   }
 }
 

@@ -58,11 +58,6 @@ export function useConversations() {
     await fetchConversations()
   }
 
-  async function addFeedback(conversationId: string, message: string) {
-    await api.post(`/api/conversations/${encodeURIComponent(conversationId)}/feedback`, { message })
-    await fetchConversations()
-  }
-
   return {
     conversations,
     total,
@@ -73,6 +68,5 @@ export function useConversations() {
     fetchConversations,
     setOverride,
     removeOverride,
-    addFeedback,
   }
 }

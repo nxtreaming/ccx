@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { Check, Copy, CornerUpLeft, GitBranch, MessageSquareReply, Send } from 'lucide-vue-next'
+import { Check, Copy, CornerUpLeft, GitBranch } from 'lucide-vue-next'
 import { useLanguage } from '@/composables/useLanguage'
 import type {
   ChannelSequenceEntry,
@@ -36,7 +35,6 @@ const emit = defineEmits<{
   toggleExpand: []
   setOverride: [conversationId: string, sequence: ChannelSequenceEntry[], subagentSequence?: ChannelSequenceEntry[]]
   removeOverride: [conversationId: string]
-  feedback: [payload: { conversationId: string; message: string }]
   navigateConversation: [conversationId: string]
   success: [message: string]
   error: [message: string]
@@ -44,7 +42,6 @@ const emit = defineEmits<{
 
 const { t } = useLanguage()
 const MAX_VISIBLE = 6
-const feedbackText = ref('')
 const emptySubagentSummary: SubagentSummary = { total: 0, streaming: 0, active: 0, idle: 0 }
 
 const conversation = computed(() => props.conversation)
@@ -333,13 +330,6 @@ async function copyRawUserId() {
   }
 }
 
-function sendFeedback() {
-  const message = feedbackText.value.trim()
-  if (!message) return
-  emit('feedback', { conversationId: props.conversation.id, message })
-  feedbackText.value = ''
-}
-
 function navigateConversation(id?: string) {
   if (!id) return
   emit('navigateConversation', id)
@@ -445,14 +435,6 @@ function shortId(value: string): string {
       </button>
     </div>
 
-    <div
-      v-if="conversation.latestFeedback"
-      class="feedback-latest mb-3 flex items-start gap-1.5 border border-border/70 bg-muted/25 px-2 py-1.5 text-xs text-muted-foreground"
-    >
-      <MessageSquareReply class="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-      <span class="feedback-latest-text min-w-0">{{ conversation.latestFeedback }}</span>
-    </div>
-
     <!-- Row 2: Model + Channel chips (collapsed) -->
     <div v-if="!expanded" class="flex flex-wrap items-center gap-2">
       <span class="mr-2 min-w-0 max-w-full truncate text-sm font-medium">{{ conversation.lastModel }}</span>
@@ -515,10 +497,11 @@ function shortId(value: string): string {
       <div v-if="showSubagentSection" class="subagent-routing mt-3 border-t border-dashed border-border pt-2" @click.stop>
         <div class="mb-1 flex items-center">
           <span class="text-xs text-muted-foreground">Subagent 渠道</span>
-          <span v-if="hasSubagentOverride" class="ml-2 text-xs text-amber-500">[已指定]</span>
+          <span v-if="hasSubagentOverride" class="ml-2 text-xs text-amber-500">[{{ t('cockpit.subagentOverride') }}]</span>
+          <span v-else class="ml-2 text-xs text-muted-foreground">[{{ t('cockpit.subagentFollowMain') }}]</span>
           <span class="flex-1" />
           <Button v-if="hasSubagentOverride" variant="ghost" size="sm" class="h-6 px-2 text-xs" @click.stop="handleClearSubagentOverride">
-            清除
+            {{ t('cockpit.subagentClearOverride') }}
           </Button>
         </div>
         <ConversationChannelSequence
@@ -530,28 +513,6 @@ function shortId(value: string): string {
           @move-to-top="handleSubagentMoveToTop"
           @demote="handleSubagentDemote"
         />
-      </div>
-
-      <div class="feedback-panel mt-3 border-t border-dashed border-border pt-3" @click.stop>
-        <Textarea
-          v-model="feedbackText"
-          :placeholder="t('cockpit.feedbackPlaceholder')"
-          class="min-h-16 resize-y rounded-none text-xs"
-          @keydown.meta.enter.prevent="sendFeedback"
-          @keydown.ctrl.enter.prevent="sendFeedback"
-        />
-        <div class="mt-2 flex justify-end">
-          <Button
-            variant="secondary"
-            size="sm"
-            class="h-7 px-2 text-xs"
-            :disabled="!feedbackText.trim()"
-            @click.stop="sendFeedback"
-          >
-            <Send class="h-3.5 w-3.5" />
-            {{ t('cockpit.feedbackSend') }}
-          </Button>
-        </div>
       </div>
     </div>
 
@@ -704,11 +665,6 @@ function shortId(value: string): string {
 
 .raw-user-id {
   opacity: 0.65;
-}
-
-.feedback-latest-text {
-  overflow-wrap: anywhere;
-  line-height: 1.45;
 }
 
 .raw-user-id:hover {

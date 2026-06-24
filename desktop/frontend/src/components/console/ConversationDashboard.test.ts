@@ -13,7 +13,6 @@ const error = ref('')
 const fetchConversations = vi.fn().mockResolvedValue(undefined)
 const setOverride = vi.fn().mockResolvedValue(undefined)
 const removeOverride = vi.fn().mockResolvedValue(undefined)
-const addFeedback = vi.fn().mockResolvedValue(undefined)
 const apiGet = vi.fn().mockResolvedValue({ overrideTtlMinutes: 0 })
 const apiPut = vi.fn().mockResolvedValue(undefined)
 
@@ -35,7 +34,6 @@ vi.mock('@/composables/useConversations', () => ({
     fetchConversations,
     setOverride,
     removeOverride,
-    addFeedback,
   }),
 }))
 
@@ -191,7 +189,6 @@ describe('ConversationDashboard', () => {
     fetchConversations.mockClear()
     setOverride.mockClear()
     removeOverride.mockClear()
-    addFeedback.mockClear()
     apiGet.mockResolvedValue({ overrideTtlMinutes: 0 })
     apiPut.mockResolvedValue(undefined)
     root = document.createElement('div')
@@ -236,8 +233,6 @@ describe('ConversationDashboard', () => {
       lastRequestId: overrides.lastRequestId ?? 'req-1',
       createdAt: overrides.createdAt ?? '2026-06-23T08:00:00.000Z',
       lastActiveAt: overrides.lastActiveAt ?? '2026-06-23T08:00:00.000Z',
-      latestFeedback: overrides.latestFeedback,
-      latestFeedbackAt: overrides.latestFeedbackAt,
       parentThreadId: overrides.parentThreadId,
       parentConversationId: overrides.parentConversationId,
       childConversationIds: overrides.childConversationIds,

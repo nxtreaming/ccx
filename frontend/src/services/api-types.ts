@@ -603,8 +603,6 @@ export interface ConversationInfo {
   status: 'active' | 'streaming' | 'idle'
   lastModel: string
   lastRequestId: string
-  latestFeedback?: string
-  latestFeedbackAt?: string
   parentThreadId?: string
   parentConversationId?: string
   childConversationIds?: string[]

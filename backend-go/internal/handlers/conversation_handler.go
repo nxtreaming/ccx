@@ -145,42 +145,6 @@ func RemoveConversationOverride(deps *ConversationHandlerDeps) gin.HandlerFunc {
 	}
 }
 
-type ConversationFeedbackRequest struct {
-	Message string `json:"message" binding:"required"`
-}
-
-func AddConversationFeedback(deps *ConversationHandlerDeps) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		convID := c.Param("id")
-		if convID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "conversation id is required"})
-			return
-		}
-
-		var req ConversationFeedbackRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
-			return
-		}
-
-		conv, ok := deps.Tracker.GetConversation(convID)
-		if !ok {
-			c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
-			return
-		}
-
-		if ok := deps.Tracker.AddFeedback(conv.Kind, conv.RawUserID, req.Message); !ok {
-			c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message":        "feedback recorded",
-			"conversationId": convID,
-		})
-	}
-}
-
 // GetConversationSettings 获取驾驶舱设置
 func GetConversationSettings(deps *ConversationHandlerDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {

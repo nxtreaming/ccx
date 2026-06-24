@@ -769,7 +769,6 @@ func main() {
 		apiGroup.GET("/conversations", handlers.GetConversations(convDeps))
 		apiGroup.POST("/conversations/:id/override", handlers.SetConversationOverride(convDeps))
 		apiGroup.DELETE("/conversations/:id/override", handlers.RemoveConversationOverride(convDeps))
-		apiGroup.POST("/conversations/:id/feedback", handlers.AddConversationFeedback(convDeps))
 		apiGroup.GET("/conversations/settings", handlers.GetConversationSettings(convDeps))
 		apiGroup.PUT("/conversations/settings", handlers.UpdateConversationSettings(convDeps))
 	}

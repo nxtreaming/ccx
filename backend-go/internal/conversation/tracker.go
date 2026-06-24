@@ -33,8 +33,6 @@ type Conversation struct {
 	Status               string     `json:"status"`
 	LastModel            string     `json:"lastModel"`
 	LastRequestID        string     `json:"lastRequestId"`
-	LatestFeedback       string     `json:"latestFeedback,omitempty"`
-	LatestFeedbackAt     *time.Time `json:"latestFeedbackAt,omitempty"`
 
 	// subagent 观测（仅展示，不影响路由）
 	HasSubagents    bool `json:"hasSubagents,omitempty"`
@@ -287,30 +285,6 @@ func (ct *ConversationTracker) SetLastRequestID(kind, userID, requestID string) 
 	ct.dirty = true
 }
 
-func (ct *ConversationTracker) AddFeedback(kind, userID, feedback string) bool {
-	if userID == "" || strings.TrimSpace(feedback) == "" {
-		return false
-	}
-
-	ct.mu.Lock()
-	defer ct.mu.Unlock()
-
-	compositeKey := kind + ":" + userID
-	convID, ok := ct.userMapping[compositeKey]
-	if !ok {
-		return false
-	}
-	conv, ok := ct.conversations[convID]
-	if !ok {
-		return false
-	}
-	now := time.Now()
-	conv.LatestFeedback = strings.TrimSpace(feedback)
-	conv.LatestFeedbackAt = &now
-	conv.LastActiveAt = time.Now()
-	ct.dirty = true
-	return true
-}
 
 func (ct *ConversationTracker) GetActiveConversations(kindFilter string) []*Conversation {
 	ct.mu.RLock()
@@ -407,8 +381,6 @@ func (ct *ConversationTracker) loadFromDisk() {
 			ChannelName:          item.ChannelName,
 			LastModel:            item.LastModel,
 			LastRequestID:        item.LastRequestID,
-			LatestFeedback:       item.LatestFeedback,
-			LatestFeedbackAt:     item.LatestFeedbackAt,
 			HasSubagents:         item.HasSubagents,
 			SubagentCount:        item.SubagentCount,
 			MainChannel:          item.MainChannel,
