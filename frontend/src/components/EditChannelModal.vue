@@ -1163,7 +1163,7 @@ const loadChannelData = (channel: Channel) => {
   form.rateLimitRpm = (channel.rateLimitRpm && channel.rateLimitRpm > 0) ? channel.rateLimitRpm : null
   form.rateLimitWindowMinutes = (channel.rateLimitWindowMinutes && channel.rateLimitWindowMinutes > 0) ? channel.rateLimitWindowMinutes : null
   form.rateLimitMaxConcurrent = (channel.rateLimitMaxConcurrent && channel.rateLimitMaxConcurrent > 0) ? channel.rateLimitMaxConcurrent : null
-  form.rateLimitAutoFromHeaders = !!channel.rateLimitAutoFromHeaders
+  form.rateLimitAutoFromHeaders = channel.rateLimitAutoFromHeaders !== false
   form.routePrefix = channel.routePrefix || ''
   const { validPatterns, hasInvalidPatterns } = filterValidSupportedModelPatterns(channel.supportedModels || [])
   form.supportedModels = validPatterns
