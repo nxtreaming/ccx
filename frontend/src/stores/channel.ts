@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, unref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePreferencesStore } from '@/stores/preferences'
 import { api, type Channel, type ChannelsResponse, type ChannelMetrics, type ChannelDashboardResponse } from '@/services/api'
@@ -311,7 +311,7 @@ export const useChannelStore = defineStore('channel', () => {
         const newChannel = allChannels.find(ch => ch.name === channel.name && ch.status !== 'disabled')
         if (newChannel) {
           try {
-            const placeAtBottom = preferencesStore.newChannelPlacement === 'bottom'
+            const placeAtBottom = unref(preferencesStore.newChannelPlacement) === 'bottom'
 
             // 1. 重新排序：根据偏好决定新渠道放首位还是末尾（其余渠道按既有 priority/index 升序）
             const otherIndexes = allChannels

@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, unref } from 'vue'
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import vuetify from './plugins/vuetify'
@@ -27,9 +27,9 @@ authStore.initializeAuth()
 
 const preferencesStore = usePreferencesStore()
 preferencesStore.initializeUILanguage(getRuntimeLocale())
-applyDocumentLanguage(preferencesStore.uiLanguage)
+applyDocumentLanguage(unref(preferencesStore.uiLanguage))
 
 // 同步 vue-i18n locale 为 preferences store 中的持久化值
-i18n.global.locale.value = preferencesStore.uiLanguage
+i18n.global.locale.value = unref(preferencesStore.uiLanguage)
 
 app.mount('#app')

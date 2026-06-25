@@ -75,7 +75,6 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useTheme } from 'vuetify'
 import VueApexCharts from 'vue3-apexcharts'
-import type { ApexOptions } from 'apexcharts'
 import { api, type MetricsHistoryResponse } from '../services/api'
 import { useI18n } from '../i18n'
 
@@ -117,7 +116,7 @@ const isDark = computed(() => theme.global.current.value.dark)
 const chartColor = '#2196F3'
 
 // Common chart options
-const baseChartOptions = computed<ApexOptions>(() => ({
+const baseChartOptions = computed<ApexCharts.ApexOptions>(() => ({
   chart: {
     toolbar: { show: false },
     zoom: { enabled: false },
@@ -164,7 +163,7 @@ const baseChartOptions = computed<ApexOptions>(() => ({
 }))
 
 // Request count chart options
-const requestCountOptions = computed<ApexOptions>(() => ({
+const requestCountOptions = computed<ApexCharts.ApexOptions>(() => ({
   ...baseChartOptions.value,
   colors: [chartColor],
   fill: {
@@ -189,7 +188,7 @@ const requestCountOptions = computed<ApexOptions>(() => ({
 }))
 
 // Availability chart options
-const successRateOptions = computed<ApexOptions>(() => ({
+const successRateOptions = computed<ApexCharts.ApexOptions>(() => ({
   ...baseChartOptions.value,
   colors: ['#4CAF50'],
   yaxis: {

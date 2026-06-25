@@ -126,7 +126,7 @@
                           <div class="text-body-2 font-weight-medium">{{ t('addChannel.newChannelPlacementLabel') }}</div>
                         </div>
                         <v-switch
-                          :model-value="preferencesStore.newChannelPlacement === 'bottom'"
+                          :model-value="getNewChannelPlacement() === 'bottom'"
                           density="compact"
                           hide-details
                           readonly
@@ -177,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, unref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import type { Channel } from '../services/api'
 import { buildExpectedRequestUrls } from '../utils/expectedRequestUrls'
@@ -207,6 +207,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const theme = useTheme()
 const preferencesStore = usePreferencesStore()
+const getNewChannelPlacement = () => unref(preferencesStore.newChannelPlacement)
 
 const quickInput = ref('')
 const detectedBaseUrl = ref('')
@@ -391,7 +392,7 @@ function resetQuickState() {
 
 function togglePlacement() {
   preferencesStore.setNewChannelPlacement(
-    preferencesStore.newChannelPlacement === 'bottom' ? 'top' : 'bottom',
+    getNewChannelPlacement() === 'bottom' ? 'top' : 'bottom',
   )
 }
 

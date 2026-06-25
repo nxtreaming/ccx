@@ -67,7 +67,6 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useTheme } from 'vuetify'
 import VueApexCharts from 'vue3-apexcharts'
 import { useGlobalTick } from '../composables/useGlobalTick'
-import type { ApexOptions } from 'apexcharts'
 import { api, type ModelStatsHistoryResponse } from '../services/api'
 import { useI18n } from '../i18n'
 
@@ -150,7 +149,7 @@ const chartSeries = computed(() => {
   }))
 })
 
-const chartOptions = computed<ApexOptions>(() => ({
+const chartOptions = computed<ApexCharts.ApexOptions>(() => ({
   chart: {
     toolbar: { show: false },
     zoom: { enabled: false },
