@@ -399,6 +399,18 @@ export interface CapabilityTestResult {
   totalDuration: number
 }
 
+export interface CompatDiagnoseResult {
+  recommendations: Partial<Record<string, boolean>>
+  urlRecommendations?: {
+    current: string
+    recommended: string
+    reason: string
+  }
+  evidence: Partial<Record<string, string>>
+  duration: number
+  cached: boolean
+}
+
 // ============== 历史/图表类型 ==============
 
 export interface HistoryDataPoint {

@@ -31,7 +31,7 @@ import { parseQuickInput } from '@/utils/quick-input-parser'
 import { claudeMessagesPresets } from '@/generated/claude-messages-presets'
 import { codexResponsesPresets } from '@/generated/codex-responses-presets'
 import { openaiMessagesPresets } from '@/generated/openai-messages-presets'
-import type { Channel, DisabledKeyInfo } from '@/services/admin-api'
+import type { Channel, CompatDiagnoseResult, DisabledKeyInfo } from '@/services/admin-api'
 import ChannelEditorHeader from './channel-edit/ChannelEditorHeader.vue'
 import QuickCreatePanel from './channel-edit/QuickCreatePanel.vue'
 import BasicConfigPanel from './channel-edit/BasicConfigPanel.vue'
@@ -62,6 +62,8 @@ const isMac = computed(() => typeof navigator !== 'undefined' && /Mac|iPod|iPhon
 const saving = ref(false)
 const restoringKey = ref('')
 const error = ref('')
+const success = ref('')
+const diagnosingCompat = ref(false)
 const quickInput = ref('')
 const quickServiceTypeTouched = ref(false)
 const existingApiKeys = ref<string[]>([])
@@ -542,6 +544,7 @@ function resetForm() {
   modelCapabilityRows.value = []
   headerRows.value = []
   error.value = ''
+  success.value = ''
 }
 
 function defaultServiceTypeForChannel() {
@@ -814,6 +817,7 @@ async function persistCurrentDraft(options: { notifyParent?: boolean; close?: bo
 
   saving.value = true
   error.value = ''
+  success.value = ''
   try {
     await saveChannel(buildSubmitPayload(), props.channel?.index ?? null, {
       isQuickAdd: !isEditMode.value,
@@ -1575,6 +1579,40 @@ async function handleTestCapability() {
   })
 }
 
+async function handleDiagnoseCompat() {
+  if (!props.channel || props.channelType === 'images') return
+  diagnosingCompat.value = true
+  error.value = ''
+  success.value = ''
+  try {
+    const result = await adminApi.post<CompatDiagnoseResult>(`/api/${props.channelType}/channels/${props.channel.index}/compat-diagnose`, {})
+    const applied: string[] = []
+    for (const [key, val] of Object.entries(result.recommendations)) {
+      if (val !== undefined && (form as Record<string, unknown>)[key] !== val) {
+        Object.assign(form, { [key]: val })
+        applied.push(key)
+      }
+    }
+    if (result.urlRecommendations?.recommended) {
+      const current = result.urlRecommendations.current
+      const recommended = result.urlRecommendations.recommended
+      const lines = form.baseUrlsText.split('\n').map(line => line.trim()).filter(Boolean)
+      const nextLines = lines.length > 0
+        ? lines.map((line, index) => (index === 0 || line === current) ? recommended : line)
+        : [recommended]
+      form.baseUrlsText = Array.from(new Set(nextLines)).join('\n')
+      applied.push('baseUrl')
+    }
+    success.value = applied.length
+      ? t('channelEditor.compat.diagnoseApplied', { count: String(applied.length) })
+      : t('channelEditor.compat.diagnoseNoChange')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t('channelEditor.compat.diagnoseFailed')
+  } finally {
+    diagnosingCompat.value = false
+  }
+}
+
 function buildCurrentPayload() {
   const modelMapping = getModelMappingAsObject()
   const reasoningMapping = getReasoningMappingAsObject() as Record<string, 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
@@ -1717,6 +1755,9 @@ void toggleSupportedModelFilter
                     <div v-if="error" class="border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive rounded-lg">
                       {{ error }}
                     </div>
+                    <div v-if="success" class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                      {{ success }}
+                    </div>
 
                     <!-- Section: 基础配置 -->
                     <section :ref="(el: any) => setSectionRef('basic', el)" data-section-id="basic" class="scroll-mt-4">
@@ -1848,7 +1889,9 @@ void toggleSupportedModelFilter
                         :supports-chat-role-normalization="supportsChatRoleNormalization"
                         :reasoning-param-style-options="reasoningParamStyleOptions"
                         :text-verbosity-options="textVerbosityOptions"
+                        :diagnosing="diagnosingCompat"
                         @update:form="(updates) => Object.assign(form, updates)"
+                        @diagnose="handleDiagnoseCompat"
                       />
                     </section>
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Clock, Globe, KeyRound, ShieldCheck, Zap } from 'lucide-vue-next'
+import { Clock, Globe, KeyRound, Loader2, ShieldCheck, Stethoscope, Zap } from 'lucide-vue-next'
 import { useLanguage } from '@/composables/useLanguage'
 
 interface FormData {
@@ -46,10 +47,12 @@ defineProps<{
   supportsChatRoleNormalization: boolean
   reasoningParamStyleOptions: Array<{ label: string; value: string }>
   textVerbosityOptions: Array<{ label: string; value: string }>
+  diagnosing?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:form': [value: Partial<FormData>]
+  'diagnose': []
 }>()
 
 const { t } = useLanguage()
@@ -151,9 +154,16 @@ function updateTextVerbosity(value: string) {
 
       <!-- 协议规范化 -->
       <div class="p-4 rounded-lg border border-border/60 bg-gradient-to-br from-background/60 to-background/40 shadow-sm backdrop-blur-sm space-y-2.5">
-        <div class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary border-b border-border/40 pb-2">
-          <ShieldCheck class="h-3 w-3" />
-          {{ t('channelEditor.compat.title') }}
+        <div class="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
+          <div class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+            <ShieldCheck class="h-3 w-3" />
+            {{ t('channelEditor.compat.title') }}
+          </div>
+          <Button type="button" variant="secondary" size="sm" class="h-6 gap-1 px-2 text-[10px]" :disabled="diagnosing" @click="$emit('diagnose')">
+            <Loader2 v-if="diagnosing" class="h-3 w-3 animate-spin" />
+            <Stethoscope v-else class="h-3 w-3" />
+            {{ t('channelEditor.compat.diagnose') }}
+          </Button>
         </div>
         <div class="space-y-2">
           <div v-if="channelType === 'responses'" class="flex items-center justify-between gap-3">
