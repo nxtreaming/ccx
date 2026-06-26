@@ -238,12 +238,12 @@ function sortConversationsByLastActive(items: ConversationInfo[]) {
 
 function getPinnedOrderedConversations(items: ConversationInfo[]) {
   const byID = new Map(items.map(item => [item.id, item]))
-  const ordered = pinnedConversationOrder.value
+  const pinned = [...expandedCards.value]
     .filter(id => byID.has(id))
     .map(id => byID.get(id)!)
-  const seen = new Set(ordered.map(item => item.id))
+  const seen = new Set(pinned.map(item => item.id))
   const fresh = sortConversationsByLastActive(items.filter(item => !seen.has(item.id)))
-  return [...ordered, ...fresh]
+  return [...pinned, ...fresh]
 }
 
 function applyConversationOrder(items: ConversationInfo[]) {
