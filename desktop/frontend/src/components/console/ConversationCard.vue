@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Check, Copy, CornerUpLeft, GitBranch } from 'lucide-vue-next'
@@ -11,6 +11,7 @@ import type {
   SequenceOverrideInfo,
 } from '@/services/admin-api'
 import type { SubagentSummary } from '@/utils/conversation-dashboard'
+import { buildConversationTurnPreview, getConversationTurnFont } from '@/utils/conversation-preview'
 import ConversationChannelSequence from './ConversationChannelSequence.vue'
 
 interface ChannelInfo {
@@ -63,6 +64,26 @@ function splitConversationTurns(text: string): string[] {
   return turns.length > 0 ? turns : [text]
 }
 
+async function syncMainConversationTurnsWidth() {
+  await nextTick()
+  const element = mainConversationTurnsRef.value
+  if (!element) {
+    mainConversationTurnsWidth.value = 0
+    return
+  }
+
+  mainConversationTurnsWidth.value = element.clientWidth
+  mainConversationTurnsObserver?.disconnect()
+  mainConversationTurnsObserver = null
+
+  if (typeof window === 'undefined' || !('ResizeObserver' in window)) return
+
+  mainConversationTurnsObserver = new ResizeObserver(() => {
+    mainConversationTurnsWidth.value = mainConversationTurnsRef.value?.clientWidth ?? 0
+  })
+  mainConversationTurnsObserver.observe(element)
+}
+
 const kindStyle = computed(() => {
   switch (props.conversation.kind) {
     case 'messages': return { color: '#a855f7', chip: 'border-purple-500/60 text-purple-500 bg-purple-500/10' }
@@ -76,7 +97,27 @@ const kindStyle = computed(() => {
 
 const displayLabel = computed(() => props.conversation.title || props.conversation.userId)
 const mainConversationText = computed(() => props.conversation.lastUserMessage || displayLabel.value)
-const mainConversationTurns = computed(() => splitConversationTurns(mainConversationText.value))
+const mainConversationTurnsRef = ref<HTMLElement | null>(null)
+const mainConversationTurnsWidth = ref(0)
+let mainConversationTurnsObserver: ResizeObserver | null = null
+const isSingleMainConversation = computed(() => props.conversation.requestCount <= 1)
+const mainConversationTurns = computed(() => {
+  if (!isSingleMainConversation.value) {
+    return splitConversationTurns(mainConversationText.value)
+  }
+
+  const element = mainConversationTurnsRef.value
+  const width = mainConversationTurnsWidth.value
+  if (!props.expanded || !element || width <= 0) return [mainConversationText.value]
+
+  return [
+    buildConversationTurnPreview(mainConversationText.value, {
+      width,
+      font: getConversationTurnFont(element),
+      maxLines: 5,
+    }),
+  ]
+})
 const tooltipText = computed(() => props.conversation.title || props.conversation.userId)
 const childConversationCount = computed(() => props.conversation.childConversationIds?.length ?? 0)
 const firstChildConversationId = computed(() => props.conversation.childConversationIds?.[0])
@@ -95,6 +136,25 @@ const mainDetailRows = computed(() => [
   { label: t('cockpit.detail.requests'), value: `${props.conversation.requestCount}x` },
   { label: t('cockpit.detail.duration'), value: duration.value },
 ])
+
+watch(
+  () => props.expanded,
+  (expanded) => {
+    mainConversationTurnsObserver?.disconnect()
+    mainConversationTurnsObserver = null
+    if (!expanded) {
+      mainConversationTurnsWidth.value = 0
+      return
+    }
+    void syncMainConversationTurnsWidth()
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  mainConversationTurnsObserver?.disconnect()
+  mainConversationTurnsObserver = null
+})
 
 const remainingTime = computed(() => {
   if (!props.override?.expiresAt) return '--:--'
@@ -436,14 +496,11 @@ function shortId(value: string): string {
       <div class="conversation-section-head flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
         <span>{{ t('cockpit.mainConversation') }}</span>
       </div>
-      <div class="main-conversation-turns mt-1.5 flex flex-col gap-1.5">
+      <div ref="mainConversationTurnsRef" class="main-conversation-turns mt-1.5 flex flex-col gap-1.5">
         <div
           v-for="(turn, index) in mainConversationTurns"
           :key="`${index}-${turn}`"
-          :class="[
-            'main-conversation-turn text-xs font-semibold leading-relaxed text-foreground',
-            { 'main-conversation-turn--single': mainConversationTurns.length === 1 },
-          ]"
+          class="main-conversation-turn text-xs font-semibold leading-relaxed text-foreground"
         >
           {{ turn }}
         </div>
@@ -719,13 +776,11 @@ function shortId(value: string): string {
 .main-conversation-turn {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.main-conversation-turn--single {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
+.main-conversation-turns {
+  min-width: 0;
 }
 
 .next-label {
