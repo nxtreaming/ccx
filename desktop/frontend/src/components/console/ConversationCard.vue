@@ -499,7 +499,7 @@ function shortId(value: string): string {
             { 'main-conversation-turn--numbered': mainConversationTurns.length > 1 },
           ]"
         >
-          <span v-if="mainConversationTurns.length > 1" class="main-conversation-turn-index">{{ index + 1 }}</span>
+          <span v-if="mainConversationTurns.length > 1" class="main-conversation-turn-index">{{ index - mainConversationTurns.length + 1 }}</span>
           <span class="main-conversation-turn-text">{{ turn }}</span>
         </div>
       </div>

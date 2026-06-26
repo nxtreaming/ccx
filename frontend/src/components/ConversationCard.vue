@@ -86,7 +86,7 @@
             :key="`${index}-${turn}`"
             :class="['main-conversation-turn', { 'main-conversation-turn--numbered': mainConversationTurns.length > 1 }]"
           >
-            <span v-if="mainConversationTurns.length > 1" class="main-conversation-turn-index">{{ index + 1 }}</span>
+            <span v-if="mainConversationTurns.length > 1" class="main-conversation-turn-index">{{ index - mainConversationTurns.length + 1 }}</span>
             <span class="main-conversation-turn-text">{{ turn }}</span>
           </div>
         </div>
@@ -424,8 +424,7 @@ const showSubagentSection = computed(() => hasSubagentActivity.value || hasSubag
 const subagentCurrentChannel = computed(() => props.conversation.subagentChannel ?? -1)
 
 const subagentRouteLabel = computed(() => {
-  if (props.conversation.subagentChannel === undefined) return t('cockpit.subagentFollowMain')
-  return t('cockpit.subagentOverride')
+  return hasSubagentOverride.value ? t('cockpit.subagentOverride') : t('cockpit.subagentFollowMain')
 })
 
 
