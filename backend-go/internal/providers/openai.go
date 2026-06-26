@@ -581,8 +581,8 @@ func (p *OpenAIProvider) HandleStreamResponse(body io.ReadCloser) (<-chan string
 				eventChan <- fmt.Sprintf("event: content_block_delta\ndata: %s\n\n", deltaJSON)
 			}
 
-			// 处理工具调用
-			if toolCalls, ok := delta["tool_calls"].([]interface{}); ok {
+			// 处理工具调用（跳过空数组，vLLM 等上游可能在每个 delta 都带 tool_calls:[]）
+			if toolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
 				// 在第一个 content_block 之前发送 message_start
 				if !messageStartSent {
 					eventChan <- buildMessageStartEvent(model)

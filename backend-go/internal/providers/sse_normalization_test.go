@@ -138,6 +138,49 @@ func TestOpenAIProvider_HandleStreamResponse_MapsReasoningContentToThinkingDelta
 	}
 }
 
+// TestOpenAIProvider_HandleStreamResponse_EmptyToolCallsDoesNotSplitTextBlock 验证
+// vLLM delta 中的空 tool_calls:[] 不会导致 text block 被拆分为多个独立块
+func TestOpenAIProvider_HandleStreamResponse_EmptyToolCallsDoesNotSplitTextBlock(t *testing.T) {
+	// 真实 vLLM 0.22.x 流式响应：每个 delta 都携带空 tool_calls:[]
+	body := strings.Join([]string{
+		`data: {"id":"chatcmpl-ac0e1a6028c01fc8","object":"chat.completion.chunk","created":1782310028,"model":"glm-5.2","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"prompt_token_ids":null,"prompt_text":null}`,
+		`data: {"id":"chatcmpl-ac0e1a6028c01fc8","object":"chat.completion.chunk","created":1782310028,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"你好","tool_calls":[]},"logprobs":null,"finish_reason":null,"token_ids":null}]}`,
+		`data: {"id":"chatcmpl-ac0e1a6028c01fc8","object":"chat.completion.chunk","created":1782310028,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"！有什么","tool_calls":[]},"logprobs":null,"finish_reason":null,"token_ids":null}]}`,
+		`data: {"id":"chatcmpl-ac0e1a6028c01fc8","object":"chat.completion.chunk","created":1782310028,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"可以","tool_calls":[]},"logprobs":null,"finish_reason":null,"token_ids":null}]}`,
+		`data: {"id":"chatcmpl-ac0e1a6028c01fc8","object":"chat.completion.chunk","created":1782310028,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"帮你的吗","tool_calls":[]},"logprobs":null,"finish_reason":null,"token_ids":null}]}`,
+		`data: {"id":"chatcmpl-ac0e1a6028c01fc8","object":"chat.completion.chunk","created":1782310028,"model":"glm-5.2","choices":[{"index":0,"delta":{"content":"？😊","tool_calls":[]},"logprobs":null,"finish_reason":null,"token_ids":null}]}`,
+		`data: {"id":"chatcmpl-ac0e1a6028c01fc8","object":"chat.completion.chunk","created":1782310028,"model":"glm-5.2","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop","stop_reason":null,"token_ids":null}]}`,
+		`data: [DONE]`,
+		"",
+	}, "\n")
+
+	provider := &OpenAIProvider{}
+	eventChan, errChan, err := provider.HandleStreamResponse(io.NopCloser(strings.NewReader(body)))
+	if err != nil {
+		t.Fatalf("HandleStreamResponse returned error: %v", err)
+	}
+
+	events := collectStreamEvents(eventChan)
+	select {
+	case streamErr := <-errChan:
+		if streamErr != nil {
+			t.Fatalf("unexpected stream error: %v", streamErr)
+		}
+	default:
+	}
+
+	// 应该只有 1 个 content_block_start（type=text），不能被空 tool_calls 拆成多个
+	startCount := 0
+	for _, event := range events {
+		if strings.Contains(event, `"type":"content_block_start"`) {
+			startCount++
+		}
+	}
+	if startCount != 1 {
+		t.Fatalf("expected exactly 1 content_block_start for text, got %d.\nevents: %v", startCount, events)
+	}
+}
+
 // TestOpenAIProvider_HandleStreamResponse_MapsVLLMReasoningToThinkingDelta 验证 vLLM 的
 // reasoning 字段（非 reasoning_content）也能正确映射为 Claude thinking 事件
 func TestOpenAIProvider_HandleStreamResponse_MapsVLLMReasoningToThinkingDelta(t *testing.T) {
