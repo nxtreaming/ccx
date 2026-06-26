@@ -4,7 +4,7 @@ import { Alert } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MessageSquare, Search, RotateCcw } from 'lucide-vue-next'
+import { MessageSquare, Search } from 'lucide-vue-next'
 import { useAdminApi } from '@/composables/useAdminApi'
 import { useConversations } from '@/composables/useConversations'
 import { useDesktopActivity } from '@/composables/useDesktopActivity'
@@ -42,7 +42,6 @@ let noticeTimer: ReturnType<typeof setTimeout> | undefined
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 let conversationTimer: ReturnType<typeof setInterval> | undefined
 const cardElements = new Map<string, HTMLElement>()
-type CockpitStat = { key: string; label: string; hint: string; color: string; count: number }
 
 const boardMeta = computed<Array<{ key: BoardColumnKey; label: string; hint: string; color: string }>>(() => [
   { key: 'working', label: tf('cockpit.board.working', 'Working'), hint: tf('cockpit.board.workingHint', 'Root conversations with active work'), color: '#6366f1' },
@@ -83,21 +82,7 @@ const visibleBoardItems = computed(() => {
   return filterConversationBoardItems(boardItems.value, kindFilter.value, searchQuery.value)
 })
 
-const overrideCount = computed(() => Object.keys(overrides.value).length)
 const shouldRefresh = computed(() => status.value.running)
-const refreshState = computed(() => {
-  if (status.value.starting) return 'connecting'
-  if (status.value.running) return 'online'
-  return 'offline'
-})
-
-const boardStats = computed<CockpitStat[]>(() => {
-  const buckets = buildColumnBuckets(visibleBoardItems.value)
-  return boardMeta.value.map(item => ({
-    ...item,
-    count: buckets[item.key].length,
-  }))
-})
 
 const boardData = computed(() => {
   const buckets = buildColumnBuckets(visibleBoardItems.value)
@@ -348,42 +333,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="mx-auto flex w-full max-w-[1680px] flex-col gap-4">
-    <div class="flex flex-wrap items-center gap-3">
-      <div class="flex items-center gap-2">
-        <div class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-          <MessageSquare class="h-5 w-5 text-primary" />
-          <span>{{ t('tab.cockpitTitle') }}</span>
-        </div>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <span
-          v-for="stat in boardStats"
-          :key="stat.key"
-          class="inline-flex items-center gap-2 border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground"
-        >
-          <span class="h-2.5 w-2.5 rounded-full" :style="{ background: stat.color }" />
-          <span>{{ stat.label }}</span>
-          <strong class="ml-1 text-foreground">{{ stat.count }}</strong>
-        </span>
-      </div>
-
-      <div class="ml-auto flex flex-wrap items-center gap-2">
-        <span class="inline-flex items-center gap-2 border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
-          <span class="h-2 w-2 rounded-full" :class="refreshState === 'online' ? 'bg-emerald-500' : refreshState === 'connecting' ? 'bg-amber-500' : 'bg-rose-500'" />
-          {{ refreshState === 'online' ? t('common.online') : refreshState === 'connecting' ? t('common.connecting') : t('common.offline') }}
-        </span>
-        <button
-          type="button"
-          class="inline-flex h-9 items-center gap-1.5 border border-border bg-card px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          @click="refreshConversations"
-        >
-          <RotateCcw class="h-3.5 w-3.5" />
-          {{ t('cockpit.refresh') }}
-        </button>
-      </div>
-    </div>
-
     <Alert v-if="error" variant="destructive">
       <p class="text-sm">{{ error }}</p>
     </Alert>
@@ -429,12 +378,6 @@ onBeforeUnmount(() => {
         </SelectContent>
       </Select>
 
-      <span class="text-xs text-muted-foreground">
-        {{ t('cockpit.active', { count: String(visibleBoardItems.length) }) }}
-        <span v-if="overrideCount > 0" class="ml-2 text-amber-500">
-          {{ t('cockpit.override', { count: String(overrideCount) }) }}
-        </span>
-      </span>
     </div>
 
     <div v-if="loading && !conversations.length" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

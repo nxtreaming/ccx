@@ -80,7 +80,7 @@
       <div v-if="expanded" class="main-conversation-detail">
         <div class="conversation-section-head">
           <span>{{ t('cockpit.mainConversation') }}</span>
-          <span>{{ shortConversationId }}</span>
+          <span :title="conversationDisplayId">{{ shortConversationId }}</span>
         </div>
         <div class="main-conversation-text">{{ mainConversationText }}</div>
         <div class="main-conversation-grid">
@@ -293,7 +293,8 @@ const kindCssColor = computed(() => {
 
 const displayLabel = computed(() => props.conversation.title || props.conversation.userId)
 const mainConversationText = computed(() => props.conversation.lastUserMessage || displayLabel.value)
-const shortConversationId = computed(() => props.conversation.id.slice(0, 12))
+const conversationDisplayId = computed(() => props.conversation.rawUserId || props.conversation.id)
+const shortConversationId = computed(() => conversationDisplayId.value.slice(0, 12))
 const childConversationCount = computed(() => props.conversation.childConversationIds?.length ?? 0)
 const firstChildConversationId = computed(() => props.conversation.childConversationIds?.[0])
 const parentThreadLabel = computed(() => props.conversation.parentThreadId ? shortId(props.conversation.parentThreadId) : '')

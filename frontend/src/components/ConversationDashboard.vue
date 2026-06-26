@@ -1,20 +1,6 @@
 <template>
   <div class="cockpit-board-page">
     <div class="cockpit-toolbar">
-      <div class="cockpit-toolbar-main">
-        <div class="cockpit-title">
-          <v-icon size="20">mdi-view-dashboard-outline</v-icon>
-          <span>{{ t('app.tabs.conversations') }}</span>
-        </div>
-        <div class="cockpit-stats">
-          <div v-for="stat in boardStats" :key="stat.key" class="cockpit-stat">
-            <span class="cockpit-stat-dot" :style="{ background: stat.color }"></span>
-            <span class="cockpit-stat-label">{{ stat.label }}</span>
-            <span class="cockpit-stat-value">{{ stat.count }}</span>
-          </div>
-        </div>
-      </div>
-
       <div class="cockpit-controls">
         <v-select
           v-if="xs"
@@ -137,7 +123,6 @@ const emit = defineEmits<{
 }>()
 
 type DashboardChannel = { index: number; name: string; priority: number; status: string; circuitOpen?: boolean }
-type CockpitStat = { key: string; label: string; color: string; count: number }
 
 const loading = ref(true)
 const conversations = ref<ConversationInfo[]>([])
@@ -188,14 +173,6 @@ const boardItems = computed(() => buildConversationBoardItems(sortedConversation
 
 const visibleBoardItems = computed(() => {
   return filterConversationBoardItems(boardItems.value, kindFilter.value, searchQuery.value)
-})
-
-const boardStats = computed<CockpitStat[]>(() => {
-  const counts = bucketBoardItems(visibleBoardItems.value)
-  return boardColumnMeta.value.map(column => ({
-    ...column,
-    count: counts[column.key].length,
-  }))
 })
 
 const boardColumns = computed(() => {
@@ -410,56 +387,11 @@ fetchAllChannels()
   margin-bottom: 16px;
 }
 
-.cockpit-toolbar-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.cockpit-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 18px;
-  font-weight: 800;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-.cockpit-stats {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cockpit-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 92px;
-  padding: 7px 10px;
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  background: rgb(var(--v-theme-surface));
-  font-size: 12px;
-}
-
-.cockpit-stat-dot,
 .cockpit-column-dot {
   width: 7px;
   height: 7px;
   border-radius: 999px;
   flex: 0 0 auto;
-}
-
-.cockpit-stat-label {
-  color: rgb(var(--v-theme-on-surface) / 68%);
-}
-
-.cockpit-stat-value {
-  margin-left: auto;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
 }
 
 .cockpit-controls {

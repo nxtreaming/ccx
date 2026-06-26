@@ -66,6 +66,8 @@ const kindStyle = computed(() => {
 
 const displayLabel = computed(() => props.conversation.title || props.conversation.userId)
 const mainConversationText = computed(() => props.conversation.lastUserMessage || displayLabel.value)
+const conversationDisplayId = computed(() => props.conversation.rawUserId || props.conversation.id)
+const shortConversationId = computed(() => conversationDisplayId.value.slice(0, 12))
 const tooltipText = computed(() => props.conversation.title || props.conversation.userId)
 const childConversationCount = computed(() => props.conversation.childConversationIds?.length ?? 0)
 const firstChildConversationId = computed(() => props.conversation.childConversationIds?.[0])
@@ -424,7 +426,7 @@ function shortId(value: string): string {
     <div v-if="expanded" class="main-conversation-detail mb-3 border border-border bg-background/60 p-2.5">
       <div class="conversation-section-head flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
         <span>{{ t('cockpit.mainConversation') }}</span>
-        <span>{{ shortId(conversation.id) }}</span>
+        <span :title="conversationDisplayId">{{ shortConversationId }}</span>
       </div>
       <div class="main-conversation-text mt-1.5 text-xs font-semibold leading-relaxed text-foreground">
         {{ mainConversationText }}
