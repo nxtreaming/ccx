@@ -54,6 +54,15 @@ const visibleSubagents = computed(() => subagents.value.slice(0, props.expanded 
 const hasOverride = computed(() => !!props.override)
 const kindLabel = computed(() => props.conversation.kind.toUpperCase())
 
+function splitConversationTurns(text: string): string[] {
+  const turns = text
+    .split(/\s+\/\s+/)
+    .map((turn) => turn.trim())
+    .filter(Boolean)
+
+  return turns.length > 0 ? turns : [text]
+}
+
 const kindStyle = computed(() => {
   switch (props.conversation.kind) {
     case 'messages': return { color: '#a855f7', chip: 'border-purple-500/60 text-purple-500 bg-purple-500/10' }
@@ -67,6 +76,7 @@ const kindStyle = computed(() => {
 
 const displayLabel = computed(() => props.conversation.title || props.conversation.userId)
 const mainConversationText = computed(() => props.conversation.lastUserMessage || displayLabel.value)
+const mainConversationTurns = computed(() => splitConversationTurns(mainConversationText.value))
 const tooltipText = computed(() => props.conversation.title || props.conversation.userId)
 const childConversationCount = computed(() => props.conversation.childConversationIds?.length ?? 0)
 const firstChildConversationId = computed(() => props.conversation.childConversationIds?.[0])
@@ -426,8 +436,17 @@ function shortId(value: string): string {
       <div class="conversation-section-head flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
         <span>{{ t('cockpit.mainConversation') }}</span>
       </div>
-      <div class="main-conversation-text mt-1.5 text-xs font-semibold leading-relaxed text-foreground">
-        {{ mainConversationText }}
+      <div class="main-conversation-turns mt-1.5 flex flex-col gap-1.5">
+        <div
+          v-for="(turn, index) in mainConversationTurns"
+          :key="`${index}-${turn}`"
+          :class="[
+            'main-conversation-turn text-xs font-semibold leading-relaxed text-foreground',
+            { 'main-conversation-turn--single': mainConversationTurns.length === 1 },
+          ]"
+        >
+          {{ turn }}
+        </div>
       </div>
       <div class="mt-2 grid grid-cols-2 gap-2">
         <div v-for="row in mainDetailRows" :key="row.label" class="min-w-0 border-t border-dashed border-border pt-1.5">
@@ -697,9 +716,16 @@ function shortId(value: string): string {
   border-radius: 0;
 }
 
-.main-conversation-text {
+.main-conversation-turn {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.main-conversation-turn--single {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
 }
 
 .next-label {

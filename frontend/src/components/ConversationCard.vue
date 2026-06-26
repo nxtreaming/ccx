@@ -81,7 +81,15 @@
         <div class="conversation-section-head">
           <span>{{ t('cockpit.mainConversation') }}</span>
         </div>
-        <div class="main-conversation-text">{{ mainConversationText }}</div>
+        <div class="main-conversation-turns">
+          <div
+            v-for="(turn, index) in mainConversationTurns"
+            :key="`${index}-${turn}`"
+            :class="['main-conversation-turn', { 'main-conversation-turn--single': mainConversationTurns.length === 1 }]"
+          >
+            {{ turn }}
+          </div>
+        </div>
         <div class="main-conversation-grid">
           <div v-for="row in mainDetailRows" :key="row.label" class="main-conversation-field">
             <span>{{ row.label }}</span>
@@ -283,6 +291,15 @@ function subagentStatusColor(status: ConversationInfo['status']): string {
   }
 }
 
+function splitConversationTurns(text: string): string[] {
+  const turns = text
+    .split(/\s+\/\s+/)
+    .map((turn) => turn.trim())
+    .filter(Boolean)
+
+  return turns.length > 0 ? turns : [text]
+}
+
 const kindCssColor = computed(() => {
   const map: Record<string, string> = {
     messages: 'var(--ccx-kind-messages)',
@@ -296,6 +313,7 @@ const kindCssColor = computed(() => {
 
 const displayLabel = computed(() => props.conversation.title || props.conversation.userId)
 const mainConversationText = computed(() => props.conversation.lastUserMessage || displayLabel.value)
+const mainConversationTurns = computed(() => splitConversationTurns(mainConversationText.value))
 const childConversationCount = computed(() => props.conversation.childConversationIds?.length ?? 0)
 const firstChildConversationId = computed(() => props.conversation.childConversationIds?.[0])
 const parentThreadLabel = computed(() => props.conversation.parentThreadId ? shortId(props.conversation.parentThreadId) : '')
@@ -721,14 +739,27 @@ function shortId(value: string): string {
   text-transform: uppercase;
 }
 
-.main-conversation-text {
+.main-conversation-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 6px;
+}
+
+.main-conversation-turn {
   color: rgb(var(--v-theme-on-surface) / 86%);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.main-conversation-turn--single {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
 }
 
 .main-conversation-grid {
