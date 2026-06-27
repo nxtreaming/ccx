@@ -604,6 +604,8 @@ export interface ConversationInfo {
   lastModel: string
   lastRequestId: string
   lastUserMessage?: string
+  lastRecap?: string
+  lastRecapAt?: string
   parentThreadId?: string
   parentConversationId?: string
   childConversationIds?: string[]

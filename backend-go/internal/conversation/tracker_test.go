@@ -78,6 +78,34 @@ func TestConversationTracker_UpdateTitleMissingConversation(t *testing.T) {
 	}
 }
 
+func TestConversationTracker_UpdateRecap(t *testing.T) {
+	ct := NewConversationTracker(1*time.Hour, 2*time.Hour)
+	defer ct.Stop()
+
+	if ct.UpdateRecap("messages", "session-123", "should not create a card") {
+		t.Fatal("expected UpdateRecap to ignore missing conversation")
+	}
+
+	ct.Track("messages", "session-123", "claude-opus-4-8", 0, "primary", "", "原始问题", 1, "")
+	if !ct.UpdateRecap("messages", "session-123", "继续发布任务，下一步查看 Release workflow。") {
+		t.Fatal("expected UpdateRecap to update existing conversation")
+	}
+
+	convs := ct.GetActiveConversations("")
+	if len(convs) != 1 {
+		t.Fatalf("expected 1 conversation, got %d", len(convs))
+	}
+	if convs[0].LastRecap != "继续发布任务，下一步查看 Release workflow。" {
+		t.Fatalf("unexpected recap: %q", convs[0].LastRecap)
+	}
+	if convs[0].LastRecapAt == nil || convs[0].LastRecapAt.IsZero() {
+		t.Fatal("expected LastRecapAt to be set")
+	}
+	if convs[0].RequestCount != 1 {
+		t.Fatalf("expected recap not to increment requestCount, got %d", convs[0].RequestCount)
+	}
+}
+
 func TestConversationTracker_PersistAndRestore(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/state.json"
@@ -85,6 +113,7 @@ func TestConversationTracker_PersistAndRestore(t *testing.T) {
 	ct := NewConversationTracker(1*time.Hour, 2*time.Hour, path)
 	ct.Track("messages", "user-abc", "claude-opus-4-7", 0, "primary", "", "你好世界", 1, "")
 	ct.UpdateTitle("messages", "user-abc", "确认驾驶舱对话卡片保存时长")
+	ct.UpdateRecap("messages", "user-abc", "已完成保存逻辑，下一步验证重启恢复。")
 	ct.Stop()
 
 	ct2 := NewConversationTracker(1*time.Hour, 2*time.Hour, path)
@@ -99,6 +128,12 @@ func TestConversationTracker_PersistAndRestore(t *testing.T) {
 	}
 	if convs[0].CreatedAt.IsZero() {
 		t.Error("expected non-zero createdAt after restore")
+	}
+	if convs[0].LastRecap != "已完成保存逻辑，下一步验证重启恢复。" {
+		t.Errorf("expected restored recap, got %q", convs[0].LastRecap)
+	}
+	if convs[0].LastRecapAt == nil || convs[0].LastRecapAt.IsZero() {
+		t.Error("expected restored LastRecapAt")
 	}
 
 	ct2.Track("messages", "user-abc", "claude-opus-4-7", 1, "backup", "", "", 2, "")

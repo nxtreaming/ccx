@@ -13,27 +13,29 @@ import (
 )
 
 type Conversation struct {
-	ID                   string    `json:"id"`
-	Kind                 string    `json:"kind"`
-	UserID               string    `json:"userId"`
-	RawUserID            string    `json:"rawUserId,omitempty"`
-	Title                string    `json:"title,omitempty"`
-	GeneratedTitle       string    `json:"-"`
-	FallbackTitle        string    `json:"-"`
-	SessionID            string    `json:"-"`
-	ParentThreadID       string    `json:"parentThreadId,omitempty"`
-	ParentConversationID string    `json:"parentConversationId,omitempty"`
-	ChildConversationIDs []string  `json:"childConversationIds,omitempty"`
-	CreatedAt            time.Time `json:"createdAt"`
-	LastActiveAt         time.Time `json:"lastActiveAt"`
-	RequestCount         int       `json:"requestCount"`
-	Models               []string  `json:"models"`
-	CurrentChannel       int       `json:"currentChannel"`
-	ChannelName          string    `json:"channelName"`
-	Status               string    `json:"status"`
-	LastModel            string    `json:"lastModel"`
-	LastRequestID        string    `json:"lastRequestId"`
-	LastUserMessage      string    `json:"lastUserMessage,omitempty"`
+	ID                   string     `json:"id"`
+	Kind                 string     `json:"kind"`
+	UserID               string     `json:"userId"`
+	RawUserID            string     `json:"rawUserId,omitempty"`
+	Title                string     `json:"title,omitempty"`
+	GeneratedTitle       string     `json:"-"`
+	FallbackTitle        string     `json:"-"`
+	SessionID            string     `json:"-"`
+	ParentThreadID       string     `json:"parentThreadId,omitempty"`
+	ParentConversationID string     `json:"parentConversationId,omitempty"`
+	ChildConversationIDs []string   `json:"childConversationIds,omitempty"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	LastActiveAt         time.Time  `json:"lastActiveAt"`
+	RequestCount         int        `json:"requestCount"`
+	Models               []string   `json:"models"`
+	CurrentChannel       int        `json:"currentChannel"`
+	ChannelName          string     `json:"channelName"`
+	Status               string     `json:"status"`
+	LastModel            string     `json:"lastModel"`
+	LastRequestID        string     `json:"lastRequestId"`
+	LastUserMessage      string     `json:"lastUserMessage,omitempty"`
+	LastRecap            string     `json:"lastRecap,omitempty"`
+	LastRecapAt          *time.Time `json:"lastRecapAt,omitempty"`
 
 	// subagent 观测（仅展示，不影响路由）
 	HasSubagents    bool `json:"hasSubagents,omitempty"`
@@ -225,6 +227,37 @@ func (ct *ConversationTracker) UpdateTitle(kind, userID, title string) bool {
 	return true
 }
 
+func (ct *ConversationTracker) UpdateRecap(kind, userID, recap string) bool {
+	if userID == "" {
+		return false
+	}
+
+	recap = truncateConversationContent(normalizeConversationContent(recap))
+	if recap == "" {
+		return false
+	}
+
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
+	compositeKey := kind + ":" + userID
+	convID, ok := ct.userMapping[compositeKey]
+	if !ok {
+		return false
+	}
+	conv, ok := ct.conversations[convID]
+	if !ok {
+		return false
+	}
+
+	now := time.Now()
+	conv.LastRecap = recap
+	conv.LastRecapAt = &now
+	conv.LastActiveAt = now
+	ct.dirty = true
+	return true
+}
+
 func (ct *ConversationTracker) UpdateStatus(kind, userID, status string) {
 	if userID == "" {
 		return
@@ -383,6 +416,8 @@ func (ct *ConversationTracker) loadFromDisk() {
 			LastModel:            item.LastModel,
 			LastRequestID:        item.LastRequestID,
 			LastUserMessage:      item.LastUserMessage,
+			LastRecap:            item.LastRecap,
+			LastRecapAt:          cloneTimePtr(item.LastRecapAt),
 			HasSubagents:         item.HasSubagents,
 			SubagentCount:        item.SubagentCount,
 			MainChannel:          item.MainChannel,
@@ -654,6 +689,14 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func cloneTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	cloned := *t
+	return &cloned
 }
 
 func normalizeConversationContent(message string) string {

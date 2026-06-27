@@ -72,13 +72,18 @@ func Handler(envCfg *config.EnvConfig, cfgManager *config.ConfigManager, channel
 		c.Set("agentContext", agentCtx)
 
 		isTitleRequest := isClaudeCodeTitleRequest(bodyBytes)
+		isRecapRequest := isClaudeCodeRecapRequest(bodyBytes)
 		if envCfg.ShouldLog("debug") && isTitleRequest {
 			common.RequestLogf(c, "[Messages-Title-Debug] 检测到 Claude Code title 请求: user=%s, model=%s, stream=%t",
 				scheduler.MaskUserIDForLog(userID), claudeReq.Model, claudeReq.Stream)
 		}
+		if envCfg.ShouldLog("debug") && isRecapRequest {
+			common.RequestLogf(c, "[Messages-Recap-Debug] 检测到 Claude Code recap 请求: user=%s, model=%s, stream=%t",
+				scheduler.MaskUserIDForLog(userID), claudeReq.Model, claudeReq.Stream)
+		}
 
 		// 提取用户最后一条消息用于对话标题 fallback
-		if !isTitleRequest {
+		if !isTitleRequest && !isRecapRequest {
 			c.Set("lastUserMessage", extractLastUserMessage(claudeReq.Messages))
 			c.Set("userMessageCount", countUserMessages(claudeReq.Messages))
 		}
@@ -109,6 +114,7 @@ func handleMultiChannel(
 	startTime time.Time,
 ) {
 	isTitleRequest := isClaudeCodeTitleRequest(bodyBytes)
+	isRecapRequest := isClaudeCodeRecapRequest(bodyBytes)
 
 	cfg := cfgManager.GetConfig()
 	contextRequirement := common.BuildMessagesContextRequirement(bodyBytes, cfg.ContextRouting)
@@ -201,14 +207,25 @@ func handleMultiChannel(
 			}
 		},
 		func(selection *scheduler.SelectionResult, result common.MultiChannelAttemptResult) {
-			if !isTitleRequest || result.ResponseText == "" {
+			if result.ResponseText == "" {
 				return
 			}
-			title := extractTitleFromResponseText(result.ResponseText)
-			updated := channelScheduler.UpdateConversationTitle(scheduler.ChannelKindMessages, userID, title)
-			if envCfg.ShouldLog("debug") {
-				common.RequestLogf(c, "[Messages-Title-Debug] title 更新结果: user=%s, title=%q, updated=%t, responseTextLen=%d",
-					scheduler.MaskUserIDForLog(userID), title, updated, len(result.ResponseText))
+			if isTitleRequest {
+				title := extractTitleFromResponseText(result.ResponseText)
+				updated := channelScheduler.UpdateConversationTitle(scheduler.ChannelKindMessages, userID, title)
+				if envCfg.ShouldLog("debug") {
+					common.RequestLogf(c, "[Messages-Title-Debug] title 更新结果: user=%s, title=%q, updated=%t, responseTextLen=%d",
+						scheduler.MaskUserIDForLog(userID), title, updated, len(result.ResponseText))
+				}
+				return
+			}
+			if isRecapRequest {
+				recap := extractRecapFromResponseText(result.ResponseText)
+				updated := channelScheduler.UpdateConversationRecap(scheduler.ChannelKindMessages, userID, recap)
+				if envCfg.ShouldLog("debug") {
+					common.RequestLogf(c, "[Messages-Recap-Debug] recap 更新结果: user=%s, updated=%t, responseTextLen=%d",
+						scheduler.MaskUserIDForLog(userID), updated, len(result.ResponseText))
+				}
 			}
 		},
 		func(ctx *gin.Context, failoverErr *common.FailoverError, lastError error) {
@@ -308,7 +325,8 @@ func handleSingleChannel(
 	if handled {
 		userID := utils.ExtractUnifiedSessionID(c, common.NormalizeMetadataUserID(bodyBytes))
 		isTitleRequest := isClaudeCodeTitleRequest(bodyBytes)
-		if !isTitleRequest {
+		isRecapRequest := isClaudeCodeRecapRequest(bodyBytes)
+		if !isTitleRequest && !isRecapRequest {
 			lastUserMessage := extractLastUserMessage(claudeReq.Messages)
 			userMessageCount := countUserMessages(claudeReq.Messages)
 			agentRole := ""
@@ -326,13 +344,21 @@ func handleSingleChannel(
 				common.RequestLogf(c, "[Messages-Conversation-Debug] 已追踪单渠道对话: user=%s, model=%s, channel=%d, userMessages=%d, hasFallbackTitle=%t",
 					scheduler.MaskUserIDForLog(userID), claudeReq.Model, channelIndex, userMessageCount, lastUserMessage != "")
 			}
-		} else {
+		} else if isTitleRequest {
 			responseText, _ := c.Get("responseText")
 			title := extractTitleFromResponseText(responseTextString(responseText))
 			updated := channelScheduler.UpdateConversationTitle(scheduler.ChannelKindMessages, userID, title)
 			if envCfg.ShouldLog("debug") {
 				common.RequestLogf(c, "[Messages-Title-Debug] 单渠道 title 更新结果: user=%s, title=%q, updated=%t, responseTextLen=%d",
 					scheduler.MaskUserIDForLog(userID), title, updated, len(responseTextString(responseText)))
+			}
+		} else if isRecapRequest {
+			responseText, _ := c.Get("responseText")
+			recap := extractRecapFromResponseText(responseTextString(responseText))
+			updated := channelScheduler.UpdateConversationRecap(scheduler.ChannelKindMessages, userID, recap)
+			if envCfg.ShouldLog("debug") {
+				common.RequestLogf(c, "[Messages-Recap-Debug] 单渠道 recap 更新结果: user=%s, updated=%t, responseTextLen=%d",
+					scheduler.MaskUserIDForLog(userID), updated, len(responseTextString(responseText)))
 			}
 		}
 		return
@@ -390,6 +416,7 @@ func handleNormalResponse(
 		common.RequestLogf(c, "[Messages-EmptyResponse] 上游返回空响应（非流式，Key: %s），触发 failover", utils.MaskAPIKey(apiKey))
 		return nil, common.ErrEmptyNonStreamResponse
 	}
+	c.Set("responseText", extractClaudeResponseText(claudeResp.Content))
 
 	// Token 补全逻辑
 	if claudeResp.Usage == nil {
@@ -563,6 +590,45 @@ func extractTitleFromResponseText(responseText string) string {
 	return strings.Trim(strings.TrimSpace(responseText), `"`)
 }
 
+func extractRecapFromResponseText(responseText string) string {
+	responseText = strings.TrimSpace(responseText)
+	if responseText == "" {
+		return ""
+	}
+
+	var payload struct {
+		Recap   string `json:"recap"`
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(responseText), &payload); err == nil {
+		if recap := strings.TrimSpace(payload.Recap); recap != "" {
+			return recap
+		}
+		if summary := strings.TrimSpace(payload.Summary); summary != "" {
+			return summary
+		}
+	}
+
+	var text string
+	if err := json.Unmarshal([]byte(responseText), &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	return strings.Trim(strings.TrimSpace(responseText), `"`)
+}
+
+func extractClaudeResponseText(contents []types.ClaudeContent) string {
+	parts := make([]string, 0, len(contents))
+	for _, content := range contents {
+		if content.Type != "text" {
+			continue
+		}
+		if text := strings.TrimSpace(content.Text); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
 func responseTextString(value interface{}) string {
 	text, _ := value.(string)
 	return text
@@ -610,17 +676,52 @@ func extractLastUserMessage(messages []types.ClaudeMessage) string {
 	return strings.Join(parts, " / ")
 }
 
+func isClaudeCodeRecapRequest(bodyBytes []byte) bool {
+	var req struct {
+		ContextManagement *struct {
+			Edits []struct {
+				Type string `json:"type"`
+			} `json:"edits"`
+		} `json:"context_management"`
+		Messages []types.ClaudeMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		return false
+	}
+	if req.ContextManagement == nil || len(req.ContextManagement.Edits) == 0 {
+		return false
+	}
+
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if req.Messages[i].Role != "user" {
+			continue
+		}
+		for _, text := range extractRawUserTextBlocks(req.Messages[i]) {
+			if isClaudeCodeRecapPrompt(text) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
 func extractUserTextBlocks(message types.ClaudeMessage) []string {
 	texts := []string{}
-	appendText := func(text string) {
+	for _, text := range extractRawUserTextBlocks(message) {
 		if cleaned := cleanUserTitleText(text); cleaned != "" {
 			texts = append(texts, cleaned)
 		}
 	}
+	return texts
+}
+
+func extractRawUserTextBlocks(message types.ClaudeMessage) []string {
+	texts := []string{}
 
 	switch content := message.Content.(type) {
 	case string:
-		appendText(content)
+		texts = append(texts, content)
 	case []interface{}:
 		for _, block := range content {
 			m, ok := block.(map[string]interface{})
@@ -628,7 +729,7 @@ func extractUserTextBlocks(message types.ClaudeMessage) []string {
 				continue
 			}
 			if text, ok := m["text"].(string); ok {
-				appendText(text)
+				texts = append(texts, text)
 			}
 		}
 	}
@@ -647,6 +748,9 @@ func cleanUserTitleText(text string) string {
 	if common.IsClaudeNoVisibleOutputRetryPrompt(text) {
 		return ""
 	}
+	if isClaudeCodeRecapPrompt(text) {
+		return ""
+	}
 	if isInjectedContextTitleText(text) {
 		return ""
 	}
@@ -654,6 +758,11 @@ func cleanUserTitleText(text string) string {
 		return ""
 	}
 	return text
+}
+
+func isClaudeCodeRecapPrompt(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return strings.HasPrefix(trimmed, "The user stepped away and is coming back. Recap in under 40 words")
 }
 
 func isInjectedContextTitleText(text string) bool {

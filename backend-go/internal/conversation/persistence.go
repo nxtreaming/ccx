@@ -10,30 +10,32 @@ import (
 )
 
 type persistedConversation struct {
-	ID                   string    `json:"id"`
-	Kind                 string    `json:"kind"`
-	UserID               string    `json:"userId"`
-	RawUserID            string    `json:"rawUserId"`
-	Title                string    `json:"title,omitempty"`
-	GeneratedTitle       string    `json:"generatedTitle,omitempty"`
-	FallbackTitle        string    `json:"fallbackTitle,omitempty"`
-	SessionID            string    `json:"sessionId,omitempty"`
-	ParentThreadID       string    `json:"parentThreadId,omitempty"`
-	ParentConversationID string    `json:"parentConversationId,omitempty"`
-	ChildConversationIDs []string  `json:"childConversationIds,omitempty"`
-	RequestCount         int       `json:"requestCount"`
-	CurrentChannel       int       `json:"currentChannel"`
-	ChannelName          string    `json:"channelName,omitempty"`
-	Models               []string  `json:"models,omitempty"`
-	LastModel            string    `json:"lastModel,omitempty"`
-	LastRequestID        string    `json:"lastRequestId,omitempty"`
-	LastUserMessage      string    `json:"lastUserMessage,omitempty"`
-	HasSubagents         bool      `json:"hasSubagents,omitempty"`
-	SubagentCount        int       `json:"subagentCount,omitempty"`
-	MainChannel          int       `json:"mainChannel,omitempty"`
-	SubagentChannel      int       `json:"subagentChannel,omitempty"`
-	CreatedAt            time.Time `json:"createdAt"`
-	LastActiveAt         time.Time `json:"lastActiveAt"`
+	ID                   string     `json:"id"`
+	Kind                 string     `json:"kind"`
+	UserID               string     `json:"userId"`
+	RawUserID            string     `json:"rawUserId"`
+	Title                string     `json:"title,omitempty"`
+	GeneratedTitle       string     `json:"generatedTitle,omitempty"`
+	FallbackTitle        string     `json:"fallbackTitle,omitempty"`
+	SessionID            string     `json:"sessionId,omitempty"`
+	ParentThreadID       string     `json:"parentThreadId,omitempty"`
+	ParentConversationID string     `json:"parentConversationId,omitempty"`
+	ChildConversationIDs []string   `json:"childConversationIds,omitempty"`
+	RequestCount         int        `json:"requestCount"`
+	CurrentChannel       int        `json:"currentChannel"`
+	ChannelName          string     `json:"channelName,omitempty"`
+	Models               []string   `json:"models,omitempty"`
+	LastModel            string     `json:"lastModel,omitempty"`
+	LastRequestID        string     `json:"lastRequestId,omitempty"`
+	LastUserMessage      string     `json:"lastUserMessage,omitempty"`
+	LastRecap            string     `json:"lastRecap,omitempty"`
+	LastRecapAt          *time.Time `json:"lastRecapAt,omitempty"`
+	HasSubagents         bool       `json:"hasSubagents,omitempty"`
+	SubagentCount        int        `json:"subagentCount,omitempty"`
+	MainChannel          int        `json:"mainChannel,omitempty"`
+	SubagentChannel      int        `json:"subagentChannel,omitempty"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	LastActiveAt         time.Time  `json:"lastActiveAt"`
 }
 
 type persistedState struct {
@@ -96,6 +98,8 @@ func savePersistedState(path string, conversations map[string]*Conversation) err
 			LastModel:            conv.LastModel,
 			LastRequestID:        conv.LastRequestID,
 			LastUserMessage:      conv.LastUserMessage,
+			LastRecap:            conv.LastRecap,
+			LastRecapAt:          cloneTimePtr(conv.LastRecapAt),
 			HasSubagents:         conv.HasSubagents,
 			SubagentCount:        conv.SubagentCount,
 			MainChannel:          conv.MainChannel,

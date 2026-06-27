@@ -89,6 +89,13 @@ func (s *ChannelScheduler) UpdateConversationTitle(kind ChannelKind, userID, tit
 	return s.conversationTracker.UpdateTitle(string(kind), userID, title)
 }
 
+func (s *ChannelScheduler) UpdateConversationRecap(kind ChannelKind, userID, recap string) bool {
+	if s.conversationTracker == nil || userID == "" || recap == "" {
+		return false
+	}
+	return s.conversationTracker.UpdateRecap(string(kind), userID, recap)
+}
+
 // GetMessagesMetricsManager 获取 Messages 渠道指标管理器
 func (s *ChannelScheduler) GetMessagesMetricsManager() *metrics.MetricsManager {
 	return s.messagesMetricsManager

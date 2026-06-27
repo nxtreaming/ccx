@@ -126,6 +126,13 @@
             <span class="main-conversation-turn-text">{{ turn }}</span>
           </div>
         </div>
+        <div v-if="conversation.lastRecap" class="main-conversation-recap">
+          <div class="main-conversation-recap-head">
+            <v-icon size="13">mdi-text-box-check-outline</v-icon>
+            <span>{{ t('cockpit.recap') }}</span>
+          </div>
+          <div class="main-conversation-recap-text">{{ conversation.lastRecap }}</div>
+        </div>
         <div class="main-conversation-grid">
           <div v-for="row in mainDetailRows" :key="row.label" class="main-conversation-field">
             <span>{{ row.label }}</span>
@@ -877,6 +884,34 @@ function shortId(value: string): string {
 
 .main-conversation-turn-text {
   min-width: 0;
+}
+
+.main-conversation-recap {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.main-conversation-recap-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: rgb(var(--v-theme-primary));
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.main-conversation-recap-text {
+  margin-top: 5px;
+  color: rgb(var(--v-theme-on-surface) / 78%);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .main-conversation-grid {

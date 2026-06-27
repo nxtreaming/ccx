@@ -66,6 +66,7 @@
   "cockpit.column.idle": "Idle",
   "cockpit.subagents": "Subagent",
   "cockpit.mainConversation": "Percakapan utama",
+  "cockpit.recap": "Recap",
   "cockpit.detail.requests": "Putaran request",
   "cockpit.detail.duration": "Durasi",
   "cockpit.mainRouting": "Routing utama",

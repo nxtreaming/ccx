@@ -138,3 +138,31 @@ func TestCountUserMessagesIgnoresToolResults(t *testing.T) {
 		t.Fatalf("countUserMessages() = %d, want 1", got)
 	}
 }
+
+func TestClaudeCodeRecapRequestIsDetectedAndSkippedFromPreview(t *testing.T) {
+	const recapPrompt = "The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences, no markdown."
+	body := []byte(`{
+		"context_management":{"edits":[{"keep":"all","type":"clear_thinking_20251015"}]},
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"真实用户问题"}]},
+			{"role":"assistant","content":[{"type":"text","text":"回答"}]},
+			{"role":"user","content":"` + recapPrompt + `"}
+		]
+	}`)
+
+	if !isClaudeCodeRecapRequest(body) {
+		t.Fatal("expected recap request to be detected")
+	}
+
+	messages := []types.ClaudeMessage{
+		{Role: "user", Content: []interface{}{map[string]interface{}{"type": "text", "text": "真实用户问题"}}},
+		{Role: "assistant", Content: []interface{}{map[string]interface{}{"type": "text", "text": "回答"}}},
+		{Role: "user", Content: recapPrompt},
+	}
+	if got := extractLastUserMessage(messages); got != "真实用户问题" {
+		t.Fatalf("extractLastUserMessage() = %q, want %q", got, "真实用户问题")
+	}
+	if got := countUserMessages(messages); got != 1 {
+		t.Fatalf("countUserMessages() = %d, want 1", got)
+	}
+}
