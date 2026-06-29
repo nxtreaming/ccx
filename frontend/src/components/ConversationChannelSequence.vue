@@ -8,12 +8,12 @@
     >
       <span class="seq-num">{{ String(i + 1).padStart(2, '0') }}</span>
       <span class="seq-arrow">&rarr;</span>
-      <v-tooltip :text="getMoveToTopTooltip(ch, i)" location="top" :open-delay="150" content-class="ccx-tooltip">
+      <v-tooltip v-bind="channelTooltipProps" :text="getMoveToTopTooltip(ch, i)">
         <template #activator="{ props: tooltipProps }">
           <span v-bind="tooltipProps" class="text-caption flex-grow-1 channel-name" @click.stop="emit('moveToTop', ch, i)">{{ ch.name }}</span>
         </template>
       </v-tooltip>
-      <v-tooltip v-if="ch.index === currentChannel" :text="t('cockpit.tooltip.currentChannel')" location="top" :open-delay="150" content-class="ccx-tooltip">
+      <v-tooltip v-if="ch.index === currentChannel" v-bind="channelTooltipProps" :text="t('cockpit.tooltip.currentChannel')">
         <template #activator="{ props: tooltipProps }">
           <v-chip v-bind="tooltipProps" size="x-small" color="primary" variant="flat" class="mr-1">CURRENT</v-chip>
         </template>
@@ -21,9 +21,7 @@
       <v-tooltip
         v-else-if="ch.index === nextChannel"
         :text="nextChannelCircuitOpen ? t('cockpit.tooltip.nextChannelTripped') : t('cockpit.tooltip.nextChannel')"
-        location="top"
-        :open-delay="150"
-        content-class="ccx-tooltip"
+        v-bind="channelTooltipProps"
       >
         <template #activator="{ props: tooltipProps }">
           <v-chip
@@ -37,17 +35,17 @@
           </v-chip>
         </template>
       </v-tooltip>
-      <v-tooltip v-if="ch.status === 'suspended'" :text="t('cockpit.tooltip.pausedChannel')" location="top" :open-delay="150" content-class="ccx-tooltip">
+      <v-tooltip v-if="ch.status === 'suspended'" v-bind="channelTooltipProps" :text="t('cockpit.tooltip.pausedChannel')">
         <template #activator="{ props: tooltipProps }">
           <v-chip v-bind="tooltipProps" size="x-small" variant="flat" class="fused-chip mr-1">PAUSED</v-chip>
         </template>
       </v-tooltip>
-      <v-tooltip v-if="ch.circuitOpen" :text="t('cockpit.tooltip.circuitOpen')" location="top" :open-delay="150" content-class="ccx-tooltip">
+      <v-tooltip v-if="ch.circuitOpen" v-bind="channelTooltipProps" :text="t('cockpit.tooltip.circuitOpen')">
         <template #activator="{ props: tooltipProps }">
           <v-chip v-bind="tooltipProps" size="x-small" color="error" variant="tonal" class="mr-1">TRIPPED</v-chip>
         </template>
       </v-tooltip>
-      <v-tooltip :text="getDemoteTooltip(ch, i)" location="top" :open-delay="150" content-class="ccx-tooltip">
+      <v-tooltip v-bind="channelTooltipProps" :text="getDemoteTooltip(ch, i)">
         <template #activator="{ props: tooltipProps }">
           <span v-bind="tooltipProps" class="sequence-action-wrapper">
             <button
@@ -95,6 +93,15 @@ const emit = defineEmits<{
   moveToTop: [channel: ChannelInfo, index: number]
   demote: [index: number]
 }>()
+
+const channelTooltipProps = {
+  attach: 'body',
+  contentClass: 'ccx-tooltip',
+  location: 'top',
+  locationStrategy: 'connected',
+  openDelay: 150,
+  scrollStrategy: 'reposition',
+} as const
 
 function isDemoted(index: number): boolean {
   return props.overrideActive && index >= props.channels.length - 1
