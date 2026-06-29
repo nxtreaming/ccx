@@ -216,11 +216,22 @@ watch(() => props.open, (isOpen) => {
       >
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
 
-        <div class="cb-dialog-shell relative z-10 w-[560px] max-w-[90vw] overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card/95 to-card/85 shadow-2xl backdrop-blur-md">
-          <div class="absolute inset-0 z-0">
-            <!-- Body -->
-            <ScrollArea type="auto" class="h-full w-full">
-              <div class="space-y-4 px-4 pt-[64px] pb-[60px]">
+        <div class="cb-dialog-shell relative z-10 flex max-h-[calc(100vh-48px)] w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card/95 to-card/85 shadow-2xl backdrop-blur-md">
+          <!-- Header -->
+          <div class="shrink-0 border-b border-border/60 bg-background shadow-[0_6px_18px_rgba(15,23,42,0.08)]">
+            <div class="flex items-center justify-between px-5 py-3">
+              <div class="flex items-center gap-2.5">
+                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
+                  <Zap class="h-4 w-4 fill-primary/20 text-primary" />
+                </div>
+                <h3 class="text-base font-bold tracking-tight">{{ t('env.runtimeCbTitle') }}</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- Body -->
+          <ScrollArea type="auto" class="min-h-0 w-full flex-1">
+            <div class="space-y-4 px-4 py-4">
                 <Alert v-if="error" variant="destructive" class="shadow-sm">
                   <p class="text-xs">{{ error }}</p>
                 </Alert>
@@ -486,25 +497,12 @@ watch(() => props.open, (isOpen) => {
                   </Button>
                 </div>
 
-              </div>
-            </ScrollArea>
-          </div>
-
-          <!-- Header -->
-          <div class="pointer-events-none absolute inset-x-0 top-0 z-20 border-b border-border/60 bg-background shadow-[0_6px_18px_rgba(15,23,42,0.08)]">
-            <div class="pointer-events-auto flex shrink-0 items-center justify-between px-5 py-3">
-              <div class="flex items-center gap-2.5">
-                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
-                  <Zap class="h-4 w-4 fill-primary/20 text-primary" />
-                </div>
-                <h3 class="text-base font-bold tracking-tight">{{ t('env.runtimeCbTitle') }}</h3>
-              </div>
             </div>
-          </div>
+          </ScrollArea>
 
           <!-- Footer -->
-          <div class="cb-dialog-glass cb-dialog-glass-bottom pointer-events-none absolute inset-x-0 bottom-0 z-20 border-t border-border/60">
-            <div class="pointer-events-auto flex shrink-0 items-center justify-end gap-2.5 p-3">
+          <div class="cb-dialog-glass cb-dialog-glass-bottom shrink-0 border-t border-border/60">
+            <div class="flex items-center justify-end gap-2.5 p-3">
               <Button variant="outline" size="sm" class="text-xs shadow-sm hover:shadow-md transition-all" @click="emit('close')">
                 {{ t('common.cancel') }}
                 <span class="ml-1.5 text-xs opacity-60">Esc</span>
@@ -527,8 +525,6 @@ watch(() => props.open, (isOpen) => {
   --cb-dialog-glass-bg: rgb(255 255 255 / 0.08);
   --cb-dialog-glass-shadow: rgb(15 23 42 / 0.06);
   --cb-dialog-glass-highlight: rgb(255 255 255 / 0.14);
-  height: min(78vh, 780px);
-  max-height: calc(100vh - 48px);
 }
 
 :global(.dark) .cb-dialog-shell {
