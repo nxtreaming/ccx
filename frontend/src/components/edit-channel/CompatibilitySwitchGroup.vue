@@ -14,7 +14,7 @@
       >{{ t('channelEditor.compat.diagnose') }}</v-btn>
     </div>
 
-    <div class="d-flex flex-column ga-3">
+    <div class="d-flex flex-column ga-3 compat-options">
       <!-- Codex Native Tool Passthrough -->
       <div v-if="channelType === 'responses'" class="d-flex align-center justify-space-between">
         <div class="d-flex align-center ga-2">
@@ -245,6 +245,7 @@
           variant="outlined"
           density="comfortable"
           hide-details
+          class="historical-image-limit-field"
           style="max-width: 120px;"
           @update:model-value="updateField('historicalImageTurnLimit', Number($event))"
         />
@@ -309,6 +310,72 @@ const updateField = (field: keyof FormData, value: unknown) => {
 }
 
 .channel-config-select {
+  flex: 0 0 200px;
   max-width: 200px;
+  min-width: 160px;
+}
+
+.compat-options {
+  min-width: 0;
+}
+
+.compat-options > div {
+  align-items: flex-start !important;
+  gap: 16px;
+  min-width: 0;
+}
+
+.compat-options > div > .d-flex:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.compat-options > div > .d-flex:first-child > .v-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.compat-options > div > .d-flex:first-child > div {
+  min-width: 0;
+}
+
+.compat-options .section-title,
+.compat-options :deep(.text-caption) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.compat-options :deep(.v-switch) {
+  flex: 0 0 72px;
+  width: 72px;
+  margin-inline-start: 12px;
+}
+
+.compat-options :deep(.v-selection-control) {
+  justify-content: flex-end;
+}
+
+.historical-image-limit-field {
+  flex: 0 0 120px;
+  max-width: 120px;
+  min-width: 120px;
+}
+
+@media (max-width: 600px) {
+  .compat-options > div {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .compat-options :deep(.v-switch) {
+    align-self: flex-end;
+  }
+
+  .channel-config-select,
+  .historical-image-limit-field {
+    flex-basis: auto;
+    width: 100%;
+    max-width: 100% !important;
+  }
 }
 </style>

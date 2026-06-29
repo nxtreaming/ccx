@@ -41,12 +41,12 @@
               </div>
             </div>
           </v-col>
-          <v-col cols="12" md="5">
+          <v-col cols="12" md="5" class="auth-header-control">
             <v-select
               :model-value="form.authHeader || 'auto'"
               :items="authHeaderOptions"
               variant="outlined"
-              style="max-width: 160px;"
+              class="auth-header-select"
               density="compact"
               hide-details
               eager
@@ -182,7 +182,28 @@ const updateField = (field: keyof FormData, value: unknown) => {
   max-width: 200px;
 }
 
+.auth-header-control {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.auth-header-select {
+  width: 160px;
+  max-width: 160px;
+}
+
 .rate-limit-card {
   background: rgba(var(--v-theme-surface-variant), 0.3);
+}
+
+@media (max-width: 959px) {
+  .auth-header-control {
+    justify-content: stretch;
+  }
+
+  .auth-header-select {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 </style>

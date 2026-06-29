@@ -165,7 +165,7 @@ function updateTextVerbosity(value: string) {
             {{ t('channelEditor.compat.diagnose') }}
           </Button>
         </div>
-        <div class="space-y-2">
+        <div class="compat-option-list space-y-2">
           <div v-if="channelType === 'responses'" class="flex items-center justify-between gap-3">
             <div class="min-w-0 space-y-0.5">
               <Label class="text-xs font-medium">{{ t('channelEditor.compat.codexNativeTools.label') }}</Label>
@@ -307,7 +307,7 @@ function updateTextVerbosity(value: string) {
               type="number"
               min="0"
               max="10"
-              class="h-8 w-[120px] text-xs"
+              class="historical-image-limit-field h-8 w-[120px] text-xs"
               @update:model-value="updateField('historicalImageTurnLimit', Number($event))"
             />
           </div>
@@ -419,3 +419,51 @@ function updateTextVerbosity(value: string) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.compat-option-list > div {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.compat-option-list > div > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.compat-option-list :deep([data-slot='switch']) {
+  flex: 0 0 2rem;
+  margin-top: 0.125rem;
+}
+
+.compat-option-list :deep([data-slot='select-trigger']) {
+  flex: 0 0 200px;
+  max-width: 200px;
+  min-width: 160px;
+}
+
+.historical-image-limit-field {
+  flex: 0 0 120px;
+  max-width: 120px;
+  min-width: 120px;
+}
+
+@media (max-width: 640px) {
+  .compat-option-list > div {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .compat-option-list :deep([data-slot='switch']) {
+    align-self: flex-end;
+  }
+
+  .compat-option-list :deep([data-slot='select-trigger']),
+  .historical-image-limit-field {
+    flex-basis: auto;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+</style>
