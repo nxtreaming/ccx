@@ -99,6 +99,55 @@ function buildCapabilityProtocolResult(
   }
 }
 
+function toRetryingCapabilityModel(modelResult: CapabilityModelJobResult): CapabilityModelJobResult {
+  return {
+    ...modelResult,
+    status: 'running',
+    lifecycle: 'active',
+    outcome: 'unknown',
+    success: false,
+    error: undefined,
+    reason: undefined,
+  }
+}
+
+function markCapabilityModelRetrying(job: CapabilityTestJob, protocol: string, model: string): CapabilityTestJob {
+  return {
+    ...job,
+    tests: job.tests.map(test => {
+      if (test.protocol !== protocol) return test
+      let modelFound = false
+      const modelResults = (test.modelResults ?? []).map(modelResult => {
+        if (modelResult.model !== model) return modelResult
+        modelFound = true
+        return toRetryingCapabilityModel(modelResult)
+      })
+      if (!modelFound) {
+        modelResults.push(toRetryingCapabilityModel({
+          model,
+          status: 'idle',
+          lifecycle: 'pending',
+          outcome: 'unknown',
+          success: false,
+          latency: 0,
+          streamingSupported: false,
+          testedAt: new Date().toISOString(),
+        }))
+      }
+      return {
+        ...test,
+        status: 'running',
+        lifecycle: 'active',
+        outcome: 'unknown',
+        success: false,
+        error: undefined,
+        reason: undefined,
+        modelResults,
+      }
+    }),
+  }
+}
+
 function isIdleCapabilityTest(test: CapabilityProtocolJobResult): boolean {
   return (test.status as string) === 'idle'
 }
@@ -412,6 +461,17 @@ export function useCapabilityTests() {
     models?: string[],
     rpm?: number,
   ) {
+    const currentJob = activeJob.value ?? buildCapabilityIdleJob(channelType, channelId, '')
+    activeJob.value = mergeCapabilityJob(currentJob, {
+      ...currentJob,
+      jobId: '',
+      status: 'queued',
+      lifecycle: 'pending',
+      outcome: 'unknown',
+      tests: [buildCapabilityProtocolResult(protocol, 'queued', models)],
+      targetProtocols: [protocol],
+      updatedAt: new Date().toISOString(),
+    })
     return startTest(channelType, channelId, {
       targetProtocols: [protocol],
       models,
@@ -539,15 +599,26 @@ export function useCapabilityTests() {
     protocol: string,
     model: string,
   ) {
-    const jobId = activeJob.value?.protocolJobRefs?.[protocol]?.jobId
+    const jobId = activeJob.value?.protocolJobRefs?.[protocol]?.jobId ||
+      activeJob.value?.protocolJobIds?.[protocol]
     if (!jobId) {
       // 没有 jobId 则启动一个只测该模型的协议测试
       return startProtocolTest(channelType, channelId, protocol, [model])
     }
-    await api.post(
-      `/api/${channelType}/channels/${channelId}/capability-test/${jobId}/retry`,
-      { protocol, model },
-    )
+    if (activeJob.value) {
+      activeJob.value = markCapabilityModelRetrying(activeJob.value, protocol, model)
+    }
+    try {
+      await api.post(
+        `/api/${channelType}/channels/${channelId}/capability-test/${jobId}/retry`,
+        { protocol, model },
+      )
+    } catch (e) {
+      if (e instanceof AdminApiError && e.status === 404) {
+        return startProtocolTest(channelType, channelId, protocol, [model])
+      }
+      throw e
+    }
     try {
       await fetchJobStatus(channelType, channelId, jobId)
     } catch (e) {
