@@ -1220,6 +1220,9 @@ function applyCodexResponsesPreset(name: string) {
     noVision: noVisionSet.has(target),
   }))
   form.reasoningParamStyle = preset.reasoningParamStyle as typeof form.reasoningParamStyle
+  if (preset.serviceType) {
+    form.serviceType = preset.serviceType as typeof form.serviceType
+  }
   form.codexNativeToolPassthrough = preset.codexNativeToolPassthrough
   form.codexToolCompat = preset.codexToolCompat
   form.stripCodexClientTools = preset.stripCodexClientTools

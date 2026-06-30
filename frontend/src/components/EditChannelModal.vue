@@ -626,6 +626,9 @@ const applyCodexResponsesChannelPreset = (preset: string) => {
   form.modelMapping = { ...presetConfig.modelMapping }
   form.reasoningMapping = { ...presetConfig.reasoningMapping } as typeof form.reasoningMapping
   form.reasoningParamStyle = presetConfig.reasoningParamStyle as typeof form.reasoningParamStyle
+  if (presetConfig.serviceType) {
+    form.serviceType = presetConfig.serviceType as typeof form.serviceType
+  }
   form.codexNativeToolPassthrough = presetConfig.codexNativeToolPassthrough
   form.codexToolCompat = presetConfig.codexToolCompat
   form.stripCodexClientTools = presetConfig.stripCodexClientTools

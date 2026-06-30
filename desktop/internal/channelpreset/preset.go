@@ -61,6 +61,9 @@ func (p ProviderPlan) Protocol() string {
 	id := strings.ToLower(p.ID)
 	label := strings.ToLower(p.Label)
 	baseURL := strings.TrimRight(strings.ToLower(p.BaseURL), "/")
+	if strings.Contains(id, "responses") || strings.Contains(label, "responses") || strings.HasSuffix(baseURL, "/responses") {
+		return "responses"
+	}
 	if strings.Contains(id, "anthropic") || strings.Contains(label, "anthropic") || strings.Contains(baseURL, "anthropic") || strings.HasSuffix(baseURL, "/messages") {
 		return "anthropic"
 	}
@@ -399,14 +402,15 @@ func Presets() []ProviderPreset {
 			ID:                  ProviderXFyun,
 			Order:               88,
 			Label:               "讯飞星辰",
-			Description:         "科大讯飞星辰 MaaS 平台，面向 Agent 和企业应用提供大模型推理服务，支持 Claude Messages 与 OpenAI 兼容入口。",
+			Description:         "科大讯飞星辰 MaaS Astron Coding Plan，提供 OpenAI、Anthropic 与 Responses 三个独立 Coding Plan 入口。",
 			DirectAgent:         true,
 			NativeMessages:      true,
 			ChatCompatible:      true,
 			ResponsesCompatible: true,
 			Plans: []ProviderPlan{
-				{ID: "anthropic", Label: "Anthropic-compatible", BaseURL: "https://maas-api.cn-huabei-1.xf-yun.com/anthropic", Description: "Claude Messages 原生入口", Recommended: true},
-				{ID: "openai-chat", Label: "OpenAI-compatible", BaseURL: "https://maas-api.cn-huabei-1.xf-yun.com/v2", Description: "Chat / Responses 通用入口"},
+				{ID: "anthropic", Label: "Anthropic-compatible", BaseURL: "https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic", Description: "Claude Messages Coding Plan 入口", Recommended: true},
+				{ID: "openai-chat", Label: "OpenAI-compatible", BaseURL: "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2", Description: "OpenAI Chat Coding Plan 入口"},
+				{ID: "responses", Label: "Responses-compatible", BaseURL: "https://maas-coding-api.cn-huabei-1.xf-yun.com/v1/responses", Description: "OpenAI Responses Coding Plan 入口"},
 			},
 			Targets:       defaultTargets(),
 			DefaultTarget: TargetMessages,
@@ -527,6 +531,13 @@ func bestPlanForTarget(preset ProviderPreset, target string) string {
 	if len(preset.Plans) == 1 {
 		return preset.Plans[0].ID
 	}
+	if target == TargetResponses {
+		for _, plan := range preset.Plans {
+			if !plan.Custom && plan.Protocol() == "responses" {
+				return plan.ID
+			}
+		}
+	}
 	for _, plan := range preset.Plans {
 		if !plan.Custom && planCompatibleWithTarget(plan, target) {
 			return plan.ID
@@ -575,14 +586,14 @@ func planCompatibleWithTarget(plan ProviderPlan, target string) bool {
 		return true
 	}
 
-	isAnthropic := plan.Protocol() == "anthropic"
+	protocol := plan.Protocol()
 	switch target {
 	case TargetMessages:
-		return isAnthropic
+		return protocol == "anthropic"
 	case TargetChat:
-		return !isAnthropic
+		return protocol == "openai"
 	case TargetResponses:
-		return !isAnthropic
+		return protocol == "responses" || protocol == "openai"
 	default:
 		return true
 	}
@@ -640,6 +651,7 @@ func defaultChannelName(provider string, target string) string {
 }
 
 type channelTargetConfig struct {
+	ServiceType                   string
 	ModelMapping                  map[string]string
 	ReasoningMapping              map[string]string
 	ReasoningParamStyle           string
@@ -711,6 +723,9 @@ func applyKimiPlanOverrides(config channelTargetConfig, target string, planID st
 }
 
 func applyChannelTargetConfig(payload *ChannelPayload, config channelTargetConfig) {
+	if config.ServiceType != "" {
+		payload.ServiceType = config.ServiceType
+	}
 	payload.ModelMapping = maps.Clone(config.ModelMapping)
 	payload.ReasoningMapping = maps.Clone(config.ReasoningMapping)
 	payload.NoVisionModels = slices.Clone(config.NoVisionModels)
@@ -758,6 +773,9 @@ func applyTargetDefaults(payload *ChannelPayload, provider string, target string
 			payload.ServiceType = "responses"
 			payload.CodexToolCompat = false
 			payload.StripCodexClientTools = false
+		}
+		if provider == ProviderXFyun && planID == "responses" {
+			payload.ServiceType = "responses"
 		}
 	}
 

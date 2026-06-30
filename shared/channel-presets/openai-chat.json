@@ -33,6 +33,11 @@
       "normalizeNonstandardChatRoles": true
     },
     "xfyun": {
+      "modelMapping": {
+        "codex": "astron-code-latest",
+        "gpt": "astron-code-latest",
+        "mini": "astron-code-latest"
+      },
       "normalizeNonstandardChatRoles": true
     }
   }

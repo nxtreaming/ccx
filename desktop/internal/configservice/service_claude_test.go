@@ -149,6 +149,58 @@ func TestGetStatusClaude_RunAPIProvider(t *testing.T) {
 	}
 }
 
+func TestApplyAndRestoreClaudeXFyunProvider(t *testing.T) {
+	svc := newTestService(t)
+	settingsPath := filepath.Join(svc.homeDir, ".claude", "settings.json")
+	os.MkdirAll(filepath.Dir(settingsPath), 0o755)
+	original := map[string]any{
+		"env": map[string]any{
+			"ANTHROPIC_MODEL":            "original-model",
+			"ANTHROPIC_SMALL_FAST_MODEL": "original-small",
+		},
+	}
+	writeJSON(settingsPath, original)
+
+	err := svc.Apply(ApplyAgentConfigRequest{Platform: PlatformClaude, Provider: ProviderXFyun, APIKey: "xf-test-key"}, 3688, "proxy-key")
+	if err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+
+	var after map[string]any
+	readJSON(settingsPath, &after)
+	env := after["env"].(map[string]any)
+	if env["ANTHROPIC_BASE_URL"] != xfyunClaudeBaseURL {
+		t.Errorf("base_url = %v, want %s", env["ANTHROPIC_BASE_URL"], xfyunClaudeBaseURL)
+	}
+	if env["ANTHROPIC_AUTH_TOKEN"] != "xf-test-key" {
+		t.Errorf("auth_token = %v", env["ANTHROPIC_AUTH_TOKEN"])
+	}
+	if env["ANTHROPIC_MODEL"] != "astron-code-latest" {
+		t.Errorf("model = %v", env["ANTHROPIC_MODEL"])
+	}
+	if env["ANTHROPIC_SMALL_FAST_MODEL"] != "astron-code-latest" {
+		t.Errorf("small_fast_model = %v", env["ANTHROPIC_SMALL_FAST_MODEL"])
+	}
+
+	err = svc.Restore(PlatformClaude)
+	if err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+
+	var restored map[string]any
+	readJSON(settingsPath, &restored)
+	env = restored["env"].(map[string]any)
+	if env["ANTHROPIC_MODEL"] != "original-model" {
+		t.Errorf("restored model = %v", env["ANTHROPIC_MODEL"])
+	}
+	if env["ANTHROPIC_SMALL_FAST_MODEL"] != "original-small" {
+		t.Errorf("restored small_fast_model = %v", env["ANTHROPIC_SMALL_FAST_MODEL"])
+	}
+	if _, ok := env["ANTHROPIC_BASE_URL"]; ok {
+		t.Errorf("base_url should be removed after restore, got %v", env["ANTHROPIC_BASE_URL"])
+	}
+}
+
 func TestApplyAndRestoreClaude(t *testing.T) {
 	svc := newTestService(t)
 	settingsPath := filepath.Join(svc.homeDir, ".claude", "settings.json")

@@ -112,7 +112,7 @@ function normalizedCollection(source, collectionKey, defaults) {
   const collection = source[collectionKey] || {}
   return Object.fromEntries(
     Object.entries(collection).map(([name, preset]) => {
-      const allowedKeys = new Set([...Object.keys(defaults), 'rateLimitRpm'])
+      const allowedKeys = new Set([...Object.keys(defaults), 'rateLimitRpm', 'serviceType'])
       const normalized = { ...defaults }
       for (const [key, value] of Object.entries(preset)) {
         if (allowedKeys.has(key)) {
@@ -163,6 +163,7 @@ export interface ${config.interfaceName} {
   modelMapping: Record<string, string>
   reasoningMapping: Partial<Record<string, ${config.typePrefix}ReasoningEffort>>
   reasoningParamStyle: ${config.typePrefix}ReasoningParamStyle
+  serviceType?: 'openai' | 'gemini' | 'claude' | 'responses' | 'copilot'
   codexNativeToolPassthrough: boolean
   codexToolCompat: boolean
   stripCodexClientTools: boolean
@@ -222,6 +223,7 @@ function formatGoConfig(preset) {
 
   if (modelMapping) fields.push(`ModelMapping: ${modelMapping}`)
   if (reasoningMapping) fields.push(`ReasoningMapping: ${reasoningMapping}`)
+  if (preset.serviceType) fields.push(`ServiceType: ${quote(preset.serviceType)}`)
   if (preset.reasoningParamStyle) fields.push(`ReasoningParamStyle: ${quote(preset.reasoningParamStyle)}`)
   if (preset.passbackReasoningContent) fields.push('PassbackReasoningContent: true')
   if (preset.passbackThinkingBlocks) fields.push('PassbackThinkingBlocks: true')

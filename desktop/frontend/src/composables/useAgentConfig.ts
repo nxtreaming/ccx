@@ -201,7 +201,7 @@ const claudeTargetBaseUrl = () => {
     case 'opencode-go':
       return 'https://opencode.ai/zen/go'
     case 'xfyun':
-      return 'https://maas-api.cn-huabei-1.xf-yun.com/anthropic'
+      return 'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic'
     case 'tencent-lkeap':
       return 'https://api.lkeap.cloud.tencent.com/plan/anthropic'
     case 'volc-ark':
@@ -246,7 +246,7 @@ const codexTargetBaseUrl = () => {
     case 'opencode-go':
       return 'https://opencode.ai/zen/go/v1'
     case 'xfyun':
-      return 'https://maas-api.cn-huabei-1.xf-yun.com/v2'
+      return 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2'
     case 'tencent-lkeap':
       return 'https://api.lkeap.cloud.tencent.com/plan/v3'
     case 'volc-ark':
@@ -281,7 +281,7 @@ const openCodeTargetBaseUrl = () => {
     case 'dashscope':
       return 'https://dashscope.aliyuncs.com/compatible-mode/v1'
     case 'xfyun':
-      return 'https://maas-api.cn-huabei-1.xf-yun.com/v2'
+      return 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2'
     case 'openrouter':
       return 'https://openrouter.ai/api/v1'
     case 'modelscope':

@@ -316,7 +316,12 @@ export const claudeMessagesPresets: Record<string, ClaudeMessagesPreset> = {
     "visionFallbackModel": ""
   },
   "xfyun": {
-    "modelMapping": {},
+    "modelMapping": {
+      "fable": "astron-code-latest",
+      "haiku": "astron-code-latest",
+      "opus": "astron-code-latest",
+      "sonnet": "astron-code-latest"
+    },
     "reasoningMapping": {},
     "reasoningParamStyle": "",
     "passbackReasoningContent": false,

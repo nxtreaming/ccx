@@ -52,8 +52,8 @@ const (
 	dashScopeCodingPlanClaudeBaseURL = "https://coding.dashscope.aliyuncs.com/apps/anthropic"
 	openCodeZenClaudeBaseURL         = "https://opencode.ai/zen"
 	openCodeGoClaudeBaseURL          = "https://opencode.ai/zen/go"
-	xfyunClaudeBaseURL               = "https://maas-api.cn-huabei-1.xf-yun.com/anthropic"
-	xfyunCodexBaseURL                = "https://maas-api.cn-huabei-1.xf-yun.com/v2"
+	xfyunClaudeBaseURL               = "https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic"
+	xfyunCodexBaseURL                = "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
 	tencentLkeapClaudeBaseURL        = "https://api.lkeap.cloud.tencent.com/plan/anthropic"
 	volcArkClaudeBaseURL             = "https://ark.cn-beijing.volces.com/api/coding"
 	qianfanClaudeBaseURL             = "https://qianfan.baidubce.com/anthropic/coding"
@@ -136,6 +136,8 @@ type ClaudeProxyState struct {
 	OriginalBaseURL   *string `json:"originalBaseUrl,omitempty"`
 	OriginalAuthToken *string `json:"originalAuthToken,omitempty"`
 	OriginalAPIKey    *string `json:"originalApiKey,omitempty"`
+	OriginalModel     *string `json:"originalModel,omitempty"`
+	OriginalSmallFast *string `json:"originalSmallFast,omitempty"`
 	InjectedProvider  string  `json:"injectedProvider"`
 	InjectedBaseURL   string  `json:"injectedBaseUrl"`
 	InjectedAuthToken string  `json:"injectedAuthToken,omitempty"`
@@ -610,6 +612,8 @@ func (s *Service) applyClaude(req ApplyAgentConfigRequest, port int, accessKey s
 	originalBaseURL, baseOK := env["ANTHROPIC_BASE_URL"].(string)
 	originalAuthToken, authOK := env["ANTHROPIC_AUTH_TOKEN"].(string)
 	originalAPIKey, apiOK := env["ANTHROPIC_API_KEY"].(string)
+	originalModel, modelOK := env["ANTHROPIC_MODEL"].(string)
+	originalSmallFast, smallFastOK := env["ANTHROPIC_SMALL_FAST_MODEL"].(string)
 	state := ClaudeProxyState{
 		Version:           stateVersion,
 		TargetPath:        path,
@@ -618,6 +622,8 @@ func (s *Service) applyClaude(req ApplyAgentConfigRequest, port int, accessKey s
 		OriginalBaseURL:   optionalString(originalBaseURL, baseOK),
 		OriginalAuthToken: optionalString(originalAuthToken, authOK),
 		OriginalAPIKey:    optionalString(originalAPIKey, apiOK),
+		OriginalModel:     optionalString(originalModel, modelOK),
+		OriginalSmallFast: optionalString(originalSmallFast, smallFastOK),
 		InjectedProvider:  provider,
 		InjectedBaseURL:   baseURL,
 		InjectedAuthToken: authToken,
@@ -649,6 +655,7 @@ func (s *Service) applyClaude(req ApplyAgentConfigRequest, port int, accessKey s
 	} else {
 		delete(env, "ANTHROPIC_API_KEY")
 	}
+	applyClaudeProviderModelEnv(env, provider, state.OriginalModel, state.OriginalSmallFast)
 	if err := writeJSONAtomic(path, data); err != nil {
 		return err
 	}
@@ -681,6 +688,8 @@ func (s *Service) restoreClaude() error {
 	restoreStringField(env, "ANTHROPIC_BASE_URL", state.OriginalBaseURL)
 	restoreStringField(env, "ANTHROPIC_AUTH_TOKEN", state.OriginalAuthToken)
 	restoreStringField(env, "ANTHROPIC_API_KEY", state.OriginalAPIKey)
+	restoreStringField(env, "ANTHROPIC_MODEL", state.OriginalModel)
+	restoreStringField(env, "ANTHROPIC_SMALL_FAST_MODEL", state.OriginalSmallFast)
 	if !state.EnvExisted && len(env) == 0 {
 		delete(data, "env")
 	}
@@ -688,6 +697,16 @@ func (s *Service) restoreClaude() error {
 		return err
 	}
 	return os.Remove(s.claudeStatePath())
+}
+
+func applyClaudeProviderModelEnv(env map[string]any, provider string, originalModel *string, originalSmallFast *string) {
+	if provider == ProviderXFyun {
+		env["ANTHROPIC_MODEL"] = "astron-code-latest"
+		env["ANTHROPIC_SMALL_FAST_MODEL"] = "astron-code-latest"
+		return
+	}
+	restoreStringField(env, "ANTHROPIC_MODEL", originalModel)
+	restoreStringField(env, "ANTHROPIC_SMALL_FAST_MODEL", originalSmallFast)
 }
 
 func (s *Service) applyCodex(port int, accessKey string, mode string) error {
@@ -2159,6 +2178,8 @@ func (s *Service) previewApplyClaude(req ApplyAgentConfigRequest, port int, acce
 		env = map[string]any{}
 		data["env"] = env
 	}
+	originalModel, modelOK := env["ANTHROPIC_MODEL"].(string)
+	originalSmallFast, smallFastOK := env["ANTHROPIC_SMALL_FAST_MODEL"].(string)
 	env["ANTHROPIC_BASE_URL"] = baseURL
 	if authToken != "" {
 		env["ANTHROPIC_AUTH_TOKEN"] = authToken
@@ -2170,6 +2191,7 @@ func (s *Service) previewApplyClaude(req ApplyAgentConfigRequest, port int, acce
 	} else {
 		delete(env, "ANTHROPIC_API_KEY")
 	}
+	applyClaudeProviderModelEnv(env, provider, optionalString(originalModel, modelOK), optionalString(originalSmallFast, smallFastOK))
 	newData := data
 
 	files := []FileDiff{computeJSONDiffWithMask(path, oldData, newData, sensitiveFieldKeys...)}
@@ -2399,6 +2421,8 @@ func (s *Service) previewRestoreClaude() (ConfigDiffResult, error) {
 	restoreStringField(env, "ANTHROPIC_BASE_URL", state.OriginalBaseURL)
 	restoreStringField(env, "ANTHROPIC_AUTH_TOKEN", state.OriginalAuthToken)
 	restoreStringField(env, "ANTHROPIC_API_KEY", state.OriginalAPIKey)
+	restoreStringField(env, "ANTHROPIC_MODEL", state.OriginalModel)
+	restoreStringField(env, "ANTHROPIC_SMALL_FAST_MODEL", state.OriginalSmallFast)
 	if !state.EnvExisted && len(env) == 0 {
 		delete(data, "env")
 	}

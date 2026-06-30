@@ -237,6 +237,7 @@ const detectServiceTypeAndCleanUrl = (
       'https://openrouter.ai/api',
       'https://api-inference.modelscope.cn',
       'https://api.easytransnote.com/coding',
+      'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic',
       'https://maas-api.cn-huabei-1.xf-yun.com/anthropic',
     ])
     const knownOpenAIUrls = new Set([
@@ -262,6 +263,7 @@ const detectServiceTypeAndCleanUrl = (
       'https://openrouter.ai/api/v1',
       'https://api-inference.modelscope.cn/v1',
       'https://api.easytransnote.com/coding/v1',
+      'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2',
       'https://maas-api.cn-huabei-1.xf-yun.com/v2',
     ])
     if (knownClaudeUrls.has(urlKey)) {

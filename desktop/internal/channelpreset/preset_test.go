@@ -120,7 +120,7 @@ func TestBuildPayload(t *testing.T) {
 			name:           "mimo responses",
 			req:            CreateChannelRequest{Provider: ProviderMiMo, Target: TargetResponses, APIKey: "tp-test"},
 			wantBaseURL:    "https://api.xiaomimimo.com/v1",
-			wantService:    "openai",
+			wantService:    "responses",
 			wantCodex:      true,
 			wantStripCodex: true,
 			wantModelMap: map[string]string{
@@ -130,8 +130,8 @@ func TestBuildPayload(t *testing.T) {
 			},
 			wantReasoning: map[string]string{
 				"codex":     "high",
-				"gpt":       "max",
-				"mimo-v2.5": "max",
+				"gpt":       "high",
+				"mimo-v2.5": "high",
 				"mini":      "high",
 			},
 			wantReasoningStyle: "reasoning",
@@ -539,28 +539,33 @@ func TestBuildPayload(t *testing.T) {
 		{
 			name:                "xfyun messages (anthropic endpoint)",
 			req:                 CreateChannelRequest{Provider: ProviderXFyun, Target: TargetMessages, APIKey: "xf-test"},
-			wantBaseURL:         "https://maas-api.cn-huabei-1.xf-yun.com/anthropic",
+			wantBaseURL:         "https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic",
 			wantService:         "claude",
-			wantNoModelMap:      true,
 			wantNormalizeSystem: true,
+			wantModelMap: map[string]string{
+				"fable":  "astron-code-latest",
+				"haiku":  "astron-code-latest",
+				"opus":   "astron-code-latest",
+				"sonnet": "astron-code-latest",
+			},
 		},
 		{
-			name:           "xfyun chat",
-			req:            CreateChannelRequest{Provider: ProviderXFyun, Target: TargetChat, APIKey: "xf-test"},
-			wantBaseURL:    "https://maas-api.cn-huabei-1.xf-yun.com/v2",
-			wantService:    "openai",
-			wantNormalize:  true,
-			wantNoModelMap: true,
+			name:          "xfyun chat",
+			req:           CreateChannelRequest{Provider: ProviderXFyun, Target: TargetChat, APIKey: "xf-test"},
+			wantBaseURL:   "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
+			wantService:   "openai",
+			wantNormalize: true,
+			wantModelMap:  map[string]string{"codex": "astron-code-latest", "gpt": "astron-code-latest", "mini": "astron-code-latest"},
 		},
 		{
 			name:           "xfyun responses",
 			req:            CreateChannelRequest{Provider: ProviderXFyun, Target: TargetResponses, APIKey: "xf-test"},
-			wantBaseURL:    "https://maas-api.cn-huabei-1.xf-yun.com/v2",
-			wantService:    "openai",
+			wantBaseURL:    "https://maas-coding-api.cn-huabei-1.xf-yun.com/v1/responses",
+			wantService:    "responses",
 			wantNormalize:  true,
 			wantCodex:      true,
 			wantStripCodex: true,
-			wantNoModelMap: true,
+			wantModelMap:   map[string]string{"codex": "astron-code-latest", "gpt": "astron-code-latest", "mini": "astron-code-latest"},
 		},
 	}
 	for _, tt := range tests {
@@ -703,7 +708,7 @@ func TestBestPlanForTarget(t *testing.T) {
 		{ProviderRunAPI, TargetResponses, "openai-chat"},
 		{ProviderXFyun, TargetMessages, "anthropic"},
 		{ProviderXFyun, TargetChat, "openai-chat"},
-		{ProviderXFyun, TargetResponses, "openai-chat"},
+		{ProviderXFyun, TargetResponses, "responses"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.provider+"/"+tt.target, func(t *testing.T) {
@@ -758,6 +763,34 @@ func TestFilterPlansForTarget_MiMoTokenPlans(t *testing.T) {
 	}
 	if hasPlan(responsesPlans, "token-cn-anthropic") {
 		t.Fatalf("responses plans should not include Anthropic token plan: %#v", responsesPlans)
+	}
+}
+
+func TestFilterPlansForTarget_XFyunCodingPlan(t *testing.T) {
+	preset, ok := FindPreset(ProviderXFyun)
+	if !ok {
+		t.Fatal("FindPreset(xfyun) failed")
+	}
+
+	hasPlan := func(plans []ProviderPlan, id string) bool {
+		return slices.ContainsFunc(plans, func(plan ProviderPlan) bool {
+			return plan.ID == id
+		})
+	}
+
+	messagesPlans := FilterPlansForTarget(preset, TargetMessages)
+	if !hasPlan(messagesPlans, "anthropic") || hasPlan(messagesPlans, "openai-chat") || hasPlan(messagesPlans, "responses") {
+		t.Fatalf("messages plans should only include Anthropic plan: %#v", messagesPlans)
+	}
+
+	chatPlans := FilterPlansForTarget(preset, TargetChat)
+	if !hasPlan(chatPlans, "openai-chat") || hasPlan(chatPlans, "responses") || hasPlan(chatPlans, "anthropic") {
+		t.Fatalf("chat plans should only include OpenAI Chat plan: %#v", chatPlans)
+	}
+
+	responsesPlans := FilterPlansForTarget(preset, TargetResponses)
+	if !hasPlan(responsesPlans, "responses") || !hasPlan(responsesPlans, "openai-chat") || hasPlan(responsesPlans, "anthropic") {
+		t.Fatalf("responses plans should include Responses/OpenAI plans only: %#v", responsesPlans)
 	}
 }
 

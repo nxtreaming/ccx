@@ -17,6 +17,6 @@ func generatedOpenAIChatTargetConfigs() map[string]channelTargetConfig {
 		"opencode-go":  channelTargetConfig{},
 		"volc-ark":     channelTargetConfig{NormalizeNonstandardChatRoles: true},
 		"qianfan":      channelTargetConfig{NormalizeNonstandardChatRoles: true},
-		"xfyun":        channelTargetConfig{NormalizeNonstandardChatRoles: true},
+		"xfyun":        channelTargetConfig{ModelMapping: map[string]string{"codex": "astron-code-latest", "gpt": "astron-code-latest", "mini": "astron-code-latest"}, NormalizeNonstandardChatRoles: true},
 	}
 }

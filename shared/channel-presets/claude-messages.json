@@ -172,6 +172,12 @@
       "normalizeSystemRoleToTopLevel": true
     },
     "xfyun": {
+      "modelMapping": {
+        "fable": "astron-code-latest",
+        "haiku": "astron-code-latest",
+        "opus": "astron-code-latest",
+        "sonnet": "astron-code-latest"
+      },
       "normalizeSystemRoleToTopLevel": true
     },
     "tencent-lkeap": {

@@ -209,7 +209,11 @@ export const openaiChatPresets: Record<string, OpenAIChatPreset> = {
     "visionFallbackModel": ""
   },
   "xfyun": {
-    "modelMapping": {},
+    "modelMapping": {
+      "codex": "astron-code-latest",
+      "gpt": "astron-code-latest",
+      "mini": "astron-code-latest"
+    },
     "reasoningMapping": {},
     "reasoningParamStyle": "",
     "passbackReasoningContent": false,
