@@ -41,17 +41,3 @@
 
 ---
 
-> **上游版本变更**
-
-## [ ] Codex rust-v0.142.2 上游协议/工具变更评估
-
-发现协议/工具/用法变更：MCP tool search 默认启用、服务端 safety-buffering 可见性与 faster-model 元数据、ResponseItem metadata 新增 turn_id。请评估对 ccx Responses 渠道的影响。
-
-## [ ] Claude Code v2.1.193 上游协议/工具变更评估
-
-发现协议/工具/用法变更：autoMode.classifyAllShell 扩大 Bash/PowerShell 权限分类范围、assistant_response OpenTelemetry 事件可能输出模型响应文本、MCP headersHelper 401/403 后自动重连。请评估对 ccx Messages 渠道和桌面端 Claude Code 集成的影响。
-
-## [ ] Claude Code v2.1.196 上游协议/工具变更评估
-
-发现协议/工具/用法变更：组织默认模型展示、MCP list/get 对仓库自批准 .mcp.json 的安全行为变化、所有 provider 默认启用 streaming idle watchdog、ANTHROPIC_BASE_URL 指向非 Anthropic 主机时禁用 Remote Control。请评估对 ccx Messages 渠道、流式响应保活策略和桌面端 Claude Code 集成的影响。
-
