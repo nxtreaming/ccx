@@ -301,7 +301,7 @@ func buildPingRequest(upstream config.UpstreamConfig, baseURL string) (*http.Req
 		if len(upstream.APIKeys) == 0 {
 			return nil, fmt.Errorf("Copilot 渠道缺少 GitHub OAuth token")
 		}
-		copilotToken, copilotBaseURL, err := copilot.ResolveToken(context.Background(), upstream.APIKeys[0])
+		copilotToken, copilotBaseURL, err := copilot.ResolveTokenWithProxy(context.Background(), upstream.APIKeys[0], upstream.ProxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("Copilot token 交换失败: %w", err)
 		}
@@ -500,7 +500,7 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 				httpReq.Header.Set("x-goog-api-key", apiKey)
 			}
 		case "copilot":
-			copilotToken, copilotBaseURL, err := copilot.ResolveToken(c.Request.Context(), apiKey)
+			copilotToken, copilotBaseURL, err := copilot.ResolveTokenWithProxy(c.Request.Context(), apiKey, proxyURL)
 			if err != nil {
 				c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("Failed to exchange Copilot token: %v", err)})
 				return

@@ -491,7 +491,7 @@ func buildProviderRequest(
 		}
 		// copilot 使用 token exchange 返回的动态端点，而非渠道静态 baseURL
 		if upstream.ServiceType == "copilot" {
-			copilotToken, copilotBaseURL, err := copilot.ResolveToken(c.Request.Context(), apiKey)
+			copilotToken, copilotBaseURL, err := copilot.ResolveTokenWithProxy(c.Request.Context(), apiKey, upstream.ProxyURL)
 			if err != nil {
 				return nil, fmt.Errorf("Copilot token 交换失败: %w", err)
 			}

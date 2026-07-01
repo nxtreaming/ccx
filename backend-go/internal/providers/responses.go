@@ -68,7 +68,7 @@ func (p *ResponsesProvider) ConvertBodyToProviderRequest(
 
 	requestAPIKey := apiKey
 	if upstream.ServiceType == "copilot" {
-		copilotToken, copilotBaseURL, err := copilot.ResolveToken(c.Request.Context(), apiKey)
+		copilotToken, copilotBaseURL, err := copilot.ResolveTokenWithProxy(c.Request.Context(), apiKey, upstream.ProxyURL)
 		if err != nil {
 			return nil, bodyBytes, fmt.Errorf("获取 GitHub Copilot token 失败: %w", err)
 		}
