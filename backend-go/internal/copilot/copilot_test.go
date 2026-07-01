@@ -64,6 +64,41 @@ func TestTokenManager_ResolveToken_SuccessAndCache(t *testing.T) {
 	}
 }
 
+func TestResolveTokenWithProxy_UsesProxyClient(t *testing.T) {
+	oldDefault := defaultTokenManager
+	t.Cleanup(func() {
+		defaultTokenManager = oldDefault
+	})
+
+	var sawProxyRequest bool
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawProxyRequest = true
+		if r.URL.Scheme != "http" || r.URL.Host != "example.invalid" {
+			t.Errorf("unexpected proxy target: scheme=%q host=%q url=%q", r.URL.Scheme, r.URL.Host, r.URL.String())
+		}
+		if r.Header.Get("Authorization") != "Bearer gho_proxy" {
+			t.Errorf("unexpected auth header: %q", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"token":"copilot-via-proxy","expires_at":` + epochIn(time.Hour) + `,"refresh_in":1500,"endpoints":{"api":"https://api.githubcopilot.com"}}`))
+	}))
+	defer proxySrv.Close()
+
+	defaultTokenManager = NewTokenManager(nil)
+	defaultTokenManager.tokenURL = "http://example.invalid/copilot_internal/v2/token"
+
+	token, _, err := ResolveTokenWithProxy(context.Background(), "gho_proxy", proxySrv.URL)
+	if err != nil {
+		t.Fatalf("ResolveTokenWithProxy err = %v", err)
+	}
+	if token != "copilot-via-proxy" {
+		t.Errorf("token = %q", token)
+	}
+	if !sawProxyRequest {
+		t.Fatal("expected request through proxy server")
+	}
+}
+
 func TestTokenManager_ResolveToken_ClassifiesErrors(t *testing.T) {
 	tests := []struct {
 		name     string

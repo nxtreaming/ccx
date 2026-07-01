@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/BenedictKing/ccx/internal/httpclient"
 )
 
 const copilotTokenURL = "https://api.github.com/copilot_internal/v2/token"
@@ -101,8 +103,22 @@ func ResolveToken(ctx context.Context, githubToken string) (string, string, erro
 	return defaultTokenManager.ResolveToken(ctx, githubToken)
 }
 
+// ResolveTokenWithProxy 使用可选代理解析 Copilot API token。
+func ResolveTokenWithProxy(ctx context.Context, githubToken string, proxyURL string) (string, string, error) {
+	proxyURL = strings.TrimSpace(proxyURL)
+	if proxyURL == "" {
+		return defaultTokenManager.ResolveToken(ctx, githubToken)
+	}
+	client := httpclient.GetManager().NewStandardClient(defaultRequestTimout, false, proxyURL)
+	return defaultTokenManager.resolveToken(ctx, githubToken, client)
+}
+
 // ResolveToken 返回可用 Copilot token 与 API base URL。
 func (m *TokenManager) ResolveToken(ctx context.Context, githubToken string) (string, string, error) {
+	return m.resolveToken(ctx, githubToken, nil)
+}
+
+func (m *TokenManager) resolveToken(ctx context.Context, githubToken string, client *http.Client) (string, string, error) {
 	githubToken = strings.TrimSpace(githubToken)
 	if githubToken == "" {
 		return "", "", fmt.Errorf("GitHub OAuth token 不能为空")
@@ -117,7 +133,7 @@ func (m *TokenManager) ResolveToken(ctx context.Context, githubToken string) (st
 		return cached.Token, cached.APIBaseURL, nil
 	}
 
-	tokenResp, err := m.exchange(ctx, githubToken)
+	tokenResp, err := m.exchange(ctx, githubToken, client)
 	if err != nil {
 		return "", "", err
 	}
@@ -154,7 +170,7 @@ func (m *TokenManager) ResolveToken(ctx context.Context, githubToken string) (st
 	return tokenResp.Token, apiBaseURL, nil
 }
 
-func (m *TokenManager) exchange(ctx context.Context, githubToken string) (*TokenResponse, error) {
+func (m *TokenManager) exchange(ctx context.Context, githubToken string, client *http.Client) (*TokenResponse, error) {
 	tokenURL := m.tokenURL
 	if tokenURL == "" {
 		tokenURL = copilotTokenURL
@@ -166,7 +182,10 @@ func (m *TokenManager) exchange(ctx context.Context, githubToken string) (*Token
 	ApplyGitHubHeaders(req.Header)
 	req.Header.Set("Authorization", "Bearer "+githubToken)
 
-	resp, err := m.client.Do(req)
+	if client == nil {
+		client = m.client
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
