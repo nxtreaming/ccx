@@ -363,7 +363,7 @@ func TestBuildPayload(t *testing.T) {
 		{
 			name:                "opencode zen messages",
 			req:                 CreateChannelRequest{Provider: ProviderOpenCodeZen, Target: TargetMessages, APIKey: "sk-test"},
-			wantBaseURL:         "https://opencode.ai/zen/v1/messages",
+			wantBaseURL:         "https://opencode.ai/zen/v1",
 			wantService:         "claude",
 			wantNormalizeSystem: true,
 			wantModelMap: map[string]string{
@@ -382,7 +382,7 @@ func TestBuildPayload(t *testing.T) {
 		{
 			name:                "opencode go messages",
 			req:                 CreateChannelRequest{Provider: ProviderOpenCodeGo, Target: TargetMessages, APIKey: "sk-test"},
-			wantBaseURL:         "https://opencode.ai/zen/go/v1/messages",
+			wantBaseURL:         "https://opencode.ai/zen/go/v1",
 			wantService:         "claude",
 			wantNormalizeSystem: true,
 			wantModelMap: map[string]string{
