@@ -1,20 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { KeyRound, Network, Sparkles, CheckCircle2, Loader2, ExternalLink, Copy } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
+import { KeyRound, Network, Sparkles, CheckCircle2, Loader2, ExternalLink } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useChannelPresets } from '@/composables/useChannelPresets'
-import { useAdminApi } from '@/composables/useAdminApi'
 import { useDesktopActivity } from '@/composables/useDesktopActivity'
 import { useLanguage } from '@/composables/useLanguage'
-import {
-  COPILOT_OAUTH_DEVICE_CODE_PATH,
-  COPILOT_OAUTH_TOKEN_PATH,
-  type CopilotDeviceCodeResponse,
-  type CopilotTokenResponse,
-} from '@/services/admin-api'
-import { openExternalLink, openProviderPromotion, openProviderConsole, providerConsoleLinks, providerPromotionLinks } from '@/lib/external-link'
+import { openProviderPromotion, openProviderConsole, providerConsoleLinks, providerPromotionLinks } from '@/lib/external-link'
 import { maskApiKey } from '@/utils/api-key-mask'
 import compshareIcon from '@/assets/compshare.png'
 import runapiIcon from '@/assets/runapi.svg'
@@ -246,133 +239,6 @@ const effectiveBaseUrl = computed(() => {
   return currentPlan.value?.baseUrl || currentAsset.value?.baseUrl || ''
 })
 
-// GitHub Copilot OAuth 快捷卡片
-const adminApi = useAdminApi()
-const COPILOT_PROVIDER_ID = 'github-copilot'
-const copilotSelected = ref(false)
-const copilotOAuthLoading = ref(false)
-const copilotPolling = ref(false)
-const copilotOAuthError = ref('')
-const copilotOAuthSuccess = ref(false)
-const copilotUserCode = ref('')
-const copilotVerificationUri = ref('')
-const copilotDeviceCode = ref('')
-const copilotToken = ref('')
-const copilotUserCodeCopied = ref(false)
-let copilotPollTimer: ReturnType<typeof setTimeout> | null = null
-let copilotCopyTimer: ReturnType<typeof setTimeout> | null = null
-
-function clearCopilotPollTimer() {
-  if (copilotPollTimer !== null) { clearTimeout(copilotPollTimer); copilotPollTimer = null }
-}
-
-function clearCopilotCopyTimer() {
-  if (copilotCopyTimer !== null) { clearTimeout(copilotCopyTimer); copilotCopyTimer = null }
-}
-
-function clearCopilotAuthorizationCode() {
-  copilotDeviceCode.value = ''
-  copilotUserCode.value = ''
-  copilotVerificationUri.value = ''
-  copilotUserCodeCopied.value = false
-  clearCopilotCopyTimer()
-}
-
-async function copyCopilotUserCode() {
-  const userCode = copilotUserCode.value.trim()
-  if (!userCode) return
-  try {
-    await navigator.clipboard.writeText(userCode)
-    clearCopilotCopyTimer()
-    copilotUserCodeCopied.value = true
-    copilotCopyTimer = setTimeout(() => {
-      copilotUserCodeCopied.value = false
-      copilotCopyTimer = null
-    }, 1200)
-  } catch {
-    // clipboard 不可用时静默
-  }
-}
-
-async function pollCopilotToken(intervalSeconds: number) {
-  if (!copilotDeviceCode.value) return
-  copilotPolling.value = true
-  try {
-    const res = await adminApi.post<CopilotTokenResponse>(COPILOT_OAUTH_TOKEN_PATH, { deviceCode: copilotDeviceCode.value })
-    if (res.accessToken) {
-      copilotToken.value = res.accessToken
-      copilotOAuthSuccess.value = true
-      copilotOAuthError.value = ''
-      copilotPolling.value = false
-      copilotOAuthLoading.value = false
-      clearCopilotPollTimer()
-      clearCopilotAuthorizationCode()
-      // 保存到 keysByProvider 用于复用提示
-      await loadChannelPresets()
-      return
-    }
-    if (res.error === 'expired_token') {
-      copilotOAuthError.value = t('copilotOAuth.expired')
-      copilotPolling.value = false; copilotOAuthLoading.value = false; clearCopilotPollTimer(); return
-    }
-    if (res.error && res.error !== 'authorization_pending') {
-      copilotOAuthError.value = res.errorDescription || res.error
-      copilotPolling.value = false; copilotOAuthLoading.value = false; clearCopilotPollTimer(); return
-    }
-  } catch (err) {
-    copilotOAuthError.value = err instanceof Error ? err.message : String(err)
-    copilotPolling.value = false; copilotOAuthLoading.value = false; clearCopilotPollTimer(); return
-  }
-  copilotPollTimer = setTimeout(() => pollCopilotToken(intervalSeconds), Math.max(intervalSeconds, 5) * 1000)
-}
-
-async function startCopilotOAuth() {
-  clearCopilotPollTimer()
-  clearCopilotAuthorizationCode()
-  copilotOAuthLoading.value = true
-  copilotOAuthError.value = ''
-  copilotOAuthSuccess.value = false
-  copilotToken.value = ''
-  try {
-    const device = await adminApi.post<CopilotDeviceCodeResponse>(COPILOT_OAUTH_DEVICE_CODE_PATH)
-    copilotDeviceCode.value = device.deviceCode
-    copilotUserCode.value = device.userCode
-    copilotVerificationUri.value = device.verificationUri
-    await openCopilotAuthorization()
-    await pollCopilotToken(device.interval || 5)
-  } catch (err) {
-    copilotOAuthError.value = err instanceof Error ? err.message : String(err)
-    copilotOAuthLoading.value = false; copilotPolling.value = false
-  }
-}
-
-async function openCopilotAuthorization() {
-  if (!copilotVerificationUri.value) return
-  try {
-    await openExternalLink(copilotVerificationUri.value)
-  } catch (err) {
-    copilotOAuthError.value = err instanceof Error ? err.message : String(err)
-  }
-}
-
-async function submitCopilot() {
-  if (!copilotToken.value) return
-  await createChannel({
-    provider: COPILOT_PROVIDER_ID,
-    target: 'responses',
-    planId: '',
-    baseUrl: 'https://api.githubcopilot.com',
-    apiKey: copilotToken.value,
-    name: 'desktop-github-copilot',
-  })
-  emit('created', 'responses')
-}
-
-onBeforeUnmount(() => {
-  clearCopilotPollTimer()
-  clearCopilotCopyTimer()
-})
-
 const submit = async () => {
   localError.value = ''
   const preset = currentPreset.value
@@ -447,67 +313,6 @@ const submit = async () => {
           </div>
         </button>
 
-        <!-- GitHub Copilot 快捷卡片 -->
-        <button
-          :class="[
-            'w-full p-3 rounded-xl border text-left transition-colors duration-200',
-            copilotSelected
-              ? 'border-border bg-secondary/60 dark:border-white/10 dark:bg-white/[0.04]'
-              : 'border-border bg-card/40 hover:bg-card/70 dark:hover:bg-white/[0.03]'
-          ]"
-          @click="copilotSelected = true; selectedProvider = ''"
-        >
-          <div class="flex items-start gap-3">
-            <div class="mt-0.5 h-8 w-8 shrink-0 rounded-lg bg-secondary ring-1 ring-border flex items-center justify-center">
-              <span class="text-sm">🐙</span>
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-semibold text-foreground">GitHub Copilot</span>
-                <span v-if="copilotOAuthSuccess" class="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                  {{ t('channel.hasKey') }}
-                </span>
-              </div>
-              <p class="text-xs text-muted-foreground mt-1">{{ t('copilotOAuth.description') }}</p>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      <!-- GitHub Copilot 面板 -->
-      <div v-if="copilotSelected" class="bg-glass dark:bg-glass-dark border border-border rounded-2xl p-5 space-y-5 md:min-h-0 md:overflow-y-auto md:overscroll-contain">
-        <h3 class="text-lg font-semibold text-foreground">GitHub Copilot</h3>
-        <p class="text-sm text-muted-foreground">{{ t('copilotOAuth.description') }}</p>
-        <div v-if="copilotUserCode" class="flex items-center gap-2 text-sm">
-          <span class="text-muted-foreground">{{ t('copilotOAuth.userCode') }}</span>
-          <code class="px-2 py-0.5 rounded bg-muted font-mono text-xs">{{ copilotUserCode }}</code>
-          <button
-            type="button"
-            class="inline-flex h-6 w-6 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground"
-            :title="copilotUserCodeCopied ? t('common.copied') : t('common.copy')"
-            :aria-label="copilotUserCodeCopied ? t('common.copied') : t('common.copy')"
-            @click="copyCopilotUserCode"
-          >
-            <CheckCircle2 v-if="copilotUserCodeCopied" class="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
-            <Copy v-else class="h-3.5 w-3.5" />
-          </button>
-          <button type="button" class="text-primary text-xs underline" @click="openCopilotAuthorization">{{ t('copilotOAuth.openAuthorize') }}</button>
-        </div>
-        <p v-if="copilotOAuthSuccess" class="text-xs text-emerald-600">{{ t('copilotOAuth.success') }}</p>
-        <p v-if="copilotOAuthError" class="text-xs text-destructive">{{ copilotOAuthError }}</p>
-        <div class="flex items-center gap-2">
-          <Button :disabled="copilotOAuthLoading || copilotPolling" @click="startCopilotOAuth">
-            <Loader2 v-if="copilotOAuthLoading || copilotPolling" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            {{ t('copilotOAuth.button') }}
-          </Button>
-          <button v-if="copilotPolling || copilotOAuthLoading" type="button" class="text-xs text-muted-foreground underline" @click="clearCopilotPollTimer(); copilotPolling = false; copilotOAuthLoading = false">{{ t('copilotOAuth.cancel') }}</button>
-        </div>
-        <div v-if="copilotOAuthSuccess" class="pt-2">
-          <Button :disabled="creating" @click="submitCopilot">
-            <Loader2 v-if="creating" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            {{ t('channel.addToCCX') }}
-          </Button>
-        </div>
       </div>
 
       <div v-if="currentPreset" class="bg-glass dark:bg-glass-dark border border-border rounded-2xl p-5 space-y-5 md:min-h-0 md:overflow-y-auto md:overscroll-contain">

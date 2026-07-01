@@ -19,6 +19,7 @@ import {
   Square,
   Power,
   Network,
+  CreditCard,
   Sparkles,
   Sun,
   Moon,
@@ -91,13 +92,14 @@ const menuItems = computed<MenuItem[]>(() => [
   { id: 'status', label: t('nav.status'), icon: Activity, desc: t('nav.statusDesc') },
   { id: 'agent', label: t('nav.agent'), icon: Settings, desc: t('nav.agentDesc') },
   { id: 'channels', label: t('nav.channels'), icon: Network, desc: t('nav.channelsDesc') },
+  { id: 'subscriptions', label: t('nav.subscriptions'), icon: CreditCard, desc: t('nav.subscriptionsDesc') },
   { id: 'env', label: t('nav.env'), icon: Sliders, desc: t('nav.envDesc') },
   { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard, desc: t('nav.dashboardDesc') },
   { id: 'cockpit', label: t('nav.cockpit'), icon: Kanban, desc: t('nav.cockpitDesc') },
 ])
 
-const primaryMenuItems = computed(() => menuItems.value.slice(0, 4))
-const managementMenuItems = computed(() => menuItems.value.slice(4))
+const primaryMenuItems = computed(() => menuItems.value.slice(0, 5))
+const managementMenuItems = computed(() => menuItems.value.slice(5))
 
 const statusLabel = computed(() => {
   if (status.value.running) return t('common.serviceHealthy')
