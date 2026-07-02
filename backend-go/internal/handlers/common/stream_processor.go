@@ -354,9 +354,6 @@ func HasClaudeSemanticContent(event string) bool {
 			if deltaType, _ := delta["type"].(string); deltaType == "input_json_delta" {
 				return true
 			}
-			if stopReason, _ := delta["stop_reason"].(string); stopReason == "tool_use" || stopReason == "server_tool_use" {
-				return true
-			}
 		}
 	}
 	return false

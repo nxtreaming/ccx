@@ -780,7 +780,7 @@ func TestPreflightStreamEvents_UnknownEventTypeRecordedInDiagnostic(t *testing.T
 	}
 }
 
-func TestPreflightStreamEvents_ToolUseStopReasonWithoutContentBlockStillNotEmpty(t *testing.T) {
+func TestPreflightStreamEvents_ToolUseStopReasonWithoutContentBlockIsEmpty(t *testing.T) {
 	eventChan := make(chan string, 4)
 	errChan := make(chan error, 1)
 
@@ -796,8 +796,8 @@ func TestPreflightStreamEvents_ToolUseStopReasonWithoutContentBlockStillNotEmpty
 	close(errChan)
 
 	result := PreflightStreamEvents(eventChan, errChan, StreamPreflightTimeouts{})
-	if result.IsEmpty {
-		t.Fatalf("tool_use stop_reason should NOT be detected as empty")
+	if !result.IsEmpty {
+		t.Fatalf("tool_use stop_reason without content_block should be detected as empty")
 	}
 }
 
@@ -927,7 +927,7 @@ func TestHasOpenAIChatSemanticContent(t *testing.T) {
 	}
 }
 
-func TestHasClaudeSemanticContent_ToolStopReason(t *testing.T) {
+func TestHasClaudeSemanticContent_ToolStopReasonOnly(t *testing.T) {
 	tests := []struct {
 		name  string
 		event string
@@ -944,8 +944,8 @@ func TestHasClaudeSemanticContent_ToolStopReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if !HasClaudeSemanticContent(tt.event) {
-				t.Fatal("expected tool stop reason to be treated as semantic content")
+			if HasClaudeSemanticContent(tt.event) {
+				t.Fatal("tool stop reason without a tool content block should not be treated as semantic content")
 			}
 		})
 	}
