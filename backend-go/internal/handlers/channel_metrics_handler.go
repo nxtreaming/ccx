@@ -703,7 +703,8 @@ func getChannelKeyMetricsHistoryWithKind(metricsManager *metrics.MetricsManager,
 			fullDataPoints := metricsManager.GetKeyHistoricalStatsMultiURL(upstream.GetAllBaseURLs(), keyInfo.APIKey, serviceType, duration, interval)
 			modelData := metricsManager.GetKeyModelHistoricalStatsMultiURL(upstream.GetAllBaseURLs(), keyInfo.APIKey, serviceType, duration, interval)
 
-			if len(modelData) <= 1 {
+			// 没有任何模型时 fallback 到跨模型聚合数据（不计算 CostUSD，因为无模型定价依据）
+			if len(modelData) == 0 {
 				result.Keys = append(result.Keys, KeyMetricsHistoryResult{
 					KeyMask:    keyMask,
 					Color:      keyColors[colorIndex%len(keyColors)],
@@ -713,6 +714,8 @@ func getChannelKeyMetricsHistoryWithKind(metricsManager *metrics.MetricsManager,
 				continue
 			}
 
+			// 1 个或多个模型都走 per-model 路径，确保单模型 key 也能填入 CostUSD
+			// 与 SQLite 长时范围路径行为保持一致
 			models := make([]string, 0, len(modelData))
 			for model := range modelData {
 				models = append(models, model)
