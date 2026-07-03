@@ -80,6 +80,76 @@ func TestInjectCachedClaudeThinkingOnlyWhenDeepSeekThinkingRequestHitsCache(t *t
 	}
 }
 
+func TestInjectCachedClaudeThinkingFallsBackToToolUseSignature(t *testing.T) {
+	ResetForTest()
+
+	storedContent := []interface{}{map[string]interface{}{
+		"type":  "tool_use",
+		"id":    "toolu_123",
+		"name":  "Bash",
+		"input": map[string]interface{}{"command": "git status --short"},
+	}}
+	if !StoreClaudeThinkingForContent("session-1", storedContent, "signature cached reasoning") {
+		t.Fatal("expected store to succeed")
+	}
+
+	body := []byte(`{
+		"model": "deepseek-v4-pro",
+		"thinking": {"type": "adaptive"},
+		"messages": [
+			{"role": "assistant", "content": [
+				{"type": "tool_use", "id": "toolu_123", "name": "Bash", "input": {"command": "git status --short", "description": "查看状态"}}
+			]}
+		]
+	}`)
+	upstream := &config.UpstreamConfig{
+		BaseURL:     "https://api.deepseek.com",
+		ServiceType: "claude",
+	}
+
+	got, injected := InjectCachedClaudeThinking(body, "session-1", upstream)
+	if injected != 1 {
+		t.Fatalf("injected = %d, want 1; body=%s", injected, string(got))
+	}
+	if !containsAll(string(got), `"type":"thinking"`, `"thinking":"signature cached reasoning"`, `"type":"tool_use"`) {
+		t.Fatalf("injected body missing signature cached thinking block: %s", string(got))
+	}
+}
+
+func TestInjectCachedClaudeThinkingFallsBackToLatestToolUseAssistant(t *testing.T) {
+	ResetForTest()
+
+	storedContent := []interface{}{map[string]interface{}{
+		"type": "text",
+		"text": "provider-normalized content differs from client echo",
+	}}
+	if !StoreClaudeThinkingForContent("session-1", storedContent, "latest cached reasoning") {
+		t.Fatal("expected store to succeed")
+	}
+
+	body := []byte(`{
+		"model": "deepseek-v4-pro",
+		"thinking": {"type": "adaptive"},
+		"messages": [
+			{"role": "assistant", "content": [
+				{"type": "tool_use", "id": "toolu_latest", "name": "Bash", "input": {"command": "git status --porcelain"}}
+			]}
+		]
+	}`)
+	upstream := &config.UpstreamConfig{
+		BaseURL:     "https://api.deepseek.com",
+		ServiceType: "claude",
+	}
+
+	got, injected := InjectCachedClaudeThinking(body, "session-1", upstream)
+	if injected != 1 {
+		t.Fatalf("injected = %d, want 1; body=%s", injected, string(got))
+	}
+	if !containsAll(string(got), `"type":"thinking"`, `"thinking":"latest cached reasoning"`, `"type":"tool_use"`) {
+		t.Fatalf("injected body missing latest cached thinking block: %s", string(got))
+	}
+}
+
 func TestInjectCachedClaudeThinkingMissLeavesBodyUnchanged(t *testing.T) {
 	ResetForTest()
 

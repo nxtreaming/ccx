@@ -151,7 +151,7 @@ func ShouldTrackClaudeThinking(upstream *config.UpstreamConfig, bodyBytes []byte
 
 // InjectCachedClaudeThinking prepends cached thinking blocks to assistant history
 // only when the request is in Claude thinking mode and the assistant content
-// fingerprint has a previous exact cache hit.
+// has a previous cache hit or a strict DeepSeek tool_use passback fallback.
 func InjectCachedClaudeThinking(bodyBytes []byte, sessionID string, upstream *config.UpstreamConfig) ([]byte, int) {
 	if strings.TrimSpace(sessionID) == "" || !isDeepSeekClaudeTarget(upstream, bodyBytes) {
 		return bodyBytes, 0
@@ -167,8 +167,24 @@ func InjectCachedClaudeThinking(bodyBytes []byte, sessionID string, upstream *co
 		return bodyBytes, 0
 	}
 
+	lastToolUseAssistantIndex := -1
+	for i, rawMsg := range messages {
+		msg, ok := rawMsg.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if role, _ := msg["role"].(string); role != "assistant" {
+			continue
+		}
+		content, exists := msg["content"]
+		if !exists || assistantContentHasThinking(content) || !assistantContentHasToolUse(content) {
+			continue
+		}
+		lastToolUseAssistantIndex = i
+	}
+
 	injected := 0
-	for _, rawMsg := range messages {
+	for i, rawMsg := range messages {
 		msg, ok := rawMsg.(map[string]interface{})
 		if !ok {
 			continue
@@ -183,6 +199,9 @@ func InjectCachedClaudeThinking(bodyBytes []byte, sessionID string, upstream *co
 		}
 
 		thinking, ok := LookupClaudeThinkingForContent(sessionID, content)
+		if !ok && i == lastToolUseAssistantIndex {
+			thinking, ok = LookupLatestClaudeThinkingForSession(sessionID)
+		}
 		if !ok {
 			continue
 		}
@@ -273,12 +292,14 @@ func StoreClaudeThinkingForContent(sessionID string, content interface{}, thinki
 		return false
 	}
 
-	fingerprint := FingerprintClaudeAssistantContent(content)
-	if fingerprint == "" {
+	fingerprints := ClaudeAssistantContentFingerprints(content)
+	if len(fingerprints) == 0 {
 		return false
 	}
 
-	globalStore.store(sessionID, fingerprint, thinking)
+	for _, fingerprint := range fingerprints {
+		globalStore.store(sessionID, fingerprint, thinking)
+	}
 	return true
 }
 
@@ -287,11 +308,26 @@ func LookupClaudeThinkingForContent(sessionID string, content interface{}) (stri
 	if strings.TrimSpace(sessionID) == "" {
 		return "", false
 	}
-	fingerprint := FingerprintClaudeAssistantContent(content)
-	if fingerprint == "" {
+	fingerprints := ClaudeAssistantContentFingerprints(content)
+	if len(fingerprints) == 0 {
 		return "", false
 	}
-	return globalStore.lookup(sessionID, fingerprint)
+	for _, fingerprint := range fingerprints {
+		if thinking, ok := globalStore.lookup(sessionID, fingerprint); ok {
+			return thinking, true
+		}
+	}
+	return "", false
+}
+
+// LookupLatestClaudeThinkingForSession returns the newest cached thinking for the session.
+// It is only used as a last-resort DeepSeek passback fallback for the latest tool_use
+// assistant message when provider-side tool arguments differ from the client echo.
+func LookupLatestClaudeThinkingForSession(sessionID string) (string, bool) {
+	if strings.TrimSpace(sessionID) == "" {
+		return "", false
+	}
+	return globalStore.lookupLatest(sessionID)
 }
 
 // responsesReasoningFingerprintPrefix 用于区分 Responses reasoning 缓存与 Claude thinking 缓存，
@@ -392,6 +428,46 @@ func (s *cacheStore) lookup(sessionID, fingerprint string) (string, bool) {
 	return thinking, true
 }
 
+func (s *cacheStore) lookupLatest(sessionID string) (string, bool) {
+	now := time.Now()
+	sessionHash := hashSessionID(sessionID)
+	keyPrefix := sessionHash + ":"
+
+	s.mu.Lock()
+	var latest cacheEntry
+	found := false
+	for key, entry := range s.entries {
+		if !strings.HasPrefix(key, keyPrefix) || !isRealThinking(entry.Thinking) {
+			continue
+		}
+		if s.isExpiredLocked(entry, now) {
+			delete(s.entries, key)
+			continue
+		}
+		if !found || entry.UpdatedAt.After(latest.UpdatedAt) {
+			latest = entry
+			found = true
+		}
+	}
+	if found {
+		thinking := latest.Thinking
+		s.mu.Unlock()
+		return thinking, true
+	}
+
+	if s.db == nil {
+		s.mu.Unlock()
+		return "", false
+	}
+	thinking, _, ok := s.lookupLatestSQLiteLocked(sessionHash, now)
+	if !ok {
+		s.mu.Unlock()
+		return "", false
+	}
+	s.mu.Unlock()
+	return thinking, true
+}
+
 // storeEncrypted 存储 Responses reasoning 的 encrypted_content，用 fingerprint 区分条目。
 // 与 Claude thinking 缓存共用 entries map 和 SQLite 表，但 fingerprint 带 resp_enc: 前缀避免冲突。
 func (s *cacheStore) storeEncrypted(sessionID, fingerprint, encryptedContent string) {
@@ -487,6 +563,32 @@ func (s *cacheStore) lookupEncryptedSQLiteLocked(key string, now time.Time) (str
 		return "", time.Time{}, false
 	}
 	return encryptedContent, time.Unix(updatedAtUnix, 0), encryptedContent != ""
+}
+
+func (s *cacheStore) lookupLatestSQLiteLocked(sessionHash string, now time.Time) (string, time.Time, bool) {
+	ttl := s.ttl
+	if ttl <= 0 {
+		ttl = defaultTTL
+	}
+	cutoff := now.Add(-ttl).Unix()
+
+	var thinking string
+	var updatedAtUnix int64
+	err := s.db.QueryRow(`
+		SELECT thinking, updated_at
+		FROM claude_thinking_cache
+		WHERE session_hash = ? AND updated_at >= ? AND thinking <> ''
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, sessionHash, cutoff).Scan(&thinking, &updatedAtUnix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", time.Time{}, false
+		}
+		log.Printf("[ThinkingCache] 警告: 查询 SQLite 最新缓存失败: %v", err)
+		return "", time.Time{}, false
+	}
+	return thinking, time.Unix(updatedAtUnix, 0), isRealThinking(thinking)
 }
 
 func (s *cacheStore) evictExpiredLocked(now time.Time) {
@@ -710,6 +812,58 @@ func FingerprintClaudeAssistantContent(content interface{}) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func ClaudeAssistantContentFingerprints(content interface{}) []string {
+	fingerprints := make([]string, 0, 2)
+	if exact := FingerprintClaudeAssistantContent(content); exact != "" {
+		fingerprints = append(fingerprints, exact)
+	}
+	if toolSignature := FingerprintClaudeAssistantToolUseSignature(content); toolSignature != "" {
+		fingerprints = append(fingerprints, toolSignature)
+	}
+	return fingerprints
+}
+
+func FingerprintClaudeAssistantToolUseSignature(content interface{}) string {
+	normalized := normalizeAssistantContent(content)
+	if len(normalized) == 0 {
+		return ""
+	}
+
+	signature := make([]interface{}, 0, len(normalized))
+	for _, rawBlock := range normalized {
+		block, ok := rawBlock.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		blockType, _ := block["type"].(string)
+		if blockType != "tool_use" && blockType != "server_tool_use" {
+			continue
+		}
+		id, _ := block["id"].(string)
+		if id == "" {
+			continue
+		}
+		item := map[string]interface{}{
+			"type": blockType,
+			"id":   id,
+		}
+		if name, _ := block["name"].(string); name != "" {
+			item["name"] = name
+		}
+		signature = append(signature, item)
+	}
+	if len(signature) == 0 {
+		return ""
+	}
+
+	raw, err := json.Marshal(signature)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return "tool_use:" + hex.EncodeToString(sum[:])
+}
+
 func normalizeAssistantContent(content interface{}) []interface{} {
 	switch typed := content.(type) {
 	case string:
@@ -824,6 +978,24 @@ func assistantContentHasThinking(content interface{}) bool {
 		}
 		thinking, _ := block["thinking"].(string)
 		if isRealThinking(thinking) {
+			return true
+		}
+	}
+	return false
+}
+
+func assistantContentHasToolUse(content interface{}) bool {
+	blocks, ok := content.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, rawBlock := range blocks {
+		block, ok := rawBlock.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		blockType, _ := block["type"].(string)
+		if blockType == "tool_use" || blockType == "server_tool_use" {
 			return true
 		}
 	}
