@@ -1,3 +1,9 @@
+## [v2.9.32] - 2026-07-03
+
+### 修复
+
+- **ChannelManager canDeleteChannel 引用错误** - desktop: 修复 ChannelManager canDeleteChannel 引用错误
+
 ## [v2.9.31] - 2026-07-03
 
 ### 新增
