@@ -87,7 +87,7 @@ type UpstreamConfig struct {
 	RoutePrefix string `json:"routePrefix,omitempty"` // 路由前缀（如 "kimi"），客户端可通过 /:routePrefix/v1/messages 访问
 	// 主动限速配置（渠道级，默认 0=不限）
 	RateLimitRPM             int   `json:"rateLimitRpm,omitempty"`             // 每分钟请求数上限（0=不限）
-	RateLimitWindowMinutes   int   `json:"rateLimitWindowMinutes,omitempty"`   // 滑动窗口时长（分钟，0=默认1分钟）
+	RateLimitWindowMinutes   int   `json:"rateLimitWindowMinutes,omitempty"`   // 滑动窗口时长（秒，0=默认60秒；JSON 字段名保留为兼容旧配置）
 	RateLimitBurst           int   `json:"rateLimitBurst,omitempty"`           // 已废弃，保留仅为兼容性
 	RateLimitMaxConcurrent   int   `json:"rateLimitMaxConcurrent,omitempty"`   // 最大并发上游请求数（0=不限）
 	RateLimitAutoFromHeaders *bool `json:"rateLimitAutoFromHeaders,omitempty"` // 自动从上游响应头解析限流信息并动态调速（默认 false）
@@ -109,7 +109,7 @@ type APIKeyConfig struct {
 	Enabled                  *bool    `json:"enabled,omitempty"`
 	QuotaGroup               string   `json:"quotaGroup,omitempty"`
 	RateLimitRPM             int      `json:"rateLimitRpm,omitempty"`
-	RateLimitWindowMinutes   int      `json:"rateLimitWindowMinutes,omitempty"`
+	RateLimitWindowMinutes   int      `json:"rateLimitWindowMinutes,omitempty"` // 滑动窗口时长（秒；JSON 字段名保留为兼容旧配置）
 	RateLimitMaxConcurrent   int      `json:"rateLimitMaxConcurrent,omitempty"`
 	RateLimitAutoFromHeaders *bool    `json:"rateLimitAutoFromHeaders,omitempty"`
 	Weight                   int      `json:"weight,omitempty"`
@@ -124,6 +124,15 @@ type DisabledKeyInfo struct {
 	DisabledAt string        `json:"disabledAt"`          // ISO8601 时间戳
 	RecoverAt  string        `json:"recoverAt,omitempty"` // 自动恢复时间（可选）
 	Config     *APIKeyConfig `json:"config,omitempty"`    // 拉黑前的 key 配置快照，restore 时恢复
+}
+
+// RateLimitWindowSeconds 返回限速器实际使用的窗口秒数。
+// JSON 字段名仍为 rateLimitWindowMinutes，仅用于兼容既有 API 和配置文件。
+func RateLimitWindowSeconds(value int) int {
+	if value > 0 {
+		return value
+	}
+	return 0
 }
 
 // AgentModelProfile 描述下游 agent 模型的上下文管理语义。
