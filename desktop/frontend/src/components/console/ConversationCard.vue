@@ -448,6 +448,17 @@ function handleClearSubagentOverride() {
 }
 
 function handleMoveToTop(channel: ChannelInfo, currentIndex: number) {
+  // 当前渠道：toggle 固定/取消固定（与折叠态逻辑一致）
+  if (channel.index === props.conversation.currentChannel) {
+    if (hasOverride.value && props.override?.sequence?.[0]?.channelIndex === channel.index) {
+      emit('removeOverride', props.conversation.id)
+      return
+    }
+    const rest = channelSequence.value.filter(item => item.index !== channel.index)
+    emit('setOverride', props.conversation.id, buildSequence([channel, ...rest]))
+    return
+  }
+  // 非当前渠道：移到首位
   if (currentIndex === 0 && channel.status !== 'suspended' && !channel.circuitOpen) return
   const current = [...channelSequence.value]
   const [item] = current.splice(currentIndex, 1)
