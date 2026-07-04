@@ -53,13 +53,40 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
+def get_git_proxy() -> str | None:
+    """从 git config 读取 http/https 代理设置。"""
+    for key in ("https.proxy", "http.proxy"):
+        try:
+            result = subprocess.run(
+                ["git", "config", "--global", key],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except FileNotFoundError:
+            pass
+    return None
+
+
+# 从 git config 自动检测代理，gh CLI 不读取 git 配置需要显式注入环境变量
+_PROXY = get_git_proxy()
+if _PROXY:
+    log(f"[Proxy] 检测到 git 代理: {_PROXY}")
+
+
 def gh(args: list[str], *, check: bool = True, capture: bool = True) -> str | None:
     cmd = ["gh"] + args
     log(f"$ {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=capture, text=True)
+    # gh CLI 使用 Go net/http，不读取 git proxy 配置，需通过环境变量注入
+    env = {**os.environ}
+    if _PROXY:
+        env.setdefault("HTTP_PROXY", _PROXY)
+        env.setdefault("HTTPS_PROXY", _PROXY)
+    result = subprocess.run(cmd, capture_output=capture, text=True, env=env)
     if check and result.returncode != 0:
-        raise DownloadError(f"gh 命令失败: {result.stderr.strip()}")
-    return result.stdout.strip() if capture else None
+        stderr = result.stderr.strip() if result.stderr else ""
+        raise DownloadError(f"gh 命令失败: {stderr}")
+    return result.stdout.strip() if capture and result.stdout else None
 
 
 def request_json(url: str) -> Any:
@@ -140,31 +167,26 @@ def download_packages_gh(
             raise DownloadError(f"重复架构 MSIX: {arch}")
         seen_arches.add(arch)
 
-        def release_download_args(pattern: str) -> list[str]:
-            args = ["release", "download"]
-            if tag:
-                args.append(tag)
-            args.extend([
-                "--repo", repo,
-                "--pattern", pattern,
-                "--dir", str(download_dir),
-                "--clobber",
-            ])
-            return args
-
         # Build glob patterns for both MSIX and its sha256 sidecar
-        msix_pattern = f"**/*{asset.name}*"
-        sha_pattern = f"**/*{asset.name}*.sha256"
+        # Release assets are flat (no subdirectories), so use simple wildcard
+        msix_pattern = f"*{asset.name}*"
+        sha_pattern = f"*{asset.name}*.sha256"
 
         log(f"下载 MSIX: {asset.name}")
-        gh(release_download_args(msix_pattern), check=True, capture=False)
+        gh(["release", "download", "--repo", repo,
+            "--pattern", msix_pattern,
+            "--dir", str(download_dir),
+            "--clobber"], check=True, capture=False)
 
         sha_status = "release 中没有对应 .sha256，已计算本地 sha256"
         sha_asset = sha_assets.get(asset.name)
         if sha_asset:
-            sha_pattern = f"**/*{sha_asset.name}*"
+            sha_pattern = f"*{sha_asset.name}*"
             log(f"下载 sha256: {sha_asset.name}")
-            gh(release_download_args(sha_pattern), check=True, capture=False)
+            gh(["release", "download", "--repo", repo,
+                "--pattern", sha_pattern,
+                "--dir", str(download_dir),
+                "--clobber"], check=True, capture=False)
 
             sha_path = download_dir / sha_asset.name
             expected = parse_sha256(sha_path.read_text(encoding="utf-8", errors="replace"))
