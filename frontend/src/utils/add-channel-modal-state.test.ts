@@ -83,6 +83,13 @@ describe('syncBaseUrlsFormState', () => {
       baseUrls: ['https://host/v1', 'https://host']
     })
   })
+
+  it('应剔除粘贴 URL 中的 admin 管理后台路径', () => {
+    expect(syncBaseUrlsFormState('https://chybenzun.top/admin', 'openai')).toEqual({
+      baseUrl: 'https://chybenzun.top',
+      baseUrls: []
+    })
+  })
 })
 
 describe('extractChannelNamePrefix', () => {

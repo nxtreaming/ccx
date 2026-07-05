@@ -431,6 +431,13 @@ describe('综合解析场景', () => {
     expect(result.detectedBaseUrl).toBe('https://pay.kxaug.xyz')
   })
 
+  it('应剔除常见 admin 管理后台路径', () => {
+    const input = 'https://chybenzun.top/admin sk-key1234567890'
+    const result = parseQuickInput(input)
+    expect(result.detectedBaseUrl).toBe('https://chybenzun.top')
+    expect(result.detectedBaseUrls).toEqual(['https://chybenzun.top'])
+  })
+
 })
 
 describe('引号内容提取', () => {

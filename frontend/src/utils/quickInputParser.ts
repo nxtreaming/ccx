@@ -1,4 +1,4 @@
-import { deduplicateEquivalentBaseUrls, type ServiceType } from './baseUrlSemantics'
+import { deduplicateEquivalentBaseUrls, stripDashboardPathFromBaseUrl, type ServiceType } from './baseUrlSemantics'
 
 /**
  * 快速添加渠道 - 输入解析工具
@@ -290,20 +290,10 @@ const detectServiceTypeAndCleanUrl = (
       return { serviceType: 'openai', cleanedUrl: url }
     }
 
-    // 剔除常见第三方面板路径，仅保留 origin 作为 baseUrl
-    const dashboardPathPrefixes = [
-      '/console',
-      '/dashboard',
-      '/keys',
-      '/panel',
-      '/token',
-      '/log',
-      '/pricing'
-    ]
-    if (dashboardPathPrefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'))) {
-      let result = parsed.origin
-      if (url.endsWith('#')) result += '#'
-      return { serviceType: null, cleanedUrl: result }
+    // 剔除常见第三方面板路径，仅保留 origin 作为 baseUrl。
+    const dashboardUrl = stripDashboardPathFromBaseUrl(url)
+    if (dashboardUrl !== url) {
+      return { serviceType: null, cleanedUrl: dashboardUrl }
     }
   } catch {
     // 忽略解析错误
