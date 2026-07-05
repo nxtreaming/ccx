@@ -1,3 +1,27 @@
+## [v2.9.36] - 2026-07-05
+
+### 新增
+
+- **集成 vectors Embedding 兼容性面板到桌面端渠道编辑流程** - desktop: 集成 vectors Embedding 兼容性面板到渠道编辑流程
+- **新增 vectors Embedding 兼容性配置面板组件** - desktop: 新增 vectors Embedding 兼容性配置面板组件
+- **移植 embedding 兼容性类型/序列化/i18n 到桌面端** - desktop: 移植 embedding 兼容性类型、序列化与 i18n 到桌面端
+- **OpenAI 响应思考标签提取为原生 reasoning 字段** - provider: OpenAI 响应思考标签提取为原生 reasoning 字段
+
+### 修复
+
+- **对齐桌面端 capability 测试反馈** - desktop: 对齐桌面端 capability 测试反馈
+- **使用结构化对话轮次** - cockpit: 使用结构化对话轮次替代纯文本
+- **embedding 兼容性配置边界问题** - vectors: 修复 embedding 兼容性配置边界问题
+- **剥离 embedding 请求体中的 stream 字段** - vectors: 剥离 embedding 请求体中的 stream 字段避免上游 SSE 误触发
+
+### 优化
+
+- **提取 buildEndpointURL 正则为 package-level var** - vectors: 提取 buildEndpointURL 正则为 package-level var 避免重复编译
+
+### 其他
+
+- **补齐 embedding capability 与 handler 边界测试** - test: 补齐 embedding capability 与 handler 边界测试
+
 ## [v2.9.35] - 2026-07-04
 
 ### 新增
