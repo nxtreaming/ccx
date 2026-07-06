@@ -63,6 +63,7 @@ type ModelEntry struct {
 	DisplayName         string   `json:"display_name,omitempty"`
 	LabelOverride       string   `json:"labelOverride,omitempty"`
 	Supports1M          bool     `json:"supports1m,omitempty"`
+	ContextWindow       int      `json:"context_window,omitempty"`
 	AnthropicFamilyTier string   `json:"anthropicFamilyTier,omitempty"`
 	IsFamilyDefault     bool     `json:"isFamilyDefault,omitempty"`
 	InputModalities     []string `json:"input_modalities,omitempty"`
@@ -697,6 +698,9 @@ func normalizeModelEntry(model ModelEntry, upstream *config.UpstreamConfig, glob
 	if !model.Supports1M && resolved.Capability.ContextWindowTokens >= 1000000 {
 		model.Supports1M = true
 	}
+	if model.ContextWindow == 0 {
+		model.ContextWindow = resolved.Capability.ContextWindowTokens
+	}
 	if model.AnthropicFamilyTier == "" {
 		model.AnthropicFamilyTier = anthropicFamilyTierForModel(model.ID, resolved.ActualModel, resolved.Capability.DisplayName)
 	}
@@ -731,6 +735,9 @@ func mergeModelEntryMetadata(existing, incoming ModelEntry) ModelEntry {
 		existing.LabelOverride = incoming.LabelOverride
 	}
 	existing.Supports1M = existing.Supports1M || incoming.Supports1M
+	if existing.ContextWindow == 0 {
+		existing.ContextWindow = incoming.ContextWindow
+	}
 	if existing.AnthropicFamilyTier == "" {
 		existing.AnthropicFamilyTier = incoming.AnthropicFamilyTier
 	}

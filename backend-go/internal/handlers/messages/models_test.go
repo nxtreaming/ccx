@@ -164,6 +164,53 @@ func TestModelsHandler_AddsClaudeDesktopModelMetadata(t *testing.T) {
 	}
 }
 
+func TestModelsHandler_FillsContextWindowFromBuiltinRegistry(t *testing.T) {
+	const modelID = "deepseek-v4-pro"
+	expectedContextWindow := contextWindowFromSharedRegistry(t, modelID)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"` + modelID + `","object":"model"}]}`))
+	}))
+	defer upstream.Close()
+
+	cfgManager := setupModelsConfigManager(t, config.Config{
+		Upstream: []config.UpstreamConfig{{
+			Name:        "messages-active",
+			BaseURL:     upstream.URL,
+			APIKeys:     []string{"sk-active"},
+			ServiceType: "claude",
+		}},
+	})
+	sch := newModelsTestScheduler(cfgManager)
+	router := newModelsRouterForAggregate(&config.EnvConfig{ProxyAccessKey: "test-key"}, cfgManager, sch)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer test-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp ModelsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+
+	model := findModelEntry(resp.Data, modelID)
+	if model == nil {
+		t.Fatalf("缺少模型 %s: %#v", modelID, resp.Data)
+	}
+	if model.ContextWindow != expectedContextWindow {
+		t.Fatalf("context_window = %d, want %d", model.ContextWindow, expectedContextWindow)
+	}
+	if !model.Supports1M {
+		t.Fatalf("supports1m = false, want true")
+	}
+}
+
 func TestModelsHandler_FallbackToDisabledKey(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-disabled" {
@@ -1064,6 +1111,36 @@ func findModelEntry(models []ModelEntry, id string) *ModelEntry {
 		}
 	}
 	return nil
+}
+
+func contextWindowFromSharedRegistry(t *testing.T, modelID string) int {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "model-registry", "ccx_model_registry.json"))
+	if err != nil {
+		t.Fatalf("读取共享模型注册表失败: %v", err)
+	}
+	var registry struct {
+		UpstreamCapabilities []struct {
+			Patterns            []string `json:"patterns"`
+			ContextWindowTokens int      `json:"contextWindowTokens"`
+		} `json:"upstreamCapabilities"`
+	}
+	if err := json.Unmarshal(data, &registry); err != nil {
+		t.Fatalf("解析共享模型注册表失败: %v", err)
+	}
+	for _, capability := range registry.UpstreamCapabilities {
+		for _, pattern := range capability.Patterns {
+			if pattern == "(?:^|[-/])"+modelID+"(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)" ||
+				pattern == "(?:^|[-/])"+modelID+"(?=$|@)" {
+				if capability.ContextWindowTokens == 0 {
+					t.Fatalf("共享模型注册表中 %s 缺少 contextWindowTokens", modelID)
+				}
+				return capability.ContextWindowTokens
+			}
+		}
+	}
+	t.Fatalf("共享模型注册表中缺少模型 %s", modelID)
+	return 0
 }
 
 func sameStrings(a, b []string) bool {
