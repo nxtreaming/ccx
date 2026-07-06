@@ -92,6 +92,12 @@ func TestDiagnoseSchedulerSelectionReturnsContextError(t *testing.T) {
 	if !strings.Contains(resp.Error, "上下文") {
 		t.Fatalf("error = %q, want context routing error", resp.Error)
 	}
+	if !strings.Contains(resp.Summary, "small-window@context_filter/context_window_exceeded") {
+		t.Fatalf("summary = %q, want context filter skip", resp.Summary)
+	}
+	if len(resp.Trace.Candidates) != 1 || resp.Trace.Candidates[0].Reason != "context_window_exceeded" {
+		t.Fatalf("trace.candidates = %#v, want context_window_exceeded", resp.Trace.Candidates)
+	}
 }
 
 func TestDiagnoseSchedulerSelectionRejectsInvalidBody(t *testing.T) {

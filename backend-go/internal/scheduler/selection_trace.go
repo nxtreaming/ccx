@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -40,6 +41,42 @@ type SelectionTraceSelection struct {
 	ChannelIndex int    `json:"channelIndex"`
 	ChannelName  string `json:"channelName"`
 	Reason       string `json:"reason"`
+}
+
+// SelectionTraceError 在选择失败时保留已经执行的调度 trace。
+type SelectionTraceError struct {
+	Err   error
+	Trace *SelectionTrace
+}
+
+func (e *SelectionTraceError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *SelectionTraceError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func newSelectionTraceError(err error, trace *SelectionTrace) error {
+	if err == nil {
+		return nil
+	}
+	return &SelectionTraceError{Err: err, Trace: trace}
+}
+
+// SelectionTraceFromError 提取失败选择过程中已经生成的调度 trace。
+func SelectionTraceFromError(err error) (*SelectionTrace, bool) {
+	var traceErr *SelectionTraceError
+	if errors.As(err, &traceErr) && traceErr.Trace != nil {
+		return traceErr.Trace, true
+	}
+	return nil, false
 }
 
 func newSelectionTrace(opts SelectionOptions) *SelectionTrace {

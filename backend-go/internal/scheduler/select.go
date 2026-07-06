@@ -73,6 +73,9 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 	routePrefix := opts.RoutePrefix
 	channelName := opts.ChannelName
 	trace := newSelectionTrace(opts)
+	traceErr := func(err error) error {
+		return newSelectionTraceError(err, trace)
+	}
 	finish := func(upstream *config.UpstreamConfig, channelIndex int, reason string) *SelectionResult {
 		result := s.selectionResult(kind, upstream, channelIndex, reason)
 		channelName := ""
@@ -103,9 +106,9 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 			kindName = "Vectors"
 		}
 		if model != "" && len(s.getActiveChannels(kind, "")) > 0 {
-			return nil, fmt.Errorf("没有 %s 渠道支持模型 %q，请检查渠道的 supportedModels 配置", kindName, model)
+			return nil, traceErr(fmt.Errorf("没有 %s 渠道支持模型 %q，请检查渠道的 supportedModels 配置", kindName, model))
 		}
-		return nil, fmt.Errorf("没有可用的活跃 %s 渠道", kindName)
+		return nil, traceErr(fmt.Errorf("没有可用的活跃 %s 渠道", kindName))
 	}
 
 	// 按路由前缀过滤渠道
@@ -116,10 +119,17 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 			upstream := s.getUpstreamByIndex(ch.Index, kind)
 			if upstream != nil && upstream.RoutePrefix == routePrefix {
 				filtered = append(filtered, ch)
+			} else {
+				details := ""
+				if upstream != nil {
+					details = upstream.RoutePrefix
+				}
+				trace.skipChannel(ch, "route_prefix_filter", "route_prefix_mismatch", details)
 			}
 		}
 		if len(filtered) == 0 {
-			return nil, fmt.Errorf("no channels with route prefix: %s", routePrefix)
+			trace.setStage("route_prefix_filter", 0)
+			return nil, traceErr(fmt.Errorf("no channels with route prefix: %s", routePrefix))
 		}
 		activeChannels = filtered
 		trace.setStage("route_prefix_filter", len(activeChannels))
@@ -130,6 +140,12 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 			upstream := s.getUpstreamByIndex(ch.Index, kind)
 			if upstream != nil && upstream.RoutePrefix == "" {
 				filtered = append(filtered, ch)
+			} else {
+				details := ""
+				if upstream != nil {
+					details = upstream.RoutePrefix
+				}
+				trace.skipChannel(ch, "default_route_filter", "route_prefix_only", details)
 			}
 		}
 		if len(filtered) == 0 {
@@ -146,15 +162,17 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 			case ChannelKindVectors:
 				kindName = "Vectors"
 			}
-			return nil, fmt.Errorf("没有可用于默认路由的 %s 渠道，请使用带前缀路由访问", kindName)
+			trace.setStage("default_route_filter", 0)
+			return nil, traceErr(fmt.Errorf("没有可用于默认路由的 %s 渠道，请使用带前缀路由访问", kindName))
 		}
 		activeChannels = filtered
 		trace.setStage("default_route_filter", len(activeChannels))
 	}
 
-	activeChannels, err := s.filterChannelsByContext(activeChannels, kind, model, opts.ContextRequirement)
+	activeChannels, err := s.filterChannelsByContext(activeChannels, kind, model, opts.ContextRequirement, trace)
 	if err != nil {
-		return nil, err
+		trace.setStage("context_filter", 0)
+		return nil, traceErr(err)
 	}
 	trace.setStage("context_filter", len(activeChannels))
 	if opts.CandidateFilter != nil {
@@ -164,10 +182,11 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 			return s.channelAvailableForCandidateFilter(ch, upstream, kind)
 		})
 		if err != nil {
-			return nil, err
+			return nil, traceErr(err)
 		}
 		if len(activeChannels) == 0 {
-			return nil, fmt.Errorf("没有可用的 %s 渠道满足候选过滤条件", kindDisplayName(kind))
+			trace.setStage("candidate_filter", 0)
+			return nil, traceErr(fmt.Errorf("没有可用的 %s 渠道满足候选过滤条件", kindDisplayName(kind)))
 		}
 		trace.setStage("candidate_filter", len(activeChannels))
 	}
@@ -177,18 +196,23 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		for _, ch := range activeChannels {
 			if ch.Name == channelName {
 				if failedChannels[ch.Index] {
-					return nil, fmt.Errorf("指定渠道 %q 在本次请求中已失败", channelName)
+					trace.skipChannel(ch, "channel_pin", "failed_in_request", "")
+					return nil, traceErr(fmt.Errorf("指定渠道 %q 在本次请求中已失败", channelName))
 				}
 				upstream := s.getUpstreamByIndex(ch.Index, kind)
 				if upstream == nil {
-					return nil, fmt.Errorf("指定渠道 %q 配置异常", channelName)
+					trace.skipChannel(ch, "channel_pin", "missing_upstream", "")
+					return nil, traceErr(fmt.Errorf("指定渠道 %q 配置异常", channelName))
 				}
 				prefix := kindSchedulerLogPrefix(kind)
 				log.Printf("[%s-Pin] 通过 X-Channel 指定渠道: [%d] %s", prefix, ch.Index, ch.Name)
 				return finish(upstream, ch.Index, "channel_pin"), nil
 			}
 		}
-		return nil, fmt.Errorf("指定渠道 %q 不满足当前模型、路由前缀或上下文要求", channelName)
+		for _, ch := range activeChannels {
+			trace.skipChannel(ch, "channel_pin", "channel_name_mismatch", ch.Name)
+		}
+		return nil, traceErr(fmt.Errorf("指定渠道 %q 不满足当前模型、路由前缀或上下文要求", channelName))
 	}
 
 	// 0. 检查手动序列覆盖
@@ -382,6 +406,9 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		}
 		trace.selectChannel(result.ChannelIndex, channelName, result.Reason)
 		result.Trace = trace
+	}
+	if err != nil {
+		err = traceErr(err)
 	}
 	return result, err
 }
@@ -643,7 +670,7 @@ func (s *ChannelScheduler) channelIsRuntimeAvailable(upstream *config.UpstreamCo
 	return !s.channelInRuntimeCooldown(kind, channelIndex)
 }
 
-func (s *ChannelScheduler) filterChannelsByContext(activeChannels []ChannelInfo, kind ChannelKind, model string, requirement *ContextRequirement) ([]ChannelInfo, error) {
+func (s *ChannelScheduler) filterChannelsByContext(activeChannels []ChannelInfo, kind ChannelKind, model string, requirement *ContextRequirement, trace *SelectionTrace) ([]ChannelInfo, error) {
 	if requirement == nil {
 		return activeChannels, nil
 	}
@@ -673,6 +700,7 @@ func (s *ChannelScheduler) filterChannelsByContext(activeChannels []ChannelInfo,
 	for _, ch := range activeChannels {
 		upstream := s.getUpstreamByIndex(ch.Index, kind)
 		if upstream == nil {
+			trace.skipChannel(ch, "context_filter", "missing_upstream", "")
 			continue
 		}
 
@@ -697,6 +725,7 @@ func (s *ChannelScheduler) filterChannelsByContext(activeChannels []ChannelInfo,
 			if channelRequiredWindow > 0 && channelRequiredWindow > capability.ContextWindowTokens {
 				reason := fmt.Sprintf("[%d]%s actual=%s input=%d>%d totalBudget=%d", ch.Index, ch.Name, resolved.ActualModel, channelRequiredWindow, capability.ContextWindowTokens, requirement.RequiredTokens)
 				skipped = append(skipped, reason)
+				trace.skipChannel(ch, "context_filter", "context_window_exceeded", fmt.Sprintf("actual=%s input=%d window=%d totalBudget=%d", resolved.ActualModel, channelRequiredWindow, capability.ContextWindowTokens, requirement.RequiredTokens))
 				log.Printf("[%s-ContextFilter] 跳过渠道 [%d] %s: input=%d, window=%d, totalBudget=%d, output=%d, actualModel=%q, source=%s",
 					prefix, ch.Index, ch.Name, channelRequiredWindow, capability.ContextWindowTokens, requirement.RequiredTokens, requirement.OutputTokens, resolved.ActualModel, resolved.Source)
 				continue
@@ -712,6 +741,7 @@ func (s *ChannelScheduler) filterChannelsByContext(activeChannels []ChannelInfo,
 
 		reason := fmt.Sprintf("[%d]%s actual=%s unknown input=%d totalBudget=%d", ch.Index, ch.Name, resolved.ActualModel, channelRequiredWindow, requirement.RequiredTokens)
 		skipped = append(skipped, reason)
+		trace.skipChannel(ch, "context_filter", "unknown_context_window", fmt.Sprintf("actual=%s input=%d safeWindow=%d totalBudget=%d", resolved.ActualModel, channelRequiredWindow, unknownSafeWindow, requirement.RequiredTokens))
 		log.Printf("[%s-ContextFilter] 跳过未知上下文渠道 [%d] %s: input=%d 超过 unknownSafeWindow=%d, totalBudget=%d, output=%d, actualModel=%q",
 			prefix, ch.Index, ch.Name, channelRequiredWindow, unknownSafeWindow, requirement.RequiredTokens, requirement.OutputTokens, resolved.ActualModel)
 	}

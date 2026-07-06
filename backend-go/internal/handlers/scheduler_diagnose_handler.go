@@ -61,11 +61,16 @@ func DiagnoseSchedulerSelection(sch *scheduler.ChannelScheduler, kind scheduler.
 			AgentRole:          strings.TrimSpace(req.AgentRole),
 		})
 		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
+			resp := gin.H{
 				"ok":    false,
 				"kind":  kind,
 				"error": err.Error(),
-			})
+			}
+			if trace, ok := scheduler.SelectionTraceFromError(err); ok {
+				resp["summary"] = scheduler.FormatSelectionTraceSummary(trace, 8)
+				resp["trace"] = trace
+			}
+			c.JSON(http.StatusOK, resp)
 			return
 		}
 

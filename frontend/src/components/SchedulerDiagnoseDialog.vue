@@ -70,8 +70,8 @@
           {{ result.error }}
         </v-alert>
 
-        <div v-else-if="result?.ok" class="mt-4 scheduler-diagnose-result">
-          <div class="d-flex align-center ga-2 flex-wrap mb-2">
+        <div v-if="result && hasTraceDetails" class="mt-4 scheduler-diagnose-result">
+          <div v-if="result.ok" class="d-flex align-center ga-2 flex-wrap mb-2">
             <v-chip size="small" color="success" variant="tonal">
               {{ t('schedulerDiagnose.selected') }} {{ result.selected?.channelIndex }}:{{ result.selected?.channelName }}
             </v-chip>
@@ -151,6 +151,12 @@ const outputTokens = ref('')
 const requiredTokens = ref('')
 const isRunning = ref(false)
 const result = ref<SchedulerDiagnoseResponse | null>(null)
+
+const hasTraceDetails = computed(() => Boolean(
+  result.value?.summary ||
+  result.value?.trace?.stages?.length ||
+  result.value?.trace?.candidates?.length
+))
 
 const agentRoleItems = computed(() => [
   { title: t('schedulerDiagnose.agentRoleDefault'), value: '' },
