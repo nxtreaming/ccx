@@ -1065,5 +1065,59 @@ export const builtinUpstreamModelCapabilities: Record<string, UpstreamModelCapab
     "sources": [
       "https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json"
     ]
+  },
+  "(?:^|[-/])agnes-2\\.0-flash(?=$|@)": {
+    "provider": "agnes",
+    "displayName": "Agnes 2.0 Flash",
+    "description": "Fast and efficient language model by Sapiens AI, optimized for agent workflows, tool calling, coding, multi-turn dialogue, reasoning, and image understanding. Scores Pass^3 60.9% (rank 9) on Claw-Eval. Supports thinking mode via chat_template_kwargs or Anthropic-compatible thinking parameter.",
+    "contextWindowTokens": 524288,
+    "maxOutputTokens": 65536,
+    "thinkingMode": "thinking",
+    "capabilities": {
+      "vision": true,
+      "toolCalls": true
+    },
+    "pricing": {
+      "unit": "per_1m_tokens_usd",
+      "currency": "USD",
+      "inputCacheMissPrice": 0.03,
+      "outputPrice": 0.15
+    },
+    "sources": [
+      "https://agnes-ai.com/zh-Hans/docs/agnes-20-flash"
+    ]
+  },
+  "(?:^|[-/])agnes-image-2\\.0-flash(?=$|@)": {
+    "provider": "agnes",
+    "displayName": "Agnes Image 2.0 Flash",
+    "description": "High-performance image generation and editing model by Sapiens AI. Supports text-to-image, image-to-image, and multi-image composition. Ranked Top 20 (ELO 1184) on Artificial Analysis image editing leaderboard. API uses OpenAI-compatible /v1/images/generations endpoint. Standard price $0.003/image.",
+    "capabilities": {
+      "imageGeneration": true
+    },
+    "sources": [
+      "https://agnes-ai.com/zh-Hans/docs/agnes-image-20-flash"
+    ]
+  },
+  "(?:^|[-/])agnes-image-2\\.1-flash(?=$|@)": {
+    "provider": "agnes",
+    "displayName": "Agnes Image 2.1 Flash",
+    "description": "Upgraded image generation model by Sapiens AI, optimized for high information density images, complex compositions, and rich visual details. Supports text-to-image and image-to-image with composition preservation. API uses OpenAI-compatible /v1/images/generations endpoint. Standard price $0.003/image.",
+    "capabilities": {
+      "imageGeneration": true
+    },
+    "sources": [
+      "https://agnes-ai.com/zh-Hans/docs/agnes-image-21-flash"
+    ]
+  },
+  "(?:^|[-/])agnes-video-v2\\.0(?=$|@)": {
+    "provider": "agnes",
+    "displayName": "Agnes Video V2.0",
+    "description": "Production-grade video generation model by Sapiens AI. Supports text-to-video, image-to-video, multi-image video, and keyframe animation. Uses async task API (POST /v1/videos to create, GET to poll). Supports up to 441 frames (approx 18s at 24fps). Standard price $0.005/second.",
+    "capabilities": {
+      "videoGeneration": true
+    },
+    "sources": [
+      "https://agnes-ai.com/zh-Hans/docs/agnes-video-v20"
+    ]
   }
 }
