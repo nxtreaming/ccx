@@ -17,6 +17,10 @@ import (
 
 // UpstreamConfig 上游配置
 type UpstreamConfig struct {
+	// ChannelUID 渠道稳定身份标识，创建后不因渠道重排、改名、API Key 变更而改变。
+	// 用于画像表主键、健康证据归档等需要跨配置变更持久追踪的场景。
+	// 加载旧配置时由 ConfigManager 自动补齐并持久化，格式为 "ch_" + 12 位 hex。
+	ChannelUID            string                             `json:"channelUid,omitempty"`
 	BaseURL               string                             `json:"baseUrl"`
 	BaseURLs              []string                           `json:"baseUrls,omitempty"` // 多 BaseURL 支持（failover 模式）
 	APIKeys               []string                           `json:"apiKeys"`

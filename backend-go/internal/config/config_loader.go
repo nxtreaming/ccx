@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -92,6 +94,9 @@ func (cm *ConfigManager) loadConfig() error {
 		needSaveDefaults = true
 	}
 	if cm.migrateFableReasoningMapping() {
+		needSaveDefaults = true
+	}
+	if cm.ensureChannelUIDs() {
 		needSaveDefaults = true
 	}
 
@@ -343,6 +348,42 @@ func (cm *ConfigManager) migrateFableReasoningMapping() bool {
 	apply(cm.config.GeminiUpstream, "Gemini")
 	apply(cm.config.ChatUpstream, "Chat")
 	apply(cm.config.ImagesUpstream, "Images")
+	return updated
+}
+
+// generateChannelUID 生成渠道稳定身份标识。
+// 格式为 "ch_" + 12 位十六进制字符（6 字节随机数），提供 2^48 的碰撞空间。
+func generateChannelUID() string {
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand 在所有受支持的平台上不会失败；此处仅做防御性回退
+		log.Printf("[Config-ChannelUID] 警告: crypto/rand 读取失败: %v，使用时间戳回退", err)
+		return fmt.Sprintf("ch_%012x", time.Now().UnixNano())
+	}
+	return "ch_" + hex.EncodeToString(b)
+}
+
+// ensureChannelUIDs 为所有缺失 ChannelUID 的渠道补齐稳定身份标识。
+// 已有 ChannelUID 的渠道不会被修改，保证渠道重排、改名、改 baseURL 后身份不变。
+// 覆盖全部六类渠道：Messages / Responses / Gemini / Chat / Images / Vectors。
+// 返回 true 表示有新增 UID，需要持久化。
+func (cm *ConfigManager) ensureChannelUIDs() bool {
+	updated := false
+	apply := func(channels []UpstreamConfig, channelKind string) {
+		for i := range channels {
+			if channels[i].ChannelUID == "" {
+				channels[i].ChannelUID = generateChannelUID()
+				updated = true
+				log.Printf("[Config-ChannelUID] %s 渠道 [%d] %s 已分配 ChannelUID: %s", channelKind, i, channels[i].Name, channels[i].ChannelUID)
+			}
+		}
+	}
+	apply(cm.config.Upstream, "Messages")
+	apply(cm.config.ResponsesUpstream, "Responses")
+	apply(cm.config.GeminiUpstream, "Gemini")
+	apply(cm.config.ChatUpstream, "Chat")
+	apply(cm.config.ImagesUpstream, "Images")
+	apply(cm.config.VectorsUpstream, "Vectors")
 	return updated
 }
 
