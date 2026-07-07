@@ -1,3 +1,20 @@
+## [Unreleased]
+
+### 修复
+
+- **discovery 工具调用探测协议选择错误** - discovery: messages 渠道 serviceType 为 responses/chat/gemini 时，工具调用能力探测始终用 Claude 格式导致假阴性；修复为按 serviceType 自动选择 responses/chat/gemini 对应格式
+- **discovery 不再生成 supportedModels 通配白名单** - discovery: 发现流程自动写入 \*alias\* 通配符模式（\*opus\*、\*gpt\* 等）到 supportedModels，实际上渠道无需此限制；删除生成逻辑，apply 时始终清空旧值
+- **discovery 协议探测失败时模型映射为空** - discovery: 用户显式选定 channelKind 但该协议探测失败时，buildDiscoveryMappingRecommendation 返回空映射；降级到任意成功协议的模型重新构建别名映射
+- **thinking probe 误覆写 passbackReasoningContent** - compat: 历史 thinking block 探测返回 400/422 时错误地将 passbackReasoningContent 置为 false；此标志由独立 thinking 预算探测决定，不受历史块探测影响
+- **协议延迟统计含超时模型** - discovery: runDiscoveryProtocolProbe 对所有模型（含超时）的延迟做均值，导致有效延迟数据被拉高；改为仅统计成功模型均值
+- **gemini 渠道缺 reasoningMapping** - discovery: discoveryReasoningMapping 无 gemini case，gemini 渠道 reasoningMapping 始终为空；补充 pro=max、gemini=high、flash=medium
+- **compat evidence 迭代顺序不稳定** - discovery: map 迭代顺序不确定导致证据列表每次不同；改为先排序 key 再遍历
+- **熔断器未将 no_available_account 计为过载** - failover: 上游返回 no_available_account 未触发熔断，新增 FailureClassOverloaded 分类
+
+### 改进
+
+- **保留用户显式选定的渠道协议推荐** - discovery: 用户明确指定 channelKind 时优先保留别名，不受协议探测结果覆盖
+
 ## [v2.9.36] - 2026-07-05
 
 ### 新增

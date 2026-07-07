@@ -169,11 +169,14 @@ func ChannelDiscoveryWithModelFetchers(cfgManager *config.ConfigManager, modelFe
 		recommendation := buildDiscoveryMappingRecommendation(recommendedKind, models.Selected, successByProtocol, req.TargetClients)
 		recommendation.ServiceType = channel.ServiceType
 		recommendation.BaseURLs = append([]string(nil), channel.BaseURLs...)
-		applyDiscoveryModelCapabilityRecommendations(&recommendation, models.Items, successByProtocol[recommendedKind], globalCapabilities)
+		// 实际生效的成功模型列表：当 channelKind 协议无成功模型时（已做过 fallback
+		// 建映射）此处同步用 fallback 结果，避免后续探测从空 successByProtocol 取数。
+		effectiveSuccessModels := discoveryEffectiveSuccessModels(recommendedKind, successByProtocol)
+		applyDiscoveryModelCapabilityRecommendations(&recommendation, models.Items, effectiveSuccessModels, globalCapabilities)
 		capabilities := DiscoveryCapabilitiesResult{}
 		if recommendation.ChannelKind != "" {
-			compatModel := discoveryCompatProbeModel(recommendation.ChannelKind, models.Selected, successByProtocol)
-			visionModel := discoveryVisionProbeModel(recommendation, models.Items, successByProtocol[recommendation.ChannelKind], globalCapabilities, compatModel)
+			compatModel := discoveryCompatProbeModel(recommendation.ChannelKind, models.Selected, effectiveSuccessModels)
+			visionModel := discoveryVisionProbeModel(recommendation, models.Items, effectiveSuccessModels, globalCapabilities, compatModel)
 			compat := runCompatDiagnoseWithProbeModel(channel, recommendation.ChannelKind, channel.APIKeys[0], capabilityTestBaseURL(channel), compatModel)
 			recommendation.Compat = compat.Recommendations
 			recommendation.URLRecommendation = compat.URLRecommendations
@@ -398,21 +401,10 @@ func buildDiscoveryMappingRecommendation(
 	successByProtocol map[string][]string,
 	targetClients []string,
 ) DiscoveryRecommendation {
-	// 优先使用 channelKind 自身协议探测成功的模型；
-	// 当 channelKind 由用户显式指定但该协议未探测到可用模型时（例如 messages
-	// 协议失败而 responses 协议成功），降级到其他成功协议的模型，
-	// 确保别名映射仍能生成。
-	successfulModels := successByProtocol[channelKind]
-	if len(successfulModels) == 0 {
-		for _, protocol := range []string{"responses", "messages", "chat", "gemini"} {
-			if models := successByProtocol[protocol]; len(models) > 0 {
-				successfulModels = models
-				break
-			}
-		}
-	}
+	// 当 channelKind 协议无成功模型时降级到其他成功协议，确保别名映射仍能生成。
+	// 与调用方保持一致，统一走 discoveryEffectiveSuccessModels。
 	successful := make(map[string]struct{})
-	for _, model := range successfulModels {
+	for _, model := range discoveryEffectiveSuccessModels(channelKind, successByProtocol) {
 		successful[model] = struct{}{}
 	}
 
@@ -482,10 +474,8 @@ func discoveryReasoningMapping(channelKind string, modelMapping map[string]strin
 		add("gpt", "max")
 		add("mini", "high")
 		add("codex", "high")
-	case "gemini":
-		add("pro", "max")
-		add("gemini", "high")
-		add("flash", "medium")
+	// gemini: reasoningMapping 暂不推荐，Gemini handler 目前不消费该字段，
+	// 写入配置只会产生无效噪声。待 Gemini thinking 路径完整支持后再启用。
 	}
 	if len(reasoning) == 0 {
 		return nil
@@ -1428,9 +1418,26 @@ func discoverySuccessModelsByProtocol(protocols []DiscoveryProtocolResult) map[s
 	return result
 }
 
-func discoveryCompatProbeModel(channelKind string, selected DiscoverySelectedModels, successByProtocol map[string][]string) string {
+// discoveryEffectiveSuccessModels 返回 channelKind 协议实际探测成功的模型列表；
+// 当该协议无成功模型时（用户显式选择 channelKind 但协议失败），
+// 按优先级降级到其他协议，与 buildDiscoveryMappingRecommendation 的 fallback 逻辑保持一致。
+func discoveryEffectiveSuccessModels(channelKind string, successByProtocol map[string][]string) []string {
+	if models := successByProtocol[channelKind]; len(models) > 0 {
+		return models
+	}
+	for _, protocol := range []string{"responses", "messages", "chat", "gemini"} {
+		if models := successByProtocol[protocol]; len(models) > 0 {
+			return models
+		}
+	}
+	return nil
+}
+
+// discoveryCompatProbeModel 从有效成功模型列表中选出最适合兼容性探测的模型。
+// 接受已经过 fallback 处理的 effectiveModels 列表（由 discoveryEffectiveSuccessModels 计算）。
+func discoveryCompatProbeModel(channelKind string, selected DiscoverySelectedModels, effectiveModels []string) string {
 	successful := make(map[string]struct{})
-	for _, model := range successByProtocol[channelKind] {
+	for _, model := range effectiveModels {
 		if strings.TrimSpace(model) != "" {
 			successful[model] = struct{}{}
 		}
@@ -1441,8 +1448,8 @@ func discoveryCompatProbeModel(channelKind string, selected DiscoverySelectedMod
 			return model
 		}
 	}
-	if models := successByProtocol[channelKind]; len(models) > 0 {
-		return models[0]
+	if len(effectiveModels) > 0 {
+		return effectiveModels[0]
 	}
 	for _, model := range candidates {
 		if strings.TrimSpace(model) != "" {
