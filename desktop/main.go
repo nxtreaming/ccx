@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -87,7 +86,6 @@ func run() error {
 	app := application.New(application.Options{
 		Name:        "CCX Desktop",
 		Description: "CCX desktop shell and core service supervisor",
-		LogLevel:    slog.LevelWarn,
 		Services: []application.Service{
 			application.NewService(desktopService),
 			application.NewService(dockService),

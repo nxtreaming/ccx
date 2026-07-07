@@ -32,8 +32,19 @@ tasks:
     cmds:
       - task: "{{OS}}:run"
 
-  dev:
-    summary: Runs the application in development mode
+  run:embedded:
+    summary: Runs the application with embedded frontend assets
+    env:
+      FRONTEND_DEVSERVER_URL: ""
     cmds:
-      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+      - task: "{{OS}}:run"
 
+  dev:
+    summary: Builds the frontend and runs the embedded desktop shell in development mode
+    cmds:
+      - task: common:build:frontend
+        vars:
+          BUILD_FLAGS: '-buildvcs=false -gcflags=all="-l" -ldflags="-X main.Version=dev -X main.BuildTime=unknown -X main.GitCommit=unknown"'
+          PRODUCTION: "false"
+      - task: build:dev
+      - task: run:embedded
