@@ -1,4 +1,14 @@
-## [Unreleased]
+## [v2.9.37] - 2026-07-07
+
+### 新增
+
+- **渠道选择 Trace 全链路诊断** - scheduler: 新增 channel selection trace，覆盖候选过滤、活跃模型过滤、选择失败原因，支持 `/v1/models/diagnose` 干跑视图与流式日志摘要
+- **响应续思折叠** - responses: 上游截断的 reasoning continuation 在代理层自动折叠，避免客户端收到不完整思考链
+- **渠道配置发现增强** - discovery: 增强渠道配置发现能力，改进推荐算法
+- **瞬态渠道发现** - discovery: 新增瞬态渠道发现机制，支持快速探测上游可用性
+- **断路器温和策略改为新默认** - circuit-breaker: 调整断路器策略预设，温和策略取代激进策略作为新默认值
+- **Agnes 模型描述注册** - registry: 为 Agnes 系列模型补充描述信息
+- **store-update 完成后自动打开下载目录** - skill: store-update 下载完成后自动在文件管理器中打开目标目录
 
 ### 修复
 
@@ -10,6 +20,46 @@
 - **gemini 渠道 reasoningMapping 暂不生成** - discovery: Gemini handler 目前未消费 reasoningMapping，写入配置只产生无效噪声；明确不为 gemini 渠道生成该字段，待 Gemini thinking 路径支持后再启用
 - **compat evidence 迭代顺序不稳定** - discovery: map 迭代顺序不确定导致证据列表每次不同；改为先排序 key 再遍历
 - **熔断器未将 no_available_account 计为过载** - failover: 上游返回 no_available_account 未触发熔断，新增 FailureClassOverloaded 分类
+- **serviceType 派生协议回退优先** - discovery: 当用户未显式指定 channelKind 时，优先使用 serviceType 派生的协议作为回退，而非仅依赖探测成功模型
+- **回退成功模型未传播到后续探测** - discovery: 首次协议探测成功得到的模型在后续探测中被忽略，导致其他协议探测缺少候选；改为将回退成功模型注入所有后续探测
+- **目标协议失败时未从回退协议构建映射** - discovery: 目标协议探测完全失败时 buildDiscoveryMappingRecommendation 返回空；改为从任意成功协议的模型重新构建别名映射
+- **发现流程白名单生成污染 supportedModels** - discovery: 自动写入通配符模式到 supportedModels 实际上限制了渠道可见模型；删除生成逻辑，apply 时始终清空旧值
+- **messages 渠道工具调用探测格式错误** - discovery: 工具调用能力探测始终用 Claude 格式；修复为按 serviceType 自动选择 responses/chat/gemini 对应格式
+- **显式渠道协议推荐被覆盖** - discovery: 用户明确指定 channelKind 时协议推荐仍被探测结果覆盖；改为优先保留用户选择
+- **malformed 响应未触发重试** - failover: 上游返回 malformed 响应体时未触发重试机制；新增重试逻辑
+- **Vue SFC 模块类型声明缺失** - desktop: 前端 typecheck 无法识别 .vue 文件模块声明；补充 env.d.ts 中的 SFC 模块声明
+- **桌面端开发模式未加载嵌入前端资源** - desktop: Wails dev 模式未正确加载 embed.FS 中的前端资源
+- **Wails 开发服务器日志过于冗杂** - desktop: 抑制 Wails dev server 信息级别日志输出
+- **.vue 导入 TS2307 类型错误** - frontend: tsconfig 未包含 env.d.ts 导致 .vue 文件导入报 TS2307
+- **模型列表未暴露上下文窗口** - models: /v1/models 返回结果未包含 context window 信息
+- **模型聚合等待窗口过短** - discovery: 多上游模型聚合的等待窗口不够长，部分慢响应渠道被遗漏
+- **discovery 重复创建 channel models fetcher** - discovery: 每次发现流程重新创建 fetcher 实例，改为复用已有实例
+- **上游临时过载未触发熔断** - backend: 上游返回 503/429 等临时过载状态码时未正确触发断路器
+- **未配置模型时 /v1/models 返回空** - models: 当模型未在上游注册时，回退到渠道配置的模型列表
+- **discovery 通道推荐 UI 对齐** - discovery: 通道推荐 UI 展示对齐设计稿
+- **上下文能力菜单被遮挡** - frontend: 上下文能力下拉菜单被其他元素遮挡
+- **渠道 URL 包含 profile wallet 路径** - frontend: 前端展示渠道 URL 时未剥离 profile wallet 路径前缀
+- **渠道 URL 包含 admin 路径** - frontend: 前端展示渠道 URL 时未剥离 /admin 路径前缀
+- **桌面端上下文模型下拉层级错误** - desktop: 上下文模型下拉菜单被高级选项遮挡，提升层级
+
+### 优化
+
+- **对齐 model registry map keys 格式** - style: 统一模型注册表 map keys 对齐方式，移除测试文件多余空行
+
+### 文档
+
+- **Channel Autopilot 设计文档** - docs: 新增 Channel Autopilot 自动路由设计文档
+- **Channel Autopilot 端点级粒度设计** - docs: 细化 Channel Autopilot 到端点级别的路由粒度设计
+- **Channel Autopilot 时间质量感知** - docs: 为 Channel Autopilot 设计补充时间维度质量感知机制
+- **Channel Autopilot 手动路由意图** - docs: 新增手动路由意图设计，支持用户显式指定路由偏好
+- **Channel Autopilot 成本感知路由** - docs: 新增成本感知路由设计，在质量与成本间自动权衡
+- **Channel Autopilot 原生 image/vector 路由** - docs: 将原生 image 与 vector 渠道纳入自动路由范围
+- **可信本地路由顾问** - docs: 新增可信本地路由顾问设计，基于历史数据提供路由建议
+- **用户价格偏向 (Cost Preference) 设计** - docs: 新增用户价格偏向设计，支持按成本偏好调整路由权重
+- **上游供应商质量差异设计 (ProviderQualityScore)** - docs: 补充上游供应商质量差异评分设计
+- **模型派系偏好 (Model Family Preference) 设计** - docs: 新增模型派系偏好设计，支持用户指定偏好的模型家族
+- **ModelFamily 枚举扩展至 17 个派系** - docs: 模型派系枚举扩展至 17 个，来自模型注册表
+- **Channel Autopilot 验收契约** - docs: 新增 Channel Autopilot 验收测试契约文档
 
 ### 改进
 
