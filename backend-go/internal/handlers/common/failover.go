@@ -213,6 +213,10 @@ func classifyByErrorMessageWithLogTag(bodyBytes []byte, apiType string, logTag s
 	var errResp map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &errResp); err != nil {
 		LogWithTag(logTag, "[%s-Failover-Debug] JSON解析失败: %v, body长度=%d", apiType, err, len(bodyBytes))
+		if isMalformedUpstreamResponseBody(bodyBytes) {
+			LogWithTag(logTag, "[%s-Failover-Debug] 检测到上游返回非 JSON/坏响应体，进行 failover", apiType)
+			return true, false
+		}
 		return false, false
 	}
 
@@ -466,6 +470,10 @@ func classifyDetailsFromMap(m map[string]interface{}) (bool, bool) {
 func classifyMessage(msg string) (bool, bool) {
 	msgLower := strings.ToLower(msg)
 
+	if isMalformedUpstreamResponseMessage(msgLower) {
+		return true, false
+	}
+
 	if isSchemaValidationMessage(msgLower) {
 		return false, false
 	}
@@ -540,6 +548,70 @@ func classifyMessage(msg string) (bool, bool) {
 	}
 
 	return false, false
+}
+
+func isMalformedUpstreamResponseBody(bodyBytes []byte) bool {
+	body := strings.ToLower(strings.TrimSpace(string(bodyBytes)))
+	if body == "" {
+		return false
+	}
+	if strings.HasPrefix(body, "<!doctype html") || strings.HasPrefix(body, "<html") {
+		return true
+	}
+	if strings.Contains(body, "<html") && (strings.Contains(body, "<body") || strings.Contains(body, "</html>")) {
+		return true
+	}
+	return isMalformedUpstreamResponseMessage(body)
+}
+
+func isMalformedUpstreamResponseMessage(msgLower string) bool {
+	msgLower = strings.ToLower(strings.TrimSpace(msgLower))
+	if msgLower == "" {
+		return false
+	}
+
+	responseMarkers := []string{
+		"bad_response_body",
+		"bad response body",
+		"read_response_body_failed",
+		"read response body failed",
+		"invalid json response",
+		"malformed json response",
+		"response body is not valid json",
+		"response is not valid json",
+		"upstream response is not valid json",
+		"json decode error",
+		"json.decoder.jsondecodeerror",
+		"json parse error",
+	}
+	for _, marker := range responseMarkers {
+		if strings.Contains(msgLower, marker) {
+			return true
+		}
+	}
+
+	parseMarkers := []string{
+		"expecting ',' delimiter",
+		"expecting value",
+		"invalid character '<'",
+		"unexpected end of json input",
+		"unexpected eof",
+		"unterminated string",
+		"extra data:",
+	}
+	for _, marker := range parseMarkers {
+		if !strings.Contains(msgLower, marker) {
+			continue
+		}
+		if strings.Contains(msgLower, "openaiexception") ||
+			strings.Contains(msgLower, "badrequesterror") ||
+			strings.Contains(msgLower, "upstream") ||
+			strings.Contains(msgLower, "response") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // classifyErrorType 基于错误类型分类

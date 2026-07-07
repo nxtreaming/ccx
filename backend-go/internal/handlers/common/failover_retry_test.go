@@ -514,6 +514,20 @@ func TestShouldRetryWithNextKey_BusinessCodeOnlyErrors(t *testing.T) {
 			wantQuota:    false,
 		},
 		{
+			name:         "upstream malformed json wrapper on 400 failovers as transient",
+			statusCode:   400,
+			body:         `{"error":{"message":"BadRequestError: OpenAIException - {\"error\":{\"message\":\"Expecting ',' delimiter: line 1 column 107 (char 106)\",\"type\":\"BadRequestError\",\"param\":null,\"code\":400}}"}}`,
+			wantFailover: true,
+			wantQuota:    false,
+		},
+		{
+			name:         "upstream html fallback on 400 failovers as transient",
+			statusCode:   400,
+			body:         `<!doctype html><html><body><h1>Service Temporarily Unavailable</h1></body></html>`,
+			wantFailover: true,
+			wantQuota:    false,
+		},
+		{
 			name:         "new-api sensitive words code blocks failover even on 500",
 			statusCode:   500,
 			body:         `{"error":{"code":"violation_fee.grok.csam","message":"error","type":"new_api_error"}}`,
@@ -670,7 +684,6 @@ func TestIsUpstreamAccountPoolUnavailable(t *testing.T) {
 		})
 	}
 }
-
 
 func TestIsUpstreamTemporarilyOverloaded(t *testing.T) {
 	tests := []struct {
