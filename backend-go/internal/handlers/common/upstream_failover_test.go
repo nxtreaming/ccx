@@ -195,131 +195,148 @@ func TestTryUpstreamWithAllKeysRejectsOversizedVisionFallback(t *testing.T) {
 func TestTryUpstreamWithAllKeysOverloadedOpensCircuitAndCooldown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	upstreamBody := `{"error":{"message":"system cpu overloaded (current: 92.4%, threshold: 90%)","type":"new_api_error","param":"","code":"system_cpu_overloaded"}}`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(upstreamBody))
-	}))
-	defer server.Close()
-
-	cfg := config.Config{
-		Upstream: []config.UpstreamConfig{
-			{
-				Name:        "overloaded-messages",
-				BaseURL:     server.URL,
-				APIKeys:     []string{"sk-overloaded"},
-				Status:      "active",
-				ServiceType: "openai",
-			},
+	tests := []struct {
+		name         string
+		upstreamBody string
+	}{
+		{
+			name:         "system_cpu_overloaded",
+			upstreamBody: `{"error":{"message":"system cpu overloaded (current: 92.4%, threshold: 90%)","type":"new_api_error","param":"","code":"system_cpu_overloaded"}}`,
+		},
+		{
+			name:         "no_available_account",
+			upstreamBody: `{"error":{"message":"The service is temporarily unavailable. Please try again later.","type":"server_error","param":"","code":"no_available_account"}}`,
 		},
 	}
 
-	tmpDir, err := os.MkdirTemp("", "overloaded-failover-test-*")
-	if err != nil {
-		t.Fatalf("创建临时目录失败: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(tt.upstreamBody))
+			}))
+			defer server.Close()
 
-	configPath := filepath.Join(tmpDir, "config.json")
-	cfgData, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatalf("序列化配置失败: %v", err)
-	}
-	if err := os.WriteFile(configPath, cfgData, 0644); err != nil {
-		t.Fatalf("写入配置失败: %v", err)
-	}
-
-	cfgManager, err := config.NewConfigManager(configPath, "")
-	if err != nil {
-		t.Fatalf("创建配置管理器失败: %v", err)
-	}
-	defer cfgManager.Close()
-
-	messagesMetrics := metrics.NewMetricsManager()
-	responsesMetrics := metrics.NewMetricsManager()
-	geminiMetrics := metrics.NewMetricsManager()
-	chatMetrics := metrics.NewMetricsManager()
-	imagesMetrics := metrics.NewMetricsManager()
-	defer messagesMetrics.Stop()
-	defer responsesMetrics.Stop()
-	defer geminiMetrics.Stop()
-	defer chatMetrics.Stop()
-	defer imagesMetrics.Stop()
-
-	channelScheduler := scheduler.NewChannelScheduler(
-		cfgManager,
-		messagesMetrics,
-		responsesMetrics,
-		geminiMetrics,
-		chatMetrics,
-		imagesMetrics,
-		session.NewTraceAffinityManager(),
-		warmup.NewURLManager(30*time.Second, 3),
-	)
-	rateLimitManager := ratelimit.NewManager()
-	defer rateLimitManager.Stop()
-	channelScheduler.SetRateLimitManager(rateLimitManager)
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5.5"}`))
-
-	upstream := &cfg.Upstream[0]
-	handled, successKey, _, failoverErr, _, lastErr := TryUpstreamWithAllKeys(
-		c,
-		config.NewEnvConfig(),
-		cfgManager,
-		channelScheduler,
-		scheduler.ChannelKindMessages,
-		"Messages",
-		messagesMetrics,
-		upstream,
-		[]warmup.URLLatencyResult{{URL: upstream.BaseURL}},
-		[]byte(`{"model":"gpt-5.5","messages":[]}`),
-		nil,
-		false,
-		func(upstream *config.UpstreamConfig, failedKeys map[string]bool) (string, error) {
-			if failedKeys[upstream.APIKeys[0]] {
-				return "", nil
+			cfg := config.Config{
+				Upstream: []config.UpstreamConfig{
+					{
+						Name:        "overloaded-messages",
+						BaseURL:     server.URL,
+						APIKeys:     []string{"sk-overloaded"},
+						Status:      "active",
+						ServiceType: "openai",
+					},
+				},
 			}
-			return upstream.APIKeys[0], nil
-		},
-		func(c *gin.Context, upstreamCopy *config.UpstreamConfig, apiKey string) (*http.Request, error) {
-			return http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstreamCopy.BaseURL, strings.NewReader(`{}`))
-		},
-		func(apiKey string) {},
-		nil,
-		nil,
-		func(c *gin.Context, resp *http.Response, upstreamCopy *config.UpstreamConfig, apiKey string, actualRequestBody []byte) (*types.Usage, error) {
-			t.Fatal("overloaded response should not call handleSuccess")
-			return nil, nil
-		},
-		"gpt-5.5",
-		"",
-		0,
-		channelScheduler.GetChannelLogStore(scheduler.ChannelKindMessages),
-	)
 
-	if handled {
-		t.Fatal("overloaded channel should return unhandled to allow channel failover")
-	}
-	if successKey != "" {
-		t.Fatalf("successKey = %q, want empty", successKey)
-	}
-	if failoverErr == nil || failoverErr.Status != http.StatusServiceUnavailable || string(failoverErr.Body) != upstreamBody {
-		t.Fatalf("failoverErr = %#v, want original 503 body", failoverErr)
-	}
-	if lastErr == nil {
-		t.Fatal("lastErr should record upstream 503")
-	}
+			tmpDir, err := os.MkdirTemp("", "overloaded-failover-test-*")
+			if err != nil {
+				t.Fatalf("创建临时目录失败: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
 
-	serviceType := scheduler.NormalizedMetricsServiceType(scheduler.ChannelKindMessages, upstream.ServiceType)
-	if got := messagesMetrics.GetKeyCircuitState(upstream.BaseURL, upstream.APIKeys[0], serviceType); got != metrics.CircuitStateOpen {
-		t.Fatalf("circuit state = %v, want %v", got, metrics.CircuitStateOpen)
-	}
-	if deferred, _, cooldown := channelScheduler.ShouldDeferForRateLimit(scheduler.ChannelKindMessages, 0, "", ratelimit.Config{}, time.Now()); !deferred || !cooldown {
-		t.Fatalf("channel cooldown deferred=%v cooldown=%v, want both true", deferred, cooldown)
+			configPath := filepath.Join(tmpDir, "config.json")
+			cfgData, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatalf("序列化配置失败: %v", err)
+			}
+			if err := os.WriteFile(configPath, cfgData, 0644); err != nil {
+				t.Fatalf("写入配置失败: %v", err)
+			}
+
+			cfgManager, err := config.NewConfigManager(configPath, "")
+			if err != nil {
+				t.Fatalf("创建配置管理器失败: %v", err)
+			}
+			defer cfgManager.Close()
+
+			messagesMetrics := metrics.NewMetricsManager()
+			responsesMetrics := metrics.NewMetricsManager()
+			geminiMetrics := metrics.NewMetricsManager()
+			chatMetrics := metrics.NewMetricsManager()
+			imagesMetrics := metrics.NewMetricsManager()
+			defer messagesMetrics.Stop()
+			defer responsesMetrics.Stop()
+			defer geminiMetrics.Stop()
+			defer chatMetrics.Stop()
+			defer imagesMetrics.Stop()
+
+			channelScheduler := scheduler.NewChannelScheduler(
+				cfgManager,
+				messagesMetrics,
+				responsesMetrics,
+				geminiMetrics,
+				chatMetrics,
+				imagesMetrics,
+				session.NewTraceAffinityManager(),
+				warmup.NewURLManager(30*time.Second, 3),
+			)
+			rateLimitManager := ratelimit.NewManager()
+			defer rateLimitManager.Stop()
+			channelScheduler.SetRateLimitManager(rateLimitManager)
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5.5"}`))
+
+			upstream := &cfg.Upstream[0]
+			handled, successKey, _, failoverErr, _, lastErr := TryUpstreamWithAllKeys(
+				c,
+				config.NewEnvConfig(),
+				cfgManager,
+				channelScheduler,
+				scheduler.ChannelKindMessages,
+				"Messages",
+				messagesMetrics,
+				upstream,
+				[]warmup.URLLatencyResult{{URL: upstream.BaseURL}},
+				[]byte(`{"model":"gpt-5.5","messages":[]}`),
+				nil,
+				false,
+				func(upstream *config.UpstreamConfig, failedKeys map[string]bool) (string, error) {
+					if failedKeys[upstream.APIKeys[0]] {
+						return "", nil
+					}
+					return upstream.APIKeys[0], nil
+				},
+				func(c *gin.Context, upstreamCopy *config.UpstreamConfig, apiKey string) (*http.Request, error) {
+					return http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstreamCopy.BaseURL, strings.NewReader(`{}`))
+				},
+				func(apiKey string) {},
+				nil,
+				nil,
+				func(c *gin.Context, resp *http.Response, upstreamCopy *config.UpstreamConfig, apiKey string, actualRequestBody []byte) (*types.Usage, error) {
+					t.Fatal("overloaded response should not call handleSuccess")
+					return nil, nil
+				},
+				"gpt-5.5",
+				"",
+				0,
+				channelScheduler.GetChannelLogStore(scheduler.ChannelKindMessages),
+			)
+
+			if handled {
+				t.Fatal("overloaded channel should return unhandled to allow channel failover")
+			}
+			if successKey != "" {
+				t.Fatalf("successKey = %q, want empty", successKey)
+			}
+			if failoverErr == nil || failoverErr.Status != http.StatusServiceUnavailable || string(failoverErr.Body) != tt.upstreamBody {
+				t.Fatalf("failoverErr = %#v, want original 503 body", failoverErr)
+			}
+			if lastErr == nil {
+				t.Fatal("lastErr should record upstream 503")
+			}
+
+			serviceType := scheduler.NormalizedMetricsServiceType(scheduler.ChannelKindMessages, upstream.ServiceType)
+			if got := messagesMetrics.GetKeyCircuitState(upstream.BaseURL, upstream.APIKeys[0], serviceType); got != metrics.CircuitStateOpen {
+				t.Fatalf("circuit state = %v, want %v", got, metrics.CircuitStateOpen)
+			}
+			if deferred, _, cooldown := channelScheduler.ShouldDeferForRateLimit(scheduler.ChannelKindMessages, 0, "", ratelimit.Config{}, time.Now()); !deferred || !cooldown {
+				t.Fatalf("channel cooldown deferred=%v cooldown=%v, want both true", deferred, cooldown)
+			}
+		})
 	}
 }
 

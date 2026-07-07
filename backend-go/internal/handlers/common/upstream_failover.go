@@ -433,6 +433,7 @@ func TryUpstreamWithAllKeys(
 
 				shouldFailover, isQuotaRelated := ShouldRetryWithNextKeyWithLogTag(resp.StatusCode, respBodyBytes, cfgManager.GetFuzzyModeEnabled(), apiType, RequestLogTag(c))
 				isTemporarilyOverloaded := IsUpstreamTemporarilyOverloaded(respBodyBytes)
+				isAccountPoolUnavailable := IsUpstreamAccountPoolUnavailable(respBodyBytes)
 
 				// 检查是否应永久拉黑该 Key（认证/权限/余额错误）
 				blResult := ShouldBlacklistKey(resp.StatusCode, respBodyBytes)
@@ -457,7 +458,7 @@ func TryUpstreamWithAllKeys(
 					if isQuotaRelated {
 						failureClass = metrics.FailureClassQuota
 					}
-					if isTemporarilyOverloaded {
+					if isTemporarilyOverloaded || isAccountPoolUnavailable {
 						failureClass = metrics.FailureClassOverloaded
 					}
 					metricsManager.RecordRequestFinalizeFailureWithClass(currentBaseURL, apiKey, metricsServiceType, requestID, failureClass)
@@ -489,7 +490,7 @@ func TryUpstreamWithAllKeys(
 							failedQuotaGroups[selection.QuotaGroup] = true
 						}
 					}
-					if IsUpstreamAccountPoolUnavailable(respBodyBytes) {
+					if isAccountPoolUnavailable {
 						channelScheduler.MarkChannelCooldown(kind, channelIndex, upstreamAccountPoolCooldown)
 						RequestLogf(c, "[%s-Channel] 渠道 [%d] %s 上游账号池不可用，冷却 %s 并尝试下一个渠道", apiType, channelIndex, upstream.Name, upstreamAccountPoolCooldown)
 						return false, "", 0, lastFailoverError, nil, lastError
