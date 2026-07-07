@@ -415,6 +415,7 @@ type ModelProfile struct {
     UpdatedAt   time.Time `json:"updatedAt"`
 
     // ── 能力 ──
+    ModelFamily    ModelFamily `json:"modelFamily"`   // 派系：claude/openai/gemini/deepseek/…，从注册表推导
     QualityTier   QualityTier `json:"qualityTier"`
     SpeedTier     SpeedTier   `json:"speedTier"`
     ContextTokens int         `json:"contextTokens"`
@@ -1864,29 +1865,116 @@ Score = w_quality * qualityScore
       + w_cost * costScore
       + w_savings * savingsScore
       + w_tier_match * tierMatchBonus
+      + w_family * familyPreferenceScore   // 新增：模型派系偏好软约束
       - penalty
 
 其中：
-  qualityScore:   low=1, normal=2, high=3, premium=4
-  stabilityScore: unstable=0, normal=1, stable=2
-  speedScore:     slow=0, normal=1, fast=2
-  costScore:      expensive=0, normal=1, cheap=2, free=3
-  savingsScore:   normalizeCheapest(estimatedRequestCost)，越便宜越高，仅在满足硬约束后参与
+  qualityScore:          low=1, normal=2, high=3, premium=4
+  stabilityScore:        unstable=0, normal=1, stable=2
+  speedScore:            slow=0, normal=1, fast=2
+  costScore:             expensive=0, normal=1, cheap=2, free=3
+  savingsScore:          normalizeCheapest(estimatedRequestCost)，越便宜越高，仅在满足硬约束后参与
+  familyPreferenceScore: 见下方"模型派系偏好"章节
 
   tierMatchBonus: 渠道画像标签匹配策略优先标签时 +10
   penalty:        healthState=degraded 时 -5, limited 时 -20
 
-  权重根据 TaskClass 不同：
-  Supervisor: w_quality=3, w_stability=2, w_speed=1, w_cost=0, w_savings=0.5
-  Worker:     w_quality=1, w_stability=1, w_speed=2, w_cost=2, w_savings=3
-  Lightweight:w_quality=0, w_stability=1, w_speed=3, w_cost=2, w_savings=3
-  Vision:     w_quality=2, w_stability=2, w_speed=1, w_cost=1, w_savings=1
-  ImageGeneration: w_quality=1, w_stability=2, w_speed=1, w_cost=2, w_savings=2
-  Embedding:  w_quality=0, w_stability=2, w_speed=2, w_cost=3, w_savings=3
-  LongContext: w_quality=2, w_stability=2, w_speed=1, w_cost=0, w_savings=1
+  权重根据 TaskClass 不同（w_family 统一为 0.2，确保稳定性差异始终覆盖派系偏好）：
+  Supervisor:      w_quality=3, w_stability=2, w_speed=1, w_cost=0, w_savings=0.5, w_family=0.2
+  Worker:          w_quality=1, w_stability=1, w_speed=2, w_cost=2, w_savings=3,   w_family=0.2
+  Lightweight:     w_quality=0, w_stability=1, w_speed=3, w_cost=2, w_savings=3,   w_family=0.1
+  Vision:          w_quality=2, w_stability=2, w_speed=1, w_cost=1, w_savings=1,   w_family=0.2
+  ImageGeneration: w_quality=1, w_stability=2, w_speed=1, w_cost=2, w_savings=2,   w_family=0.1
+  Embedding:       w_quality=0, w_stability=2, w_speed=2, w_cost=3, w_savings=3,   w_family=0.0
+  LongContext:     w_quality=2, w_stability=2, w_speed=1, w_cost=0, w_savings=1,   w_family=0.2
 ```
 
-文本类请求的 `estimatedRequestCost` 使用请求级 token 估算：
+**w_family 权重约束验证**：`w_stability × (stable=2 − unstable=0) = 2.0`，而 `w_family × max(familyPreferenceScore) ≤ 0.2 × 3 = 0.6`。因此 stable 的非偏好派系（+2.0）始终胜过 unstable 的偏好派系（+0.6），派系偏好只在同等稳定性下才决定顺序。
+
+### 5.5 模型派系偏好 (Model Family Preference)
+
+用户在不同派系的模型（Claude / GPT / Gemini / DeepSeek 等）之间有主观偏好，且偏好本身与渠道质量无关。本章定义派系偏好的数据模型、推导逻辑和排序语义。
+
+#### 5.5.1 ModelFamily 枚举与推导
+
+```go
+// backend-go/internal/autopilot/model_family.go
+
+type ModelFamily string
+
+const (
+    ModelFamilyClaude    ModelFamily = "claude"    // claude-*
+    ModelFamilyOpenAI    ModelFamily = "openai"    // gpt-*, o1-*, o3-*, codex-*
+    ModelFamilyGemini    ModelFamily = "gemini"    // gemini-*
+    ModelFamilyDeepSeek  ModelFamily = "deepseek"  // deepseek-*
+    ModelFamilyQwen      ModelFamily = "qwen"      // qwen-*
+    ModelFamilyGLM       ModelFamily = "glm"       // glm-*, chatglm-*
+    ModelFamilyMiniMax   ModelFamily = "minimax"   // abab-*, minimax-*
+    ModelFamilyKimi      ModelFamily = "kimi"      // moonshot-*, kimi-*
+    ModelFamilyMistral   ModelFamily = "mistral"   // mistral-*, mixtral-*
+    ModelFamilyLocal     ModelFamily = "local"     // ollama/lmstudio/llama-server
+    ModelFamilyUnknown   ModelFamily = "unknown"
+)
+
+// InferModelFamily 从模型 ID 前缀推导派系，注册表显式标注优先
+func InferModelFamily(modelID string) ModelFamily {
+    // 优先从 BuiltinUpstreamModelCapabilities 的 Family 字段读取
+    // 回退到前缀匹配：claude-* → claude，gpt-*/o*-* → openai，以此类推
+}
+```
+
+`ModelFamily` 写入 `ModelProfile.ModelFamily`，从模型注册表推导，无需额外探测。
+
+#### 5.5.2 familyPreferenceScore 计算
+
+```go
+// 用户配置的派系偏好顺序，例如 ["claude", "openai", "gemini"]
+// familyPreferenceScore：越靠前分越高，不在列表中得 0 分
+func CalcFamilyPreferenceScore(family ModelFamily, prefs []ModelFamily) float64 {
+    n := len(prefs)
+    for i, f := range prefs {
+        if f == family {
+            return float64(n - i) // 第1位得n分，第2位得n-1分，…最后1位得1分
+        }
+    }
+    return 0
+}
+```
+
+**示例**：偏好顺序 `["claude", "openai", "gemini"]`（n=3）
+
+| 派系 | familyPreferenceScore | × w_family=0.2 | 对总分影响 |
+|------|----------------------|----------------|-----------|
+| claude | 3 | +0.6 | 同等条件下最优先 |
+| openai | 2 | +0.4 | 次优先 |
+| gemini | 1 | +0.2 | 再次 |
+| deepseek / 其他 | 0 | +0.0 | 无偏好加成 |
+
+当两个 stable 的 premium 渠道并列，claude 比 openai 多 +0.2，决定顺序；但 stable openai 比 unstable claude 多 2.0 - 0.6 = +1.4，稳定性压倒派系偏好。
+
+#### 5.5.3 按 TaskClass 独立配置
+
+不同场景对派系的感知不同。推荐全局配置 + 任务级 override：
+
+```json
+"modelFamilyPreference": {
+  "enabled": true,
+  "weight": 0.2,
+  "globalOrder": ["claude", "openai", "gemini"],
+  "perTaskClass": {
+    "supervisor":  ["claude", "openai"],
+    "worker":      ["openai", "claude", "gemini", "deepseek"],
+    "lightweight": ["openai", "gemini", "claude"],
+    "vision":      ["claude", "openai", "gemini"]
+  }
+}
+```
+
+规则：
+- `perTaskClass` 中存在的 TaskClass 使用其专属顺序；否则回退 `globalOrder`。
+- `enabled=false` 时 `familyPreferenceScore` 恒为 0，评分退化为原有公式。
+- `weight` 覆盖全局 `w_family`；可在管理面板调整（建议范围 0.1 ~ 0.5）。
+- Embedding / ImageGeneration 默认 `w_family=0.0`（上游原生端点选择优先技术兼容性，派系偏好意义不大）。 `estimatedRequestCost` 使用请求级 token 估算：
 
 ```text
 estimatedRequestCost =
@@ -2714,6 +2802,18 @@ SmartRouter：按任务类型、硬约束、实时质量和有效成本排序
       "originTieBreakerWeight": 0.2,
       "showLowerTierOutperforming": true,
       "warnMixedOriginChannel": true
+    },
+
+    "modelFamilyPreference": {
+      "enabled": true,
+      "weight": 0.2,
+      "globalOrder": ["claude", "openai", "gemini"],
+      "perTaskClass": {
+        "supervisor":  ["claude", "openai"],
+        "worker":      ["openai", "claude", "gemini", "deepseek"],
+        "lightweight": ["openai", "gemini", "claude"],
+        "vision":      ["claude", "openai", "gemini"]
+      }
     },
 
     "manualIntent": {
