@@ -905,6 +905,8 @@ func main() {
 			autopilot.RegisterManualIntentRoutes(apiGroup, autopilotManager.ManualIntentStore())
 			// 驾驶舱只读聚合 API
 			autopilot.RegisterCockpitRoutes(apiGroup, autopilotManager)
+			// Advisor shadow 决策记录 API
+			autopilot.RegisterAdvisorRoutes(apiGroup, autopilotManager.AdvisorDecisionStore())
 		}
 
 		// Fuzzy 模式设置

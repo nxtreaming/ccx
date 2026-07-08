@@ -123,6 +123,11 @@ type Manager struct {
 	localRuntimeStore *LocalRuntimeStore
 	manualIntentStore *ManualIntentStore
 
+	// Phase 1 新组件：advisor shadow + 决策存储 + 用量计量
+	advisorStore *AdvisorDecisionStore
+	advisor      *TrustedRoutingAdvisor
+	usageMeter   *UsageMeter
+
 	cancel func()
 	wg     sync.WaitGroup
 }
@@ -158,6 +163,11 @@ func NewManager(
 		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 ManualIntentStore 失败: %w", err)
 	}
 
+	advisorStore, asErr := NewAdvisorDecisionStoreWithDB(db)
+	if asErr != nil {
+		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 AdvisorDecisionStore 失败: %w", asErr)
+	}
+
 	// 初始化 Phase 1 新组件（shadow/read-only，不修改调度链路）
 	timeBucketStore := NewTimeBucketStore()
 	return &Manager{
@@ -177,6 +187,10 @@ func NewManager(
 		subscriptionStore: subStore,
 		localRuntimeStore: lrStore,
 		manualIntentStore: miStore,
+
+		advisorStore: advisorStore,
+		advisor:      NewTrustedRoutingAdvisor(),
+		usageMeter:   NewUsageMeter(UsageMeterConfig{QuietLogs: cfg.QuietLogs}, timeBucketStore),
 	}, nil
 }
 
@@ -205,6 +219,12 @@ func (m *Manager) ObserveRateLimitSignal(
 		return
 	}
 	now := time.Now()
+
+	// 记录请求到 UsageMeter（本地计量兜底，Unit=requests）
+	// token 数量在代理层难以精确获取，暂按请求数计量
+	if m.usageMeter != nil {
+		m.usageMeter.RecordRequest(endpointUID, 0)
+	}
 
 	// 构造限速信号喂给 Discoverer
 	signal := RateLimitSignal{
@@ -329,6 +349,11 @@ func (m *Manager) Close() error {
 			errs = append(errs, err)
 		}
 	}
+	if m.advisorStore != nil {
+		if err := m.advisorStore.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("[Autopilot-Close] 关闭 store 出错: %v", errs)
 	}
@@ -353,6 +378,21 @@ func (m *Manager) LocalRuntimeStore() *LocalRuntimeStore {
 // ManualIntentStore 返回内部 ManualIntentStore 引用。
 func (m *Manager) ManualIntentStore() *ManualIntentStore {
 	return m.manualIntentStore
+}
+
+// AdvisorDecisionStore 返回内部 AdvisorDecisionStore 引用。
+func (m *Manager) AdvisorDecisionStore() *AdvisorDecisionStore {
+	return m.advisorStore
+}
+
+// Advisor 返回内部 TrustedRoutingAdvisor 引用。
+func (m *Manager) Advisor() *TrustedRoutingAdvisor {
+	return m.advisor
+}
+
+// UsageMeter 返回内部 UsageMeter 引用。
+func (m *Manager) UsageMeter() *UsageMeter {
+	return m.usageMeter
 }
 
 // runWorker 后台循环主逻辑。
@@ -396,6 +436,7 @@ func (m *Manager) collectAll() {
 	}
 
 	var profiled, diagnosed int
+	var allProfiles []*KeyEndpointProfile
 	for _, entry := range entries {
 		for _, apiKey := range entry.APIKeys {
 			profile := m.profiler.DeriveEndpointProfile(
@@ -471,10 +512,19 @@ func (m *Manager) collectAll() {
 				}
 			}
 
+			// 用量窗口：从 UsageMeter 计算并写入画像
+			if m.usageMeter != nil {
+				profile.UsageWindows = m.usageMeter.ComputeWindows(profile.EndpointUID)
+			}
+
 			if err := m.store.Upsert(&profile); err != nil {
 				log.Printf("[Autopilot-Worker] 警告: 写入画像失败 endpoint=%s: %v", profile.EndpointUID, err)
 			}
 			diagnosed++
+
+			// 收集指针用于订阅级能力推导
+			p := profile
+			allProfiles = append(allProfiles, &p)
 		}
 	}
 
@@ -482,6 +532,9 @@ func (m *Manager) collectAll() {
 	if err := m.store.Flush(); err != nil {
 		log.Printf("[Autopilot-Worker] 警告: flush 失败: %v", err)
 	}
+
+	// ── 订阅级能力推导 + drift 检测（shadow，不修改调度）──
+	m.updateSubscriptionCapabilities(allProfiles)
 
 	elapsed := time.Since(start)
 	if !m.cfg.QuietLogs {
@@ -580,4 +633,78 @@ func (m *Manager) collectSignals(baseURL, apiKey, serviceType string) EndpointSi
 	signals.DisabledKeys = 0
 
 	return signals
+}
+
+// updateSubscriptionCapabilities 按 SubscriptionUID 分组调 BuildSharedCapability + DetectCapabilityDrift。
+// drift 写入 endpoint 画像的不一致诊断（复用 EndpointInconsistency 结构）。
+// Phase 1 shadow：不修改调度链路，仅更新画像字段供 UI 展示。
+func (m *Manager) updateSubscriptionCapabilities(profiles []*KeyEndpointProfile) {
+	if m.subscriptionStore == nil || len(profiles) == 0 {
+		return
+	}
+
+	// 构建 channelUID → 订阅 UID 映射
+	allSubs := m.subscriptionStore.ListAll()
+	channelToSub := make(map[string]string) // channelUID → subscriptionUID
+	for _, sub := range allSubs {
+		for _, chUID := range sub.LinkedChannelUIDs {
+			channelToSub[chUID] = sub.SubscriptionUID
+		}
+	}
+
+	// 按 subscriptionUID 分组 endpoints
+	subEndpoints := make(map[string][]*KeyEndpointProfile) // subscriptionUID → endpoints
+	for _, ep := range profiles {
+		subUID, ok := channelToSub[ep.ChannelUID]
+		if !ok {
+			continue
+		}
+		subEndpoints[subUID] = append(subEndpoints[subUID], ep)
+	}
+
+	driftWarnings := 0
+	for subUID, eps := range subEndpoints {
+		shared := BuildSharedCapability(eps)
+		if shared == nil {
+			continue
+		}
+
+		// 写入订阅画像
+		subProfile := m.subscriptionStore.Get(subUID)
+		if subProfile != nil {
+			subProfile.SharedCapability = shared
+			if err := m.subscriptionStore.Update(subProfile); err != nil {
+				log.Printf("[Autopilot-Worker] 警告: 更新订阅共享能力失败 uid=%s: %v", subUID, err)
+			}
+		}
+
+		// 检测 drift 并写入 endpoint 画像
+		for _, ep := range eps {
+			ep.InheritedFromSubscription = true
+			diffs := DetectCapabilityDrift(shared, ep)
+			if len(diffs) > 0 {
+				for _, d := range diffs {
+					ep.EndpointInconsistencies = append(ep.EndpointInconsistencies, EndpointInconsistency{
+						Dimension: "subscription_drift",
+						Detail:    d,
+						Severity:  "warning",
+					})
+					driftWarnings++
+				}
+			}
+			if err := m.store.Upsert(ep); err != nil {
+				log.Printf("[Autopilot-Worker] 警告: 写入 drift 画像失败 endpoint=%s: %v", ep.EndpointUID, err)
+			}
+		}
+	}
+
+	// 再次落盘（drift 写入的画像变更）
+	if driftWarnings > 0 {
+		if err := m.store.Flush(); err != nil {
+			log.Printf("[Autopilot-Worker] 警告: drift 画像 flush 失败: %v", err)
+		}
+		if !m.cfg.QuietLogs {
+			log.Printf("[Autopilot-Worker] 订阅能力推导: 订阅=%d, drift 警告=%d", len(subEndpoints), driftWarnings)
+		}
+	}
 }

@@ -73,6 +73,11 @@ type EndpointDetailItem struct {
 	ModelListHash   string             `json:"modelListHash,omitempty"`
 	GroupChangedAt  string             `json:"groupChangedAt,omitempty"`
 	LastGroupChange *GroupChangeResult `json:"lastGroupChange,omitempty"`
+
+	// Phase 1 新增字段：用量窗口 + 订阅继承 + 能力漂移（向后兼容，omitempty）
+	UsageWindows              []UsageWindow           `json:"usageWindows,omitempty"`
+	InheritedFromSubscription bool                    `json:"inheritedFromSubscription,omitempty"`
+	EndpointInconsistencies   []EndpointInconsistency `json:"endpointInconsistencies,omitempty"`
 }
 
 // EndpointsResponse GET /api/health-center/channels/:channelUid/endpoints 返回结构。
@@ -201,6 +206,11 @@ func handleEndpoints(mgr *Manager) gin.HandlerFunc {
 				// Phase 1 新增：分组变更
 				ModelListHash:   p.ModelListHash,
 				LastGroupChange: p.LastGroupChange,
+
+				// Phase 1 新增：用量窗口 + 订阅继承 + 能力漂移
+				UsageWindows:              p.UsageWindows,
+				InheritedFromSubscription: p.InheritedFromSubscription,
+				EndpointInconsistencies:   p.EndpointInconsistencies,
 			}
 			if p.LastSuccessAt != nil {
 				item.LastSuccessAt = p.LastSuccessAt.Format("2006-01-02T15:04:05Z07:00")

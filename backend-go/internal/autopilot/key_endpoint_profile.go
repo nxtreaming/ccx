@@ -226,8 +226,9 @@ type KeyEndpointProfile struct {
 	UsageWindows []UsageWindow `json:"usageWindows,omitempty"` // 该 endpoint 的用量窗口列表
 
 	// ── 诊断 ──
-	HealthEvidence  []string        `json:"healthEvidence"` // 诊断证据列表
-	SuggestedAction SuggestedAction `json:"suggestedAction"`
+	HealthEvidence          []string                `json:"healthEvidence"` // 诊断证据列表
+	SuggestedAction         SuggestedAction         `json:"suggestedAction"`
+	EndpointInconsistencies []EndpointInconsistency `json:"endpointInconsistencies,omitempty"` // 能力漂移诊断
 
 	// ── 元数据 ──
 	Source     string  `json:"source"`     // l1_passive | l2_probe | capability_test | manual
