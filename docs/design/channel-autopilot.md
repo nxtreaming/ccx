@@ -3531,18 +3531,18 @@ Autopilot 需要一个后台 worker，但必须是保守、可停止、可观测
 
 **Phase 3A 状态（2026-07-09）**：低风险、不改真实路由语义的子集已完成并接入真实链路——`Manager.collectAll()` 新旧画像对比产出变更事件（`DetectProfileChanges`）、`ProfileChangelogStore`（环形内存 + SQLite，30 天机会性清理）、`EventHub` 内存 pub/sub、`GET /api/health-center/changelog`（历史）+ `GET /api/health-center/events`（WebSocket 实时推送）、`AutoDiscoveryRunner` 发布 `discovery_completed`/`auto_mapping_applied`、前端 `ProfileChangelogTimeline.vue` 接入健康中心页并支持断线自动重连。均为只读展示，未修改 `SmartRouter`/`EndpointAttemptPolicy` 调度逻辑。落地时顺带发现并修复一个真实缺口：浏览器原生 WebSocket 无法设自定义 header，为此给 `middleware.getAPIKey` 增加了 `Sec-WebSocket-Protocol` 鉴权回退（业界标准做法，仅新增一个 key 来源，不降低现有校验）。
 
-**Phase 3B（暂缓）**：模型自动映射、自动恢复探测、晋升/降级机制会直接改变真实调度决策，风险明显高于 3A；且依赖 §12.2 P1.5 的 SQLite schema version / 版本化 migration / `OriginType`&`OriginTier` 旧配置 backfill 尚未补强，建议先完成 P1.5 契约再启动。
+**Phase 3B（暂缓）**：模型自动映射、自动恢复探测、晋升/降级机制会直接改变真实调度决策，风险明显高于 3A。§12.2 P1.5 的 SQLite schema version / 版本化 migration / `OriginType`&`OriginTier` 旧配置 backfill / `killSwitch`+按 task class/channel disable **已于 2026-07-09 补强完成**（详见 §12.2 P1.5）；仅剩 SLO regression 自动 rollback 待独立设计，不阻塞 3B 启动评估，但启动前仍建议对 3B 涉及的调度语义变更单独过一遍风险评审。
 
 **范围**：
 - [x] 运行时指标驱动画像实时更新（Phase 3A：`collectAll()` 每轮 diff + changelog + WebSocket 推送）
-- [ ] 模型自动映射（ModelResolver + ModelSupportResolver + request-scoped mappedModel）—— Phase 3B，待 P1.5 补强后再评估
+- [ ] 模型自动映射（ModelResolver + ModelSupportResolver + request-scoped mappedModel）—— Phase 3B
 - [ ] active model filter / context filter 支持自动映射前置判定 —— Phase 3B
 - [ ] 自动恢复探测（limited/dead → healthy）—— Phase 3B
 - [ ] 晋升/降级机制（连续成功→升级，连续失败→降级）—— Phase 3B
 - [x] WebSocket 推送画像变更事件（Phase 3A：`GET /api/health-center/events`）
 - [x] 前端画像变更历史/时间线（Phase 3A：`ProfileChangelogTimeline.vue`）
 
-**预估工期**：2-3 周（3A 已完成；3B 待 P1.5 就绪后重新评估工期）
+**预估工期**：2-3 周（3A 已完成；P1.5 迁移契约已补强，3B 待单独立项评估工期）
 
 ### Phase 4：高级特性
 
@@ -3883,11 +3883,11 @@ trace 只记录解释性字段，不记录明文 prompt、密钥、敏感 header
 #### P1.5 迁移与回滚
 
 落地必须包含：
-- SQLite schema version 和幂等 migration。
-- 旧配置 backfill：补 `ChannelUID`、`OriginType`、`OriginTier` 时不改变原调度。
-- profile 损坏或 migration 失败时 fail-open：禁用 Autopilot，保留现有调度。
-- 全局 `killSwitch`、按 task class disable、按 channel disable。
-- active 后的 SLO regression 自动 rollback 到 shadow，并在驾驶舱显示原因。
+- ~~SQLite schema version 和幂等 migration。~~ **已完成**：`ensureSchemaVersion` 基于 `PRAGMA user_version`，当前 7 张表定版为 v1 基线；库版本高于代码版本时返回 error（fail-closed，不做任何写操作），交给下游 fail-open 分支接管。
+- ~~旧配置 backfill：补 `ChannelUID`、`OriginType`、`OriginTier` 时不改变原调度。~~ **已完成**：`ensureOriginBackfill` 只补 `"unknown"`，不做任何基于 URL/名称的猜测推断；已接线到 `Profiler.DeriveEndpointProfile`，`BreakTieByOriginTier` 现在能吃到真实数据（此前一直是 fallback 的 `unknown`）。
+- ~~profile 损坏或 migration 失败时 fail-open：禁用 Autopilot，保留现有调度。~~ **已确认满足并测试锁定**：`main.go` 现有结构本就是 fail-open（`NewProfileStore`/`NewManager` 出错只打日志、`autopilotManager` 保持 `nil`，下游全部有 `nil` 守卫），本次新增 `schema_migration_test.go` 用测试锁定这条不变量。
+- ~~全局 `killSwitch`、按 task class disable、按 channel disable。~~ **已完成**：新增 `AutopilotRoutingConfig.DisabledTaskClasses`/`DisabledChannelUIDs`；`CandidateFilterFor`/`executeFilter`/`BuildPlan` 三处一致接入，`smart_router_invariant_test.go` 覆盖"task class 禁用后回退默认调度""channel 禁用后不出现在候选里""dry-run 与真实路径行为一致"三条不变量。
+- active 后的 SLO regression 自动 rollback 到 shadow，并在驾驶舱显示原因。**待实现**：`TrustedRoutingAdvisor.promotionMode` 目前是 `manual`，shadow→candidate→active 已有人工审查关卡；自动回滚是独立的新子系统（需要基线捕获窗口 + 实时对比 + 阈值判定），留待下一轮单独设计落地。
 
 ### 12.3 P2：体验与运营增强
 

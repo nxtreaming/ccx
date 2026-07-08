@@ -532,7 +532,7 @@ func TestProfilerDeriveEndpointProfile(t *testing.T) {
 	profiler := NewProfiler(provider)
 	profile := profiler.DeriveEndpointProfile(
 		"test-channel", 1, "messages",
-		"https://api.example.com", "sk-test1234", "claude",
+		"https://api.example.com", "sk-test1234", "claude", "", "",
 	)
 
 	// 验证身份字段
@@ -594,7 +594,7 @@ func TestProfilerDeriveEndpointProfile_DeadEndpoint(t *testing.T) {
 	profiler := NewProfiler(provider)
 	profile := profiler.DeriveEndpointProfile(
 		"test-channel", 1, "messages",
-		"https://api.example.com", "sk-test1234", "claude",
+		"https://api.example.com", "sk-test1234", "claude", "", "",
 	)
 
 	if profile.HealthState != HealthStateDead {
@@ -620,7 +620,7 @@ func TestProfilerDeriveEndpointProfile_InsufficientData(t *testing.T) {
 	profiler := NewProfiler(provider)
 	profile := profiler.DeriveEndpointProfile(
 		"test-channel", 1, "messages",
-		"https://api.example.com", "sk-test1234", "claude",
+		"https://api.example.com", "sk-test1234", "claude", "", "",
 	)
 
 	if profile.HealthState != HealthStateUnknown {
@@ -804,4 +804,48 @@ func TestCollectHealthEvidence(t *testing.T) {
 			t.Errorf("expected at least 4 evidence items, got %d: %v", len(evidence), evidence)
 		}
 	})
+}
+
+// ── OriginType/OriginTier 接线测试（设计 §12.2 P1.5）──
+
+func TestProfilerDeriveEndpointProfile_PropagatesOriginFields(t *testing.T) {
+	provider := newMockProvider(
+		TimeWindowStats{RequestCount: 50, SuccessCount: 48, FailureCount: 2, SuccessRate: 96},
+		KeyCircuitSnapshot{CircuitState: 0},
+	)
+	profiler := NewProfiler(provider)
+
+	profile := profiler.DeriveEndpointProfile(
+		"test-channel", 1, "messages",
+		"https://api.example.com", "sk-test1234", "claude",
+		"official_api", "first",
+	)
+
+	if profile.OriginType != "official_api" {
+		t.Errorf("OriginType = %q, want %q", profile.OriginType, "official_api")
+	}
+	if profile.OriginTier != "first" {
+		t.Errorf("OriginTier = %q, want %q", profile.OriginTier, "first")
+	}
+}
+
+func TestProfilerDeriveEndpointProfile_EmptyOriginFallsBackToUnknown(t *testing.T) {
+	provider := newMockProvider(
+		TimeWindowStats{RequestCount: 50, SuccessCount: 48, FailureCount: 2, SuccessRate: 96},
+		KeyCircuitSnapshot{CircuitState: 0},
+	)
+	profiler := NewProfiler(provider)
+
+	profile := profiler.DeriveEndpointProfile(
+		"test-channel", 1, "messages",
+		"https://api.example.com", "sk-test1234", "claude",
+		"", "",
+	)
+
+	if profile.OriginType != string(OriginUnknown) {
+		t.Errorf("OriginType = %q, want %q (unknown fallback)", profile.OriginType, string(OriginUnknown))
+	}
+	if profile.OriginTier != string(OriginTierUnknown) {
+		t.Errorf("OriginTier = %q, want %q (unknown fallback)", profile.OriginTier, string(OriginTierUnknown))
+	}
 }

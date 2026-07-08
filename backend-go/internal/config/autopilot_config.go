@@ -27,6 +27,17 @@ type AutopilotRoutingConfig struct {
 	// true 时无条件回退到 "off"，优先于 RoutingMode 和环境变量 AUTOPILOT_KILL_SWITCH。
 	KillSwitch bool `json:"killSwitch,omitempty"`
 
+	// disabledTaskClasses 命中的 TaskClass 请求，SmartRouter 完全不介入（等同 off），
+	// 回退到调度器默认行为。用于按任务类型临时下线 autopilot 影响，
+	// 不同于 TrustedRoutingAdvisorConfig.NeverDemoteTaskClasses（那是"禁止降级"保护名单，
+	// 语义是"autopilot 仍生效但不能把它调差"；这里是"autopilot 对它完全不生效"）。
+	DisabledTaskClasses []string `json:"disabledTaskClasses,omitempty"`
+
+	// disabledChannelUids 命中的渠道永远不会被 autopilot 推荐/选中。
+	// 不等同于系统级禁用渠道——不改渠道本身的 status 字段，不影响手动
+	// override/X-Channel/promotion 等非 autopilot 路径对该渠道的可选性。
+	DisabledChannelUIDs []string `json:"disabledChannelUids,omitempty"`
+
 	// costPreference 用户价格偏向（§5.6）。
 	CostPreference CostPreferenceConfig `json:"costPreference,omitempty"`
 
@@ -437,6 +448,35 @@ func (c *AutopilotRoutingConfig) Validate() {
 			delete(c.WeightOverrides, k)
 		}
 	}
+
+	// 5. 禁用名单：去空白项、去重，避免无意义的重复配置
+	c.DisabledTaskClasses = dedupeNonEmptyStrings(c.DisabledTaskClasses)
+	c.DisabledChannelUIDs = dedupeNonEmptyStrings(c.DisabledChannelUIDs)
+}
+
+// dedupeNonEmptyStrings 去除空白项（trim 后为空则丢弃）并去重，保持首次出现的顺序。
+// nil 输入返回 nil（不强制分配空 slice，避免 JSON 序列化时把 omitempty 字段变成 []）。
+func dedupeNonEmptyStrings(items []string) []string {
+	if items == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(items))
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // normalizeAutopilotMode 归一化路由模式。
@@ -699,6 +739,18 @@ func (c ModelFamilyPreferenceConfig) FamilyRank(taskClass string, family string)
 // map / slice 字段独立分配，避免调用方修改影响原始配置。
 func (c AutopilotRoutingConfig) deepCopy() AutopilotRoutingConfig {
 	cp := c
+
+	// DisabledTaskClasses
+	if c.DisabledTaskClasses != nil {
+		cp.DisabledTaskClasses = make([]string, len(c.DisabledTaskClasses))
+		copy(cp.DisabledTaskClasses, c.DisabledTaskClasses)
+	}
+
+	// DisabledChannelUIDs
+	if c.DisabledChannelUIDs != nil {
+		cp.DisabledChannelUIDs = make([]string, len(c.DisabledChannelUIDs))
+		copy(cp.DisabledChannelUIDs, c.DisabledChannelUIDs)
+	}
 
 	// CostPreference.PerTaskClass
 	if c.CostPreference.PerTaskClass != nil {

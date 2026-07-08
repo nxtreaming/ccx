@@ -108,6 +108,12 @@ type UpstreamConfig struct {
 	// AutoManaged 自动托管标记
 	AutoManaged   bool       `json:"autoManaged,omitempty"`   // 渠道是否由自动托管流程创建
 	AutoManagedAt *time.Time `json:"autoManagedAt,omitempty"` // 自动托管设置时间
+	// Autopilot 来源信任分类（设计 §3.2.1，仅用于隐私/治理展示和同分 tie-breaker，不参与质量推导）
+	// OriginType: official_api | official_token_plan | relay | community | local_runtime | unknown
+	// OriginTier: first | second | third | local | unknown
+	// 加载旧配置时由 ConfigManager 自动补齐为 "unknown"（不做任何基于 URL/名称的猜测推断）。
+	OriginType string `json:"originType,omitempty"`
+	OriginTier string `json:"originTier,omitempty"`
 }
 
 // APIKeyConfig 描述单个 API Key 的附加调度配置。

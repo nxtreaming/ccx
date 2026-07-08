@@ -131,6 +131,24 @@ func (r *SmartRouter) BuildPlan(profile *RequestProfile) *RoutingPlan {
 
 	// 收集并评分候选
 	entries := r.collectChannelEntries(profile.ChannelKind, profile.Model)
+
+	// P1.5：按 channel 禁用——与 executeFilter（真实路由路径）保持一致。
+	// 注意：这里只过滤"禁用渠道"这个硬约束，不像 kill switch/mode==off 那样
+	// 让 BuildPlan 提前返回——BuildPlan 是诊断预览接口，即使 SmartRouter
+	// 处于 off/kill switch 也要能算出"如果启用会怎样"（见 P0.5 不变量测试），
+	// DisabledTaskClasses 属于同一类"是否运行"的开关，因此不在此处短路；
+	// DisabledChannelUIDs 则是候选集合本身的硬约束，必须和真实路径一致。
+	if disabledChannelUIDs := toStringSet(autopilotCfg.DisabledChannelUIDs); len(disabledChannelUIDs) > 0 {
+		filtered := entries[:0:0]
+		for _, e := range entries {
+			if disabledChannelUIDs[e.ChannelUID] {
+				continue
+			}
+			filtered = append(filtered, e)
+		}
+		entries = filtered
+	}
+
 	if len(entries) == 0 {
 		return &RoutingPlan{
 			RequestProfile: profile,
@@ -207,6 +225,12 @@ func (r *SmartRouter) CandidateFilterFor(profile *RequestProfile) scheduler.Cand
 	input := BuildClassifierInput(profile)
 	ClassifyAndFill(profile, input)
 
+	// P1.5：按 task class 禁用——命中时 SmartRouter 对本次请求完全不介入，
+	// 与 kill switch 的 "return nil" 语义完全一致，只是作用范围缩小到单个 TaskClass。
+	if isTaskClassDisabled(autopilotCfg.DisabledTaskClasses, profile.TaskClass) {
+		return nil
+	}
+
 	// 获取权重
 	weights := DefaultTaskWeights()[profile.TaskClass]
 	weights = ApplyCostPreference(weights, CostPreferenceMode(autopilotCfg.CostPreference.Mode))
@@ -237,6 +261,7 @@ func (r *SmartRouter) CandidateFilterFor(profile *RequestProfile) scheduler.Cand
 
 	traceStore := r.traceStore
 	routerMode := RoutingMode(mode)
+	disabledChannelUIDs := toStringSet(autopilotCfg.DisabledChannelUIDs)
 
 	return func(
 		channels []scheduler.ChannelInfo,
@@ -245,9 +270,31 @@ func (r *SmartRouter) CandidateFilterFor(profile *RequestProfile) scheduler.Cand
 	) ([]scheduler.ChannelInfo, error) {
 		return r.executeFilter(
 			channels, upstreamFor, candidateAvailable,
-			profile, weights, familyPrefs, routerMode, traceStore,
+			profile, weights, familyPrefs, routerMode, traceStore, disabledChannelUIDs,
 		)
 	}
+}
+
+// isTaskClassDisabled 判断 taskClass 是否命中禁用名单。
+func isTaskClassDisabled(disabled []string, taskClass TaskClass) bool {
+	for _, d := range disabled {
+		if TaskClass(d) == taskClass {
+			return true
+		}
+	}
+	return false
+}
+
+// toStringSet 把字符串 slice 转成 set，便于 O(1) 查找。nil/空输入返回 nil。
+func toStringSet(items []string) map[string]bool {
+	if len(items) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(items))
+	for _, item := range items {
+		set[item] = true
+	}
+	return set
 }
 
 // executeFilter 执行 SmartRouter 过滤逻辑。
@@ -260,6 +307,7 @@ func (r *SmartRouter) executeFilter(
 	familyPrefs []ModelFamily,
 	mode RoutingMode,
 	traceStore *TraceStore,
+	disabledChannelUIDs map[string]bool,
 ) ([]scheduler.ChannelInfo, error) {
 	startTime := time.Now()
 
@@ -289,6 +337,11 @@ func (r *SmartRouter) executeFilter(
 	for _, ch := range channels {
 		upstream := upstreamFor(ch)
 		if upstream == nil || !candidateAvailable(ch, upstream) {
+			continue
+		}
+		// P1.5：按 channel 禁用——命中的渠道对 autopilot 不存在，走和
+		// "候选不可用" 完全相同的跳过路径，不影响其他非 autopilot 选路径。
+		if disabledChannelUIDs[upstream.ChannelUID] {
 			continue
 		}
 		entry := r.buildChannelEntry(ch, upstream)

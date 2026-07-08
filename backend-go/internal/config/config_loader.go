@@ -103,6 +103,9 @@ func (cm *ConfigManager) loadConfig() error {
 	if cm.ensureChannelUIDs() {
 		needSaveDefaults = true
 	}
+	if cm.ensureOriginBackfill() {
+		needSaveDefaults = true
+	}
 
 	// 兼容旧格式：检测是否需要迁移
 	needMigration := cm.migrateOldFormat()
@@ -410,6 +413,38 @@ func (cm *ConfigManager) ensureChannelUIDs() bool {
 				channels[i].ChannelUID = generateChannelUID()
 				updated = true
 				log.Printf("[Config-ChannelUID] %s 渠道 [%d] %s 已分配 ChannelUID: %s", channelKind, i, channels[i].Name, channels[i].ChannelUID)
+			}
+		}
+	}
+	apply(cm.config.Upstream, "Messages")
+	apply(cm.config.ResponsesUpstream, "Responses")
+	apply(cm.config.GeminiUpstream, "Gemini")
+	apply(cm.config.ChatUpstream, "Chat")
+	apply(cm.config.ImagesUpstream, "Images")
+	apply(cm.config.VectorsUpstream, "Vectors")
+	return updated
+}
+
+// ensureOriginBackfill 为缺失 OriginType/OriginTier 的渠道补默认值 "unknown"。
+// 设计 §12.2 P1.5：旧配置 backfill 不改变原调度——只补标签，不做任何基于
+// URL/名称的猜测推断，避免把未知来源误判为某个具体信任等级。
+// 已有非空值的渠道不会被覆盖。覆盖全部六类渠道。返回 true 表示有字段被补齐，需要持久化。
+func (cm *ConfigManager) ensureOriginBackfill() bool {
+	updated := false
+	apply := func(channels []UpstreamConfig, channelKind string) {
+		for i := range channels {
+			changed := false
+			if channels[i].OriginType == "" {
+				channels[i].OriginType = "unknown"
+				changed = true
+			}
+			if channels[i].OriginTier == "" {
+				channels[i].OriginTier = "unknown"
+				changed = true
+			}
+			if changed {
+				updated = true
+				log.Printf("[Config-OriginBackfill] %s 渠道 [%d] %s 已补齐 originType/originTier 为 unknown", channelKind, i, channels[i].Name)
 			}
 		}
 	}

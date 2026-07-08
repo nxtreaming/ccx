@@ -60,6 +60,10 @@ func NewProfiler(metrics MetricsProvider) *Profiler {
 // 参数：
 //   - channelUID/channelID/channelKind：渠道身份
 //   - baseURL/apiKey/serviceType：endpoint 身份（与 metrics 系统一致）
+//   - originType/originTier：渠道来源信任分类（设计 §3.2.1），来自
+//     config.UpstreamConfig.OriginType/OriginTier；传空字符串时按 "unknown" 处理，
+//     不在此处做任何猜测推断。只用于隐私/治理展示和同分 tie-breaker，不参与
+//     QualityTier 等质量维度推导。
 //
 // 返回值已填充 StabilityTier、SpeedTier、CostTier、运行时指标和诊断证据。
 // QualityTier 由 DeriveQualityTier 独立推导（需要额外的 modelID/provider 输入），
@@ -71,16 +75,27 @@ func (p *Profiler) DeriveEndpointProfile(
 	baseURL string,
 	apiKey string,
 	serviceType string,
+	originType string,
+	originTier string,
 ) KeyEndpointProfile {
 	now := time.Now()
 	keyHash := KeyHashFromAPIKey(apiKey)
 	endpointUID := GenerateEndpointUID(channelUID, baseURL, keyHash)
+
+	if originType == "" {
+		originType = string(OriginUnknown)
+	}
+	if originTier == "" {
+		originTier = string(OriginTierUnknown)
+	}
 
 	profile := KeyEndpointProfile{
 		ChannelUID:      channelUID,
 		ChannelID:       channelID,
 		ChannelKind:     channelKind,
 		EndpointUID:     endpointUID,
+		OriginType:      originType,
+		OriginTier:      originTier,
 		ServiceType:     serviceType,
 		BaseURL:         baseURL,
 		KeyMask:         "***" + apiKey[max(0, len(apiKey)-4):],

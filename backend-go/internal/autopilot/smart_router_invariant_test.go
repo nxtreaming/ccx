@@ -947,3 +947,178 @@ func TestInvariant_AutoMode_FailOpen_TraceRecorded(t *testing.T) {
 		t.Error("trace GlobalFilterReasons 应包含 auto_hard_constraints")
 	}
 }
+
+// ── P1.5：DisabledTaskClasses / DisabledChannelUIDs 不变量测试 ──
+
+// TestInvariant_DisabledTaskClass_FallsBackToDefault 验证：
+// 命中 DisabledTaskClasses 的请求，CandidateFilterFor 返回 nil，
+// 与 kill switch 的 "本次请求 SmartRouter 完全不介入" 语义一致，
+// 调度回退到默认调度器行为。
+func TestInvariant_DisabledTaskClass_FallsBackToDefault(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode: "shadow",
+		KillSwitch:  false,
+		// testProfile() 的 EstTokens=1000、AgentRole=main 会被分类为 lightweight
+		// （TestInvariant_RoutingTraceRecorded 已验证这一分类结果）。
+		DisabledTaskClasses: []string{string(TaskClassLightweight)},
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	smartRouter := createTestSmartRouter(t, cfgManager)
+	profile := testProfile()
+
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter != nil {
+		t.Error("task class 命中 DisabledTaskClasses 时 CandidateFilterFor 应返回 nil")
+	}
+}
+
+// TestInvariant_DisabledTaskClass_OtherClassUnaffected 验证：
+// DisabledTaskClasses 只影响命中的 TaskClass，不影响其他 TaskClass 的请求。
+func TestInvariant_DisabledTaskClass_OtherClassUnaffected(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode:         "shadow",
+		KillSwitch:          false,
+		DisabledTaskClasses: []string{"some_other_task_class"},
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	smartRouter := createTestSmartRouter(t, cfgManager)
+	profile := testProfile()
+
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter == nil {
+		t.Error("未命中的 TaskClass 不应受 DisabledTaskClasses 影响，CandidateFilterFor 不应返回 nil")
+	}
+}
+
+// TestInvariant_DisabledChannelUID_ExcludedFromRealPath 验证：
+// DisabledChannelUIDs 命中的渠道不会出现在 executeFilter（真实路由路径）
+// 返回的候选列表中。使用 assist 模式以便观察重排后的候选集合。
+func TestInvariant_DisabledChannelUID_ExcludedFromRealPath(t *testing.T) {
+	const ch1UID = "ch-standard-uid-fixed"
+
+	cfg := baseTestConfig()
+	cfg.Upstream[1].ChannelUID = ch1UID // 预先固定 ChannelUID，避免依赖自动分配的随机值
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode:         "assist",
+		KillSwitch:          false,
+		DisabledChannelUIDs: []string{ch1UID},
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	smartRouter := createTestSmartRouter(t, cfgManager)
+	profile := testProfile()
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter == nil {
+		t.Fatal("assist 模式下 filter 不应为 nil")
+	}
+
+	channels := []scheduler.ChannelInfo{
+		{Index: 0, Name: "ch-premium", Priority: 1, Status: "active"},
+		{Index: 1, Name: "ch-standard", Priority: 2, Status: "active"},
+		{Index: 2, Name: "ch-economy", Priority: 3, Status: "active"},
+	}
+
+	upstreamCfgs := cfgManager.GetConfig().Upstream
+	upstreamFor := func(ch scheduler.ChannelInfo) *config.UpstreamConfig {
+		if ch.Index >= 0 && ch.Index < len(upstreamCfgs) {
+			u := upstreamCfgs[ch.Index]
+			return &u
+		}
+		return nil
+	}
+	available := func(ch scheduler.ChannelInfo, u *config.UpstreamConfig) bool {
+		return ch.Status == "active" && len(u.APIKeys) > 0
+	}
+
+	result, err := filter(channels, upstreamFor, available)
+	if err != nil {
+		t.Fatalf("filter 执行失败: %v", err)
+	}
+
+	for _, ch := range result {
+		if ch.Name == "ch-standard" {
+			t.Errorf("被禁用的渠道 ch-standard 不应出现在候选结果中: %v", result)
+		}
+	}
+	if len(result) != 2 {
+		t.Errorf("禁用 1 个渠道后应剩 2 个候选，实际: %d", len(result))
+	}
+}
+
+// TestInvariant_DisabledChannelUID_BuildPlanConsistentWithRealPath 验证：
+// BuildPlan（dry-run 诊断路径）对 DisabledChannelUIDs 的处理与
+// executeFilter（真实路由路径）保持一致——被禁用渠道不出现在
+// RoutingPlan.Candidates 中，避免 dry-run 预览和实际调度产生分歧
+// （对应之前 aa136b26 修复的那类一致性问题的预防性回归测试）。
+func TestInvariant_DisabledChannelUID_BuildPlanConsistentWithRealPath(t *testing.T) {
+	const ch1UID = "ch-standard-uid-fixed"
+
+	cfg := baseTestConfig()
+	cfg.Upstream[1].ChannelUID = ch1UID
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode:         "shadow",
+		KillSwitch:          false,
+		DisabledChannelUIDs: []string{ch1UID},
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	smartRouter := createTestSmartRouter(t, cfgManager)
+	profile := testProfile()
+
+	plan := smartRouter.BuildPlan(profile)
+	if plan == nil {
+		t.Fatal("BuildPlan 不应返回 nil")
+	}
+
+	for _, c := range plan.Candidates {
+		if c.ChannelUID == ch1UID {
+			t.Errorf("被禁用的渠道 %s 不应出现在 BuildPlan.Candidates 中", ch1UID)
+		}
+	}
+	if len(plan.Candidates) != 2 {
+		t.Errorf("禁用 1 个渠道后 BuildPlan 应剩 2 个候选，实际: %d", len(plan.Candidates))
+	}
+}
+
+// TestInvariant_DisabledTaskClass_DoesNotShortCircuitBuildPlan 验证：
+// DisabledTaskClasses 是"是否运行"类开关（与 kill switch/mode=off 同类），
+// BuildPlan 作为诊断预览接口，即使命中 DisabledTaskClasses 也应正常
+// 算出候选计划，不提前返回空计划——与 TestInvariant_BuildPlan_WithKillSwitch
+// 验证的不变量一致。
+func TestInvariant_DisabledTaskClass_DoesNotShortCircuitBuildPlan(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode:         "shadow",
+		KillSwitch:          false,
+		DisabledTaskClasses: []string{string(TaskClassLightweight)},
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	smartRouter := createTestSmartRouter(t, cfgManager)
+	profile := testProfile()
+
+	plan := smartRouter.BuildPlan(profile)
+	if plan == nil {
+		t.Fatal("BuildPlan 不应返回 nil")
+	}
+	if plan.Mode != RoutingModeDryRun {
+		t.Errorf("BuildPlan 模式应为 dry_run，实际: %s", plan.Mode)
+	}
+	if len(plan.Candidates) != 3 {
+		t.Errorf("DisabledTaskClasses 不应影响 BuildPlan 候选数量，期望 3，实际: %d", len(plan.Candidates))
+	}
+}

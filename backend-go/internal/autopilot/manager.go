@@ -20,6 +20,8 @@ type channelEntry struct {
 	ChannelKind string
 	BaseURL     string
 	APIKeys     []string
+	OriginType  string
+	OriginTier  string
 }
 
 // metricsManagerAdapter 包装 *metrics.MetricsManager，实现 MetricsProvider 接口。
@@ -546,6 +548,8 @@ func (m *Manager) collectAll() {
 				entry.BaseURL,
 				apiKey,
 				entry.ChannelKind,
+				entry.OriginType,
+				entry.OriginTier,
 			)
 			profiled++
 
@@ -706,6 +710,8 @@ func (m *Manager) gatherChannelEntries() []channelEntry {
 				ChannelKind: ul.channelKind,
 				BaseURL:     baseURL,
 				APIKeys:     ch.APIKeys,
+				OriginType:  ch.OriginType,
+				OriginTier:  ch.OriginTier,
 			})
 		}
 	}

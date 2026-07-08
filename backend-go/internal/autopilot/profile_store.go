@@ -65,6 +65,9 @@ func NewProfileStoreWithDB(db *sql.DB) (*ProfileStore, error) {
 }
 
 func newProfileStoreFromDB(db *sql.DB, dbPath string) (*ProfileStore, error) {
+	if err := ensureSchemaVersion(db); err != nil {
+		return nil, err
+	}
 	if err := initProfileStoreSchema(db); err != nil {
 		return nil, fmt.Errorf("[ProfileStore-Init] 建表失败: %w", err)
 	}
