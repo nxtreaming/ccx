@@ -495,19 +495,24 @@ func main() {
 				"vectors":   autopilot.NewMetricsManagerAdapter(vectorsMetricsManager),
 			}
 			autopilotMetrics := autopilot.NewMetricsAdapterManager(metricsAdapters)
-			autopilotManager = autopilot.NewManager(autopilotStore, autopilotMetrics, cfgManager, autopilot.ManagerConfig{
+			mgr, mgrErr := autopilot.NewManager(autopilotStore, autopilotMetrics, cfgManager, autopilot.ManagerConfig{
 				WorkerInterval: 5 * time.Minute,
 				QuietLogs:      envCfg.QuietPollingLogs,
 			})
+			if mgrErr != nil {
+				log.Printf("[Autopilot-Init] 警告: 初始化 Manager 失败: %v (健康中心将不可用)", mgrErr)
+			} else {
+				autopilotManager = mgr
 
-			// 注册限速信号回调：上游响应 → autopilot 限速发现器 + 时间桶
-			// endpointUID 和 metricsKey 由 upstream_failover.go 在请求上下文中计算后传入
-			ratelimit.SetUpstreamSignalCallback(func(endpointUID, metricsKey, serviceType string, isStream bool, latencyMs int64, headers http.Header, statusCode int) {
-				autopilotManager.ObserveRateLimitSignal(endpointUID, 0, metricsKey, isStream, latencyMs, headers, statusCode)
-			})
+				// 注册限速信号回调：上游响应 → autopilot 限速发现器 + 时间桶
+				// endpointUID 和 metricsKey 由 upstream_failover.go 在请求上下文中计算后传入
+				ratelimit.SetUpstreamSignalCallback(func(endpointUID, metricsKey, serviceType string, isStream bool, latencyMs int64, headers http.Header, statusCode int) {
+					autopilotManager.ObserveRateLimitSignal(endpointUID, 0, metricsKey, isStream, latencyMs, headers, statusCode)
+				})
 
-			autopilotManager.StartWorker(context.Background())
-			log.Printf("[Autopilot-Init] 健康中心已初始化 (DB: %s, 间隔: 5分钟)", paths.AutopilotDBPath)
+				autopilotManager.StartWorker(context.Background())
+				log.Printf("[Autopilot-Init] 健康中心已初始化 (DB: %s, 间隔: 5分钟)", paths.AutopilotDBPath)
+			}
 		}
 	}
 
@@ -891,6 +896,15 @@ func main() {
 		// 健康中心 API（Phase 1 shadow/read-only）
 		if autopilotManager != nil {
 			autopilot.RegisterRoutes(apiGroup, autopilotManager)
+
+			// 订阅中心 API
+			autopilot.RegisterSubscriptionRoutes(apiGroup, autopilotManager.SubscriptionStore())
+			// 本地 Runtime API
+			autopilot.RegisterLocalRuntimeRoutes(apiGroup, autopilotManager.LocalRuntimeStore())
+			// 手动意图 API
+			autopilot.RegisterManualIntentRoutes(apiGroup, autopilotManager.ManualIntentStore())
+			// 驾驶舱只读聚合 API
+			autopilot.RegisterCockpitRoutes(apiGroup, autopilotManager)
 		}
 
 		// Fuzzy 模式设置

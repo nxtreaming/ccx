@@ -30,6 +30,9 @@ type ProfileStore struct {
 	dirtyKeys map[string]struct{} // 待落盘的 endpointUID 集合
 }
 
+// DB 返回底层 *sql.DB，供 Manager 内部复用连接。
+func (s *ProfileStore) DB() *sql.DB { return s.db }
+
 // NewProfileStore 创建 ProfileStore，自行管理 SQLite 连接。
 // dbPath 为数据库文件路径，启动时自动建表并 LoadAll 回内存。
 func NewProfileStore(dbPath string) (*ProfileStore, error) {

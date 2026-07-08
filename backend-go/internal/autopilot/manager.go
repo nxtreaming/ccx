@@ -2,6 +2,7 @@ package autopilot
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -100,6 +101,8 @@ type ManagerConfig struct {
 // Manager 健康中心聚合入口。
 // 持有 ProfileStore / Profiler / HealthAnalyzer / FastDecayScorer，
 // 启动后台 worker 定期遍历各渠道 endpoint 进行 L1 指标采集、画像推导、健康诊断。
+// 同时持有 SubscriptionStore / LocalRuntimeStore / ManualIntentStore，
+// 用于驾驶舱聚合与路由注册。
 type Manager struct {
 	store      *ProfileStore
 	profiler   *Profiler
@@ -115,20 +118,44 @@ type Manager struct {
 	qualityTrendDetector *QualityTrendDetector
 	groupChangeDetector  *GroupChangeDetector
 
+	// Phase 1 新组件：订阅中心、本地 runtime、手动意图（共享 ProfileStore 的 *sql.DB）
+	subscriptionStore *SubscriptionStore
+	localRuntimeStore *LocalRuntimeStore
+	manualIntentStore *ManualIntentStore
+
 	cancel func()
 	wg     sync.WaitGroup
 }
 
 // NewManager 创建 Manager 实例。
 // store 由调用方构造并传入；metrics 应为 metricsAdapterManager（按 serviceType 路由）。
+// 内部从 store.DB() 复用同一 *sql.DB 创建 SubscriptionStore / LocalRuntimeStore / ManualIntentStore。
 func NewManager(
 	store *ProfileStore,
 	metrics MetricsProvider,
 	cfgManager *config.ConfigManager,
 	cfg ManagerConfig,
-) *Manager {
+) (*Manager, error) {
 	if cfg.WorkerInterval <= 0 {
 		cfg.WorkerInterval = 5 * time.Minute
+	}
+
+	db := store.DB()
+	if db == nil {
+		return nil, fmt.Errorf("[Autopilot-NewManager] ProfileStore.DB() 为 nil，无法初始化子 store")
+	}
+
+	subStore, err := NewSubscriptionStoreWithDB(db)
+	if err != nil {
+		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 SubscriptionStore 失败: %w", err)
+	}
+	lrStore, err := NewLocalRuntimeStoreWithDB(db)
+	if err != nil {
+		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 LocalRuntimeStore 失败: %w", err)
+	}
+	miStore, err := NewManualIntentStoreWithDB(db)
+	if err != nil {
+		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 ManualIntentStore 失败: %w", err)
 	}
 
 	// 初始化 Phase 1 新组件（shadow/read-only，不修改调度链路）
@@ -146,7 +173,11 @@ func NewManager(
 		timeBucketStore:      timeBucketStore,
 		qualityTrendDetector: NewQualityTrendDetector(timeBucketStore),
 		groupChangeDetector:  NewGroupChangeDetector(store),
-	}
+
+		subscriptionStore: subStore,
+		localRuntimeStore: lrStore,
+		manualIntentStore: miStore,
+	}, nil
 }
 
 // RateLimitDiscoverer 返回内部限速发现器引用（供 main.go 注册信号回调）。
@@ -276,15 +307,52 @@ func (m *Manager) Stop() {
 	m.wg.Wait()
 }
 
-// Close 停止 worker 并关闭 ProfileStore。
+// Close 停止 worker 并关闭所有 Store。
 func (m *Manager) Close() error {
 	m.Stop()
-	return m.store.Close()
+	var errs []error
+	if err := m.store.Close(); err != nil {
+		errs = append(errs, err)
+	}
+	if m.subscriptionStore != nil {
+		if err := m.subscriptionStore.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if m.localRuntimeStore != nil {
+		if err := m.localRuntimeStore.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if m.manualIntentStore != nil {
+		if err := m.manualIntentStore.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("[Autopilot-Close] 关闭 store 出错: %v", errs)
+	}
+	return nil
 }
 
 // ProfileStore 返回内部 ProfileStore 引用（供 handler 读取画像数据）。
 func (m *Manager) ProfileStore() *ProfileStore {
 	return m.store
+}
+
+// SubscriptionStore 返回内部 SubscriptionStore 引用。
+func (m *Manager) SubscriptionStore() *SubscriptionStore {
+	return m.subscriptionStore
+}
+
+// LocalRuntimeStore 返回内部 LocalRuntimeStore 引用。
+func (m *Manager) LocalRuntimeStore() *LocalRuntimeStore {
+	return m.localRuntimeStore
+}
+
+// ManualIntentStore 返回内部 ManualIntentStore 引用。
+func (m *Manager) ManualIntentStore() *ManualIntentStore {
+	return m.manualIntentStore
 }
 
 // runWorker 后台循环主逻辑。
