@@ -19,7 +19,7 @@ func TestMaskKey(t *testing.T) {
 		{"短 key 全掩码", "abc", "****"},
 		{"8 字符全掩码", "12345678", "****"},
 		{"9 字符保留首尾", "123456789", "1234****6789"},
-		{"长 key 保留前4后4", "sk-ant-api1234567890abcdef", "sk-a****bcdef"},
+		{"长 key 保留前4后4", "sk-ant-api1234567890abcdef", "sk-a****cdef"},
 		{"超短 key", "ab", "****"},
 		{"单字符", "x", "****"},
 		{"20 字符", "abcdefghijklmnopqrst", "abcd****qrst"},
@@ -113,7 +113,7 @@ func TestSanitizeTrace_KeyMasking(t *testing.T) {
 	}
 
 	// 验证掩码格式：保留前4后4
-	if trace.SelectedMetricsKey != "https://api.openai.com|sk-a****bcdef" {
+	if trace.SelectedMetricsKey != "https://api.openai.com|sk-a****cdef" {
 		t.Errorf("SelectedMetricsKey 掩码格式不正确: %q", trace.SelectedMetricsKey)
 	}
 }

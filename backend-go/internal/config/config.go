@@ -530,6 +530,11 @@ type Config struct {
 	// Claude thinking 回填缓存配置
 	ThinkingCache ThinkingCacheConfig `json:"thinkingCache,omitempty"`
 
+	// AutopilotRouting 智能路由全局配置（§9.1）。
+	// 对应 config.json 的 "autopilot" 字段，缺失时使用 DefaultAutopilotRoutingConfig()。
+	// 热重载生效：文件变更后自动 reload，autopilot Manager 通过 RegisterOnConfigChange 回调感知。
+	AutopilotRouting AutopilotRoutingConfig `json:"autopilot,omitempty"`
+
 	// 熔断器运行时配置（可选，nil 使用环境变量或代码默认值）
 	CircuitBreaker *CircuitBreakerConfig `json:"circuitBreaker,omitempty"`
 }
@@ -642,6 +647,9 @@ func (cm *ConfigManager) GetConfig() Config {
 		cb := *cm.config.CircuitBreaker
 		cloned.CircuitBreaker = &cb
 	}
+
+	// 深拷贝 AutopilotRouting（map 字段需要独立分配）
+	cloned.AutopilotRouting = cm.config.AutopilotRouting.deepCopy()
 
 	return cloned
 }

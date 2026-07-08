@@ -1,0 +1,757 @@
+package config
+
+import (
+	"os"
+	"strings"
+)
+
+// ============== 智能路由全局配置（§9.1） ==============
+//
+// 定义在 config 包避免循环依赖，autopilot 包通过 ConfigManager.GetAutopilotRouting() 引用。
+// 结构体覆盖设计文档 §9.1 smartRouting 的全部子节点。
+
+// AutopilotRoutingConfig 智能路由全局配置。
+// 对应 config.json 的 "autopilot" 顶层字段。
+// 热重载生效：文件变更后自动 reload，autopilot Manager 通过 RegisterOnConfigChange 回调感知。
+type AutopilotRoutingConfig struct {
+	// routingMode 是智能路由运行模式。
+	// "off"    — 完全关闭，SmartRouter 不计算不记录。
+	// "shadow" — 只计算 + 记录 routing trace，不影响真实调度（默认）。
+	// "assist" — 候选重排但不改变最终选择（本批行为暂同 shadow，后续迭代）。
+	// "auto"   — 全自动，满足准入门槛后接管调度（本批行为暂同 shadow，后续迭代）。
+	RoutingMode string `json:"mode,omitempty"`
+
+	// killSwitch 全局急停开关。
+	// true 时无条件回退到 "off"，优先于 RoutingMode 和环境变量 AUTOPILOT_KILL_SWITCH。
+	KillSwitch bool `json:"killSwitch,omitempty"`
+
+	// costPreference 用户价格偏向（§5.6）。
+	CostPreference CostPreferenceConfig `json:"costPreference,omitempty"`
+
+	// modelFamilyPreference 模型派系偏好（§5.5.3）。
+	ModelFamilyPreference ModelFamilyPreferenceConfig `json:"modelFamilyPreference,omitempty"`
+
+	// weightOverrides 可选的评分权重覆盖，key 为权重名，value 为覆盖值。
+	// 未列出的权重使用 SmartRouter 内部默认值。
+	WeightOverrides map[string]float64 `json:"weightOverrides,omitempty"`
+
+	// ── 以下为 §9.1 完整子节点，Phase 2 后续迭代逐步实现 ──
+
+	// healthCheck 被动/主动健康检测配置。
+	HealthCheck HealthCheckConfig `json:"healthCheck,omitempty"`
+
+	// fastDecay 快速衰减配置（free/cheap 渠道）。
+	FastDecay FastDecayRoutingConfig `json:"fastDecay,omitempty"`
+
+	// rateLimitDiscovery 自动限速发现配置。
+	RateLimitDiscovery RateLimitDiscoveryConfig `json:"rateLimitDiscovery,omitempty"`
+
+	// modelMapping 自动模型映射配置。
+	ModelMapping ModelMappingRoutingConfig `json:"modelMapping,omitempty"`
+
+	// costOptimization 成本优化配置。
+	CostOptimization CostOptimizationConfig `json:"costOptimization,omitempty"`
+
+	// originPolicy 来源信任策略配置。
+	OriginPolicy OriginPolicyConfig `json:"originPolicy,omitempty"`
+
+	// taskDomainStrength 任务域优势配置。
+	TaskDomainStrength TaskDomainStrengthConfig `json:"taskDomainStrength,omitempty"`
+
+	// reasoningEffort 推理档位展开配置。
+	ReasoningEffort ReasoningEffortConfig `json:"reasoningEffort,omitempty"`
+
+	// manualIntent 人工路由意图配置。
+	ManualIntent ManualIntentConfig `json:"manualIntent,omitempty"`
+
+	// trustedRoutingAdvisor 可信路由顾问配置。
+	TrustedRoutingAdvisor TrustedRoutingAdvisorConfig `json:"trustedRoutingAdvisor,omitempty"`
+
+	// localModelRouting 本地模型路由配置。
+	LocalModelRouting LocalModelRoutingConfig `json:"localModelRouting,omitempty"`
+}
+
+// ── §9.1 子配置类型 ──
+
+// CostPreferenceConfig 用户价格偏向配置（§5.6）。
+// 三档预设 + 自定义：quality_first / balanced / cost_first / custom。
+type CostPreferenceConfig struct {
+	// Mode 全局价格偏向模式："quality_first" | "balanced" | "cost_first" | "custom"。
+	// 默认 "balanced"。
+	Mode string `json:"mode,omitempty"`
+
+	// PerTaskClass 按任务类别覆盖价格偏向模式。
+	// key 为 TaskClass 字符串（supervisor/worker/lightweight/vision/long_context/image_generation/embedding）。
+	// value 为该任务类别的价格偏向模式。
+	PerTaskClass map[string]string `json:"perTaskClass,omitempty"`
+
+	// Custom 自定义乘数（仅 Mode="custom" 时生效）。
+	Custom CostPreferenceCustom `json:"custom,omitempty"`
+}
+
+// CostPreferenceCustom 自定义价格偏向乘数（§5.6.1）。
+type CostPreferenceCustom struct {
+	// SavingsMultiplier 节省乘数，范围 0.0~3.0，默认 1.0。
+	// 值越大越倾向便宜渠道。
+	SavingsMultiplier float64 `json:"savingsMultiplier,omitempty"`
+
+	// ProviderQualityMultiplier 供应商质量乘数，范围 0.0~3.0，默认 1.0。
+	// 值越大越倾向高质量供应商。
+	ProviderQualityMultiplier float64 `json:"providerQualityMultiplier,omitempty"`
+}
+
+// ModelFamilyPreferenceConfig 模型派系偏好配置（§5.5.3）。
+// 控制 SmartRouter 对不同模型派系的排序偏好。
+type ModelFamilyPreferenceConfig struct {
+	// Enabled 是否启用派系偏好（默认 true）。
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Weight 派系偏好权重，覆盖全局 w_family，建议范围 0.1~0.5（默认 0.2）。
+	Weight float64 `json:"weight,omitempty"`
+
+	// GlobalOrder 全局派系偏好顺序，从高到低。
+	// 回退默认值：未在 PerTaskClass 中列出的 TaskClass 使用此顺序。
+	GlobalOrder []string `json:"globalOrder,omitempty"`
+
+	// PerTaskClass 按任务类别覆盖派系偏好顺序。
+	// key 为 TaskClass 字符串，value 为该任务类别的派系偏好顺序。
+	// 存在的 TaskClass 使用其专属顺序，否则回退 GlobalOrder。
+	PerTaskClass map[string][]string `json:"perTaskClass,omitempty"`
+}
+
+// HealthCheckConfig 被动/主动健康检测配置。
+type HealthCheckConfig struct {
+	Enabled                 bool    `json:"enabled,omitempty"`
+	PassiveSignalsOnly      bool    `json:"passiveSignalsOnly,omitempty"`
+	L2ProbeEnabled          bool    `json:"l2ProbeEnabled,omitempty"`
+	L2ProbeIntervalMinutes  int     `json:"l2ProbeIntervalMinutes,omitempty"`
+	L2ProbeMaxPerDay        int     `json:"l2ProbeMaxPerDay,omitempty"`
+	DeadProbeIntervalHours  int     `json:"deadProbeIntervalHours,omitempty"`
+	DeadConfidenceThreshold float64 `json:"deadConfidenceThreshold,omitempty"`
+	AutoExcludeDead         bool    `json:"autoExcludeDead,omitempty"`
+}
+
+// FastDecayRoutingConfig 快速衰减路由配置。
+type FastDecayRoutingConfig struct {
+	Enabled              bool     `json:"enabled,omitempty"`
+	ApplyToCostTiers     []string `json:"applyToCostTiers,omitempty"`
+	ApplyToPoolTags      []string `json:"applyToPoolTags,omitempty"`
+	RecoveryRate         float64  `json:"recoveryRate,omitempty"`
+	DecayBase            float64  `json:"decayBase,omitempty"`
+	StreamBreakDecayBase float64  `json:"streamBreakDecayBase,omitempty"`
+}
+
+// RateLimitDiscoveryConfig 自动限速发现配置。
+type RateLimitDiscoveryConfig struct {
+	Enabled                 bool    `json:"enabled,omitempty"`
+	ApplyOnlyWhenUnset      bool    `json:"applyOnlyWhenUnset,omitempty"`
+	PreferHeaders           bool    `json:"preferHeaders,omitempty"`
+	PassiveAimdEnabled      bool    `json:"passiveAimdEnabled,omitempty"`
+	MinRpm                  int     `json:"minRpm,omitempty"`
+	MaxAutoRpm              int     `json:"maxAutoRpm,omitempty"`
+	MaxAutoTpm              int     `json:"maxAutoTpm,omitempty"`
+	MaxAutoRpd              int     `json:"maxAutoRpd,omitempty"`
+	MaxAutoConcurrent       int     `json:"maxAutoConcurrent,omitempty"`
+	ConfidenceThreshold     float64 `json:"confidenceThreshold,omitempty"`
+	IncreaseIntervalMinutes int     `json:"increaseIntervalMinutes,omitempty"`
+	IncreaseStepPercent     int     `json:"increaseStepPercent,omitempty"`
+	DecreaseOn429Percent    int     `json:"decreaseOn429Percent,omitempty"`
+}
+
+// ModelMappingRoutingConfig 自动模型映射配置。
+type ModelMappingRoutingConfig struct {
+	AutoResolve            bool `json:"autoResolve,omitempty"`
+	CapabilityFloorEnabled bool `json:"capabilityFloorEnabled,omitempty"`
+	EchoMappedModel        bool `json:"echoMappedModel,omitempty"`
+	ForbidChainMapping     bool `json:"forbidChainMapping,omitempty"`
+}
+
+// CostOptimizationConfig 成本优化配置。
+type CostOptimizationConfig struct {
+	Enabled                  bool    `json:"enabled,omitempty"`
+	ApplyAfterQualityFloor   bool    `json:"applyAfterQualityFloor,omitempty"`
+	RequireCostConfidence    float64 `json:"requireCostConfidence,omitempty"`
+	IncludeCachePricing      bool    `json:"includeCachePricing,omitempty"`
+	IncludeImageUnitPricing  bool    `json:"includeImageUnitPricing,omitempty"`
+	IncludeEmbeddingPricing  bool    `json:"includeEmbeddingPricing,omitempty"`
+	Currency                 string  `json:"currency,omitempty"`
+	ExchangeRateSource       string  `json:"exchangeRateSource,omitempty"`
+	PreferLowerEffectiveCost bool    `json:"preferLowerEffectiveCost,omitempty"`
+	SupervisorSavingsWeight  float64 `json:"supervisorSavingsWeight,omitempty"`
+	WorkerSavingsWeight      float64 `json:"workerSavingsWeight,omitempty"`
+}
+
+// OriginPolicyConfig 来源信任策略配置。
+type OriginPolicyConfig struct {
+	UnknownOriginPolicy                string  `json:"unknownOriginPolicy,omitempty"`
+	PreferHigherOriginTierAsTieBreaker bool    `json:"preferHigherOriginTierAsTieBreaker,omitempty"`
+	OriginTieBreakerWeight             float64 `json:"originTieBreakerWeight,omitempty"`
+	ShowLowerTierOutperforming         bool    `json:"showLowerTierOutperforming,omitempty"`
+	WarnMixedOriginChannel             bool    `json:"warnMixedOriginChannel,omitempty"`
+}
+
+// TaskDomainStrengthConfig 任务域优势配置。
+type TaskDomainStrengthConfig struct {
+	Enabled             bool                          `json:"enabled,omitempty"`
+	Weight              float64                       `json:"weight,omitempty"`
+	SeedMatrixOverrides map[string]map[string]float64 `json:"seedMatrixOverrides,omitempty"`
+}
+
+// ReasoningEffortConfig 推理档位展开配置。
+type ReasoningEffortConfig struct {
+	Enabled               bool                `json:"enabled,omitempty"`
+	ExpandVariants        bool                `json:"expandVariants,omitempty"`
+	PerTaskClass          map[string][]string `json:"perTaskClass,omitempty"`
+	RespectClientThinking bool                `json:"respectClientThinking,omitempty"`
+}
+
+// ManualIntentConfig 人工路由意图配置。
+type ManualIntentConfig struct {
+	Enabled                       bool `json:"enabled,omitempty"`
+	DefaultTTLMinutes             int  `json:"defaultTtlMinutes,omitempty"`
+	MaxTTLHours                   int  `json:"maxTtlHours,omitempty"`
+	DefaultMaxRequests            int  `json:"defaultMaxRequests,omitempty"`
+	MaxTrafficPercentForThirdTier int  `json:"maxTrafficPercentForThirdTier,omitempty"`
+	RequireConfirmForSupervisor   bool `json:"requireConfirmForSupervisor,omitempty"`
+	FallbackOnFailureDefault      bool `json:"fallbackOnFailureDefault,omitempty"`
+}
+
+// TrustedRoutingAdvisorConfig 可信路由顾问配置。
+type TrustedRoutingAdvisorConfig struct {
+	Enabled                         bool     `json:"enabled,omitempty"`
+	Mode                            string   `json:"mode,omitempty"`
+	AllowedAdvisorOriginTiers       []string `json:"allowedAdvisorOriginTiers,omitempty"`
+	ForbidAdvisorOnRelayOrCommunity bool     `json:"forbidAdvisorOnRelayOrCommunity,omitempty"`
+	AdvisorRuntimeUID               string   `json:"advisorRuntimeUid,omitempty"`
+	AdvisorChannelUID               string   `json:"advisorChannelUid,omitempty"`
+	AdvisorTimeoutMs                int      `json:"advisorTimeoutMs,omitempty"`
+	MaxAdvisorPromptTokens          int      `json:"maxAdvisorPromptTokens,omitempty"`
+	MinAdvisorConfidence            float64  `json:"minAdvisorConfidence,omitempty"`
+	MinShadowSamples                int      `json:"minShadowSamples,omitempty"`
+	MinShadowAccuracy               float64  `json:"minShadowAccuracy,omitempty"`
+	MaxCriticalMisrouteRate         float64  `json:"maxCriticalMisrouteRate,omitempty"`
+	MaxFalseDemotionRate            float64  `json:"maxFalseDemotionRate,omitempty"`
+	PromotionMode                   string   `json:"promotionMode,omitempty"`
+	NeverDemoteTaskClasses          []string `json:"neverDemoteTaskClasses,omitempty"`
+	ForbidAutoDecomposeAndMerge     bool     `json:"forbidAutoDecomposeAndMerge,omitempty"`
+	RedactSensitiveMetadata         bool     `json:"redactSensitiveMetadata,omitempty"`
+	RecordOnlyHashedPrompt          bool     `json:"recordOnlyHashedPrompt,omitempty"`
+	RetainDecisionRecordsDays       int      `json:"retainDecisionRecordsDays,omitempty"`
+	AutoRollbackOnSloRegression     bool     `json:"autoRollbackOnSloRegression,omitempty"`
+	FailOpenOnAdvisorError          bool     `json:"failOpenOnAdvisorError,omitempty"`
+}
+
+// LocalModelRoutingConfig 本地模型路由配置。
+type LocalModelRoutingConfig struct {
+	Enabled                     bool     `json:"enabled,omitempty"`
+	Mode                        string   `json:"mode,omitempty"`
+	AllowLocalForTaskClasses    []string `json:"allowLocalForTaskClasses,omitempty"`
+	NeverDemoteTaskClasses      []string `json:"neverDemoteTaskClasses,omitempty"`
+	ForbidAutoDecomposeAndMerge bool     `json:"forbidAutoDecomposeAndMerge,omitempty"`
+}
+
+// ── 模式常量 ──
+
+const (
+	// AutopilotModeOff 完全关闭。
+	AutopilotModeOff = "off"
+	// AutopilotModeShadow 影子模式：只计算+记录，不影响真实调度（默认）。
+	AutopilotModeShadow = "shadow"
+	// AutopilotModeAssist 辅助模式：候选重排但不改变最终选择（本批暂同 shadow）。
+	AutopilotModeAssist = "assist"
+	// AutopilotModeAuto 全自动模式（本批暂同 shadow，后续迭代启用真实影响）。
+	AutopilotModeAuto = "auto"
+)
+
+const (
+	// autopilotKillSwitchEnv 是全局急停环境变量名。
+	autopilotKillSwitchEnv = "AUTOPILOT_KILL_SWITCH"
+)
+
+// ── 默认值 ──
+
+// DefaultAutopilotRoutingConfig 返回智能路由默认配置。
+// 适用于 config.json 中缺失 "autopilot" 块时的回退值。
+func DefaultAutopilotRoutingConfig() AutopilotRoutingConfig {
+	return AutopilotRoutingConfig{
+		RoutingMode: AutopilotModeShadow,
+		KillSwitch:  false,
+
+		CostPreference: CostPreferenceConfig{
+			Mode: "balanced",
+			Custom: CostPreferenceCustom{
+				SavingsMultiplier:         1.0,
+				ProviderQualityMultiplier: 1.0,
+			},
+		},
+
+		ModelFamilyPreference: ModelFamilyPreferenceConfig{
+			Enabled: true,
+			Weight:  0.2,
+			GlobalOrder: []string{
+				"claude", "openai", "deepseek", "gemini", "qwen", "kimi", "glm",
+			},
+		},
+
+		HealthCheck: HealthCheckConfig{
+			Enabled:                 true,
+			L2ProbeIntervalMinutes:  120,
+			L2ProbeMaxPerDay:        12,
+			DeadProbeIntervalHours:  6,
+			DeadConfidenceThreshold: 0.80,
+			AutoExcludeDead:         true,
+		},
+
+		FastDecay: FastDecayRoutingConfig{
+			Enabled:              true,
+			ApplyToCostTiers:     []string{"free", "cheap"},
+			ApplyToPoolTags:      []string{"temp"},
+			RecoveryRate:         0.15,
+			DecayBase:            0.85,
+			StreamBreakDecayBase: 0.70,
+		},
+
+		RateLimitDiscovery: RateLimitDiscoveryConfig{
+			Enabled:                 true,
+			ApplyOnlyWhenUnset:      true,
+			PreferHeaders:           true,
+			PassiveAimdEnabled:      true,
+			MinRpm:                  1,
+			MaxAutoRpm:              120,
+			MaxAutoTpm:              200000,
+			MaxAutoRpd:              5000,
+			MaxAutoConcurrent:       8,
+			ConfidenceThreshold:     0.6,
+			IncreaseIntervalMinutes: 10,
+			IncreaseStepPercent:     10,
+			DecreaseOn429Percent:    50,
+		},
+
+		ModelMapping: ModelMappingRoutingConfig{
+			AutoResolve:            true,
+			CapabilityFloorEnabled: true,
+			EchoMappedModel:        true,
+			ForbidChainMapping:     true,
+		},
+
+		CostOptimization: CostOptimizationConfig{
+			Enabled:                  true,
+			ApplyAfterQualityFloor:   true,
+			RequireCostConfidence:    0.6,
+			IncludeCachePricing:      true,
+			IncludeImageUnitPricing:  true,
+			IncludeEmbeddingPricing:  true,
+			Currency:                 "USD",
+			ExchangeRateSource:       "manual",
+			PreferLowerEffectiveCost: true,
+			SupervisorSavingsWeight:  0.5,
+			WorkerSavingsWeight:      3,
+		},
+
+		OriginPolicy: OriginPolicyConfig{
+			UnknownOriginPolicy:                "observe",
+			PreferHigherOriginTierAsTieBreaker: true,
+			OriginTieBreakerWeight:             0.2,
+			ShowLowerTierOutperforming:         true,
+			WarnMixedOriginChannel:             true,
+		},
+
+		TaskDomainStrength: TaskDomainStrengthConfig{
+			Enabled: true,
+			Weight:  0.5,
+		},
+
+		ReasoningEffort: ReasoningEffortConfig{
+			Enabled:               true,
+			ExpandVariants:        true,
+			RespectClientThinking: true,
+			PerTaskClass: map[string][]string{
+				"supervisor":   {"high", "max"},
+				"worker":       {"medium"},
+				"lightweight":  {"off", "minimal"},
+				"long_context": {"medium", "high"},
+			},
+		},
+
+		ManualIntent: ManualIntentConfig{
+			Enabled:                       true,
+			DefaultTTLMinutes:             120,
+			MaxTTLHours:                   24,
+			DefaultMaxRequests:            100,
+			MaxTrafficPercentForThirdTier: 25,
+			RequireConfirmForSupervisor:   true,
+			FallbackOnFailureDefault:      true,
+		},
+
+		TrustedRoutingAdvisor: TrustedRoutingAdvisorConfig{
+			Enabled:                         true,
+			Mode:                            AutopilotModeShadow,
+			AllowedAdvisorOriginTiers:       []string{"first", "local"},
+			ForbidAdvisorOnRelayOrCommunity: true,
+			AdvisorTimeoutMs:                1200,
+			MaxAdvisorPromptTokens:          1200,
+			MinAdvisorConfidence:            0.85,
+			MinShadowSamples:                500,
+			MinShadowAccuracy:               0.90,
+			MaxCriticalMisrouteRate:         0.01,
+			MaxFalseDemotionRate:            0.03,
+			PromotionMode:                   "manual",
+			NeverDemoteTaskClasses:          []string{"supervisor", "vision", "long_context"},
+			ForbidAutoDecomposeAndMerge:     true,
+			RedactSensitiveMetadata:         true,
+			RecordOnlyHashedPrompt:          true,
+			RetainDecisionRecordsDays:       7,
+			AutoRollbackOnSloRegression:     true,
+			FailOpenOnAdvisorError:          true,
+		},
+
+		LocalModelRouting: LocalModelRoutingConfig{
+			Enabled:                     true,
+			Mode:                        AutopilotModeShadow,
+			AllowLocalForTaskClasses:    []string{"lightweight", "worker"},
+			NeverDemoteTaskClasses:      []string{"supervisor", "vision", "long_context"},
+			ForbidAutoDecomposeAndMerge: true,
+		},
+	}
+}
+
+// ── 校验与归一化 ──
+
+// Validate 校验并归一化 AutopilotRoutingConfig。
+// 非法值回退到安全默认，不返回 error（fail-open 策略）。
+func (c *AutopilotRoutingConfig) Validate() {
+	// 1. 模式校验
+	c.RoutingMode = normalizeAutopilotMode(c.RoutingMode)
+
+	// 2. 成本偏好校验
+	c.CostPreference.validate()
+
+	// 3. 派系偏好校验
+	c.ModelFamilyPreference.validate()
+
+	// 4. 可选权重覆盖：移除 NaN
+	for k, v := range c.WeightOverrides {
+		if v != v { // NaN 检测
+			delete(c.WeightOverrides, k)
+		}
+	}
+}
+
+// normalizeAutopilotMode 归一化路由模式。
+// 非法值回退到 AutopilotModeShadow。
+func normalizeAutopilotMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case AutopilotModeOff, AutopilotModeShadow, AutopilotModeAssist, AutopilotModeAuto:
+		return strings.ToLower(strings.TrimSpace(mode))
+	case "":
+		return AutopilotModeShadow
+	default:
+		return AutopilotModeShadow
+	}
+}
+
+// validate 归一化 CostPreferenceConfig。
+func (c *CostPreferenceConfig) validate() {
+	c.Mode = normalizeCostPreferenceMode(c.Mode)
+
+	// 按 TaskClass 归一化
+	for k, v := range c.PerTaskClass {
+		normalized := normalizeCostPreferenceMode(v)
+		if normalized != v {
+			c.PerTaskClass[k] = normalized
+		}
+	}
+
+	// 自定义乘数钳制
+	custom := &c.Custom
+	if custom.SavingsMultiplier < 0 {
+		custom.SavingsMultiplier = 0
+	} else if custom.SavingsMultiplier > 3.0 {
+		custom.SavingsMultiplier = 3.0
+	}
+	if custom.ProviderQualityMultiplier < 0 {
+		custom.ProviderQualityMultiplier = 0
+	} else if custom.ProviderQualityMultiplier > 3.0 {
+		custom.ProviderQualityMultiplier = 3.0
+	}
+
+	// 非 custom 模式时覆盖乘数（保持配置一致性）
+	switch c.Mode {
+	case "quality_first":
+		custom.SavingsMultiplier = 0.3
+		custom.ProviderQualityMultiplier = 1.5
+	case "balanced":
+		custom.SavingsMultiplier = 1.0
+		custom.ProviderQualityMultiplier = 1.0
+	case "cost_first":
+		custom.SavingsMultiplier = 2.0
+		custom.ProviderQualityMultiplier = 0.5
+	}
+}
+
+// normalizeCostPreferenceMode 归一化价格偏向模式。
+// 非法值回退到 "balanced"。
+func normalizeCostPreferenceMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "quality_first", "balanced", "cost_first", "custom":
+		return strings.ToLower(strings.TrimSpace(mode))
+	case "":
+		return "balanced"
+	default:
+		return "balanced"
+	}
+}
+
+// validate 归一化 ModelFamilyPreferenceConfig。
+func (c *ModelFamilyPreferenceConfig) validate() {
+	// 移除空值
+	c.GlobalOrder = removeEmptyStrings(c.GlobalOrder)
+	for k, v := range c.PerTaskClass {
+		cleaned := removeEmptyStrings(v)
+		if len(cleaned) == 0 {
+			delete(c.PerTaskClass, k)
+		} else {
+			c.PerTaskClass[k] = cleaned
+		}
+	}
+
+	// 权重钳制
+	if c.Weight < 0 {
+		c.Weight = 0
+	} else if c.Weight > 1.0 {
+		c.Weight = 1.0
+	}
+}
+
+// removeEmptyStrings 从字符串切片中移除空白条目。
+// 输入 nil 返回 nil（保持零值语义）。
+func removeEmptyStrings(ss []string) []string {
+	if ss == nil {
+		return nil
+	}
+	result := make([]string, 0, len(ss))
+	for _, s := range ss {
+		if trimmed := strings.TrimSpace(s); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// ── ConfigManager 访问方法 ──
+
+// GetAutopilotRouting 获取智能路由配置（返回深拷贝）。
+// 如果配置文件中缺失 "autopilot" 块，返回 DefaultAutopilotRoutingConfig()。
+// KillSwitch 与环境变量 AUTOPILOT_KILL_SWITCH 的优先级已在 loadConfig 中处理。
+func (cm *ConfigManager) GetAutopilotRouting() AutopilotRoutingConfig {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.config.AutopilotRouting
+}
+
+// GetEffectiveRoutingMode 获取智能路由生效模式。
+// KillSwitch=true 时无条件返回 "off"。
+// assist/auto 在本批次暂等同 shadow（注释标注，后续迭代启用真实影响）。
+func (cm *ConfigManager) GetEffectiveRoutingMode() string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.config.AutopilotRouting.EffectiveRoutingMode()
+}
+
+// EffectiveRoutingMode 返回智能路由生效模式（无锁版本，供内部使用）。
+// KillSwitch=true 时无条件返回 "off"。
+func (c AutopilotRoutingConfig) EffectiveRoutingMode() string {
+	if c.KillSwitch {
+		return AutopilotModeOff
+	}
+	// 环境变量急停：在 loadConfig 中已同步到 KillSwitch，此处不再重复读取
+	return c.RoutingMode
+}
+
+// IsAutopilotActive 判断智能路由是否处于影响真实调度的模式。
+// Phase 2 第一批：所有模式（包括 assist/auto）均不影响真实调度，恒返回 false。
+// 后续批次启用 assist/auto 真实影响后，此处改为 mode == auto || mode == assist。
+func (c AutopilotRoutingConfig) IsAutopilotActive() bool {
+	// TODO(P2-后续): 当 assist/auto 真实影响启用后，改为:
+	//   mode := c.EffectiveRoutingMode()
+	//   return mode == AutopilotModeAuto || mode == AutopilotModeAssist
+	_ = c // 抑制 unused 警告
+	return false
+}
+
+// applyAutopilotEnvOverrides 将环境变量覆盖应用到 AutopilotRoutingConfig。
+// 仅处理 AUTOPILOT_KILL_SWITCH（bool-like: true/1/yes/on）。
+// 返回 true 表示有覆盖，需要持久化标记（但环境变量覆盖不写入配置文件）。
+func applyAutopilotEnvOverrides(c *AutopilotRoutingConfig) {
+	if envVal := os.Getenv(autopilotKillSwitchEnv); isTruthyEnv(envVal) {
+		c.KillSwitch = true
+	}
+}
+
+// isTruthyEnv 判断环境变量值是否为真值。
+// 支持: true, 1, yes, on（不区分大小写）。
+func isTruthyEnv(val string) bool {
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// ── CostPreference 辅助方法 ──
+
+// GetEffectiveCostPreferenceMode 获取指定 TaskClass 的生效价格偏向模式。
+// PerTaskClass 优先于全局 Mode。
+func (c CostPreferenceConfig) GetEffectiveCostPreferenceMode(taskClass string) string {
+	if taskClass != "" {
+		if mode, ok := c.PerTaskClass[taskClass]; ok {
+			normalized := normalizeCostPreferenceMode(mode)
+			if normalized != mode {
+				// 归一化后的值不一致，使用归一化值
+			}
+			return normalized
+		}
+	}
+	return c.Mode
+}
+
+// GetEffectiveMultipliers 获取指定 TaskClass 的生效乘数。
+// 返回 (savingsMultiplier, providerQualityMultiplier)。
+func (c CostPreferenceConfig) GetEffectiveMultipliers(taskClass string) (float64, float64) {
+	mode := c.GetEffectiveCostPreferenceMode(taskClass)
+	switch mode {
+	case "quality_first":
+		return 0.3, 1.5
+	case "balanced":
+		return 1.0, 1.0
+	case "cost_first":
+		return 2.0, 0.5
+	case "custom":
+		return c.Custom.SavingsMultiplier, c.Custom.ProviderQualityMultiplier
+	default:
+		return 1.0, 1.0
+	}
+}
+
+// ── ModelFamilyPreference 辅助方法 ──
+
+// GetEffectiveOrder 获取指定 TaskClass 的生效派系偏好顺序。
+// PerTaskClass 优先于 GlobalOrder。
+func (c ModelFamilyPreferenceConfig) GetEffectiveOrder(taskClass string) []string {
+	if taskClass != "" {
+		if order, ok := c.PerTaskClass[taskClass]; ok && len(order) > 0 {
+			return order
+		}
+	}
+	return c.GlobalOrder
+}
+
+// FamilyRank 返回指定派系在偏好顺序中的排名（0-based）。
+// 未找到返回 -1。排名越小越优先。
+func (c ModelFamilyPreferenceConfig) FamilyRank(taskClass string, family string) int {
+	order := c.GetEffectiveOrder(taskClass)
+	familyLower := strings.ToLower(strings.TrimSpace(family))
+	for i, f := range order {
+		if strings.ToLower(strings.TrimSpace(f)) == familyLower {
+			return i
+		}
+	}
+	return -1
+}
+
+// ── 深拷贝 ──
+
+// deepCopy 创建 AutopilotRoutingConfig 的深拷贝，确保并发安全。
+// map / slice 字段独立分配，避免调用方修改影响原始配置。
+func (c AutopilotRoutingConfig) deepCopy() AutopilotRoutingConfig {
+	cp := c
+
+	// CostPreference.PerTaskClass
+	if c.CostPreference.PerTaskClass != nil {
+		cp.CostPreference.PerTaskClass = make(map[string]string, len(c.CostPreference.PerTaskClass))
+		for k, v := range c.CostPreference.PerTaskClass {
+			cp.CostPreference.PerTaskClass[k] = v
+		}
+	}
+
+	// ModelFamilyPreference.GlobalOrder
+	if c.ModelFamilyPreference.GlobalOrder != nil {
+		cp.ModelFamilyPreference.GlobalOrder = make([]string, len(c.ModelFamilyPreference.GlobalOrder))
+		copy(cp.ModelFamilyPreference.GlobalOrder, c.ModelFamilyPreference.GlobalOrder)
+	}
+
+	// ModelFamilyPreference.PerTaskClass
+	if c.ModelFamilyPreference.PerTaskClass != nil {
+		cp.ModelFamilyPreference.PerTaskClass = make(map[string][]string, len(c.ModelFamilyPreference.PerTaskClass))
+		for k, v := range c.ModelFamilyPreference.PerTaskClass {
+			orderCopy := make([]string, len(v))
+			copy(orderCopy, v)
+			cp.ModelFamilyPreference.PerTaskClass[k] = orderCopy
+		}
+	}
+
+	// WeightOverrides
+	if c.WeightOverrides != nil {
+		cp.WeightOverrides = make(map[string]float64, len(c.WeightOverrides))
+		for k, v := range c.WeightOverrides {
+			cp.WeightOverrides[k] = v
+		}
+	}
+
+	// HealthCheck — 值类型，无需额外处理
+
+	// FastDecay.ApplyToCostTiers / ApplyToPoolTags
+	if c.FastDecay.ApplyToCostTiers != nil {
+		cp.FastDecay.ApplyToCostTiers = make([]string, len(c.FastDecay.ApplyToCostTiers))
+		copy(cp.FastDecay.ApplyToCostTiers, c.FastDecay.ApplyToCostTiers)
+	}
+	if c.FastDecay.ApplyToPoolTags != nil {
+		cp.FastDecay.ApplyToPoolTags = make([]string, len(c.FastDecay.ApplyToPoolTags))
+		copy(cp.FastDecay.ApplyToPoolTags, c.FastDecay.ApplyToPoolTags)
+	}
+
+	// TaskDomainStrength.SeedMatrixOverrides
+	if c.TaskDomainStrength.SeedMatrixOverrides != nil {
+		cp.TaskDomainStrength.SeedMatrixOverrides = make(map[string]map[string]float64, len(c.TaskDomainStrength.SeedMatrixOverrides))
+		for k, v := range c.TaskDomainStrength.SeedMatrixOverrides {
+			inner := make(map[string]float64, len(v))
+			for ik, iv := range v {
+				inner[ik] = iv
+			}
+			cp.TaskDomainStrength.SeedMatrixOverrides[k] = inner
+		}
+	}
+
+	// ReasoningEffort.PerTaskClass
+	if c.ReasoningEffort.PerTaskClass != nil {
+		cp.ReasoningEffort.PerTaskClass = make(map[string][]string, len(c.ReasoningEffort.PerTaskClass))
+		for k, v := range c.ReasoningEffort.PerTaskClass {
+			effortsCopy := make([]string, len(v))
+			copy(effortsCopy, v)
+			cp.ReasoningEffort.PerTaskClass[k] = effortsCopy
+		}
+	}
+
+	// TrustedRoutingAdvisor slice 字段
+	if c.TrustedRoutingAdvisor.AllowedAdvisorOriginTiers != nil {
+		cp.TrustedRoutingAdvisor.AllowedAdvisorOriginTiers = make([]string, len(c.TrustedRoutingAdvisor.AllowedAdvisorOriginTiers))
+		copy(cp.TrustedRoutingAdvisor.AllowedAdvisorOriginTiers, c.TrustedRoutingAdvisor.AllowedAdvisorOriginTiers)
+	}
+	if c.TrustedRoutingAdvisor.NeverDemoteTaskClasses != nil {
+		cp.TrustedRoutingAdvisor.NeverDemoteTaskClasses = make([]string, len(c.TrustedRoutingAdvisor.NeverDemoteTaskClasses))
+		copy(cp.TrustedRoutingAdvisor.NeverDemoteTaskClasses, c.TrustedRoutingAdvisor.NeverDemoteTaskClasses)
+	}
+
+	// LocalModelRouting slice 字段
+	if c.LocalModelRouting.AllowLocalForTaskClasses != nil {
+		cp.LocalModelRouting.AllowLocalForTaskClasses = make([]string, len(c.LocalModelRouting.AllowLocalForTaskClasses))
+		copy(cp.LocalModelRouting.AllowLocalForTaskClasses, c.LocalModelRouting.AllowLocalForTaskClasses)
+	}
+	if c.LocalModelRouting.NeverDemoteTaskClasses != nil {
+		cp.LocalModelRouting.NeverDemoteTaskClasses = make([]string, len(c.LocalModelRouting.NeverDemoteTaskClasses))
+		copy(cp.LocalModelRouting.NeverDemoteTaskClasses, c.LocalModelRouting.NeverDemoteTaskClasses)
+	}
+
+	return cp
+}

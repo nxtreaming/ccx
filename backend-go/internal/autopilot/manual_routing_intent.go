@@ -33,6 +33,14 @@ const (
 	TaskClassEmbedding   TaskClass = "embedding"        // 原生向量/embedding 任务
 )
 
+// AllTaskClasses 返回所有合法 TaskClass 枚举值。
+func AllTaskClasses() []TaskClass {
+	return []TaskClass{
+		TaskClassSupervisor, TaskClassWorker, TaskClassLightweight,
+		TaskClassVision, TaskClassLongContext, TaskClassImageGen, TaskClassEmbedding,
+	}
+}
+
 // ── 意图状态 ──
 
 // IntentStatus 意图生命周期状态。

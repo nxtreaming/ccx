@@ -84,6 +84,10 @@ func (cm *ConfigManager) loadConfig() error {
 	// 兼容旧配置：检查 FuzzyModeEnabled 字段是否存在
 	// 如果不存在，默认设为 true（新功能默认启用）
 	needSaveDefaults := cm.applyConfigDefaults(data)
+	// Autopilot 智能路由配置：缺失用默认值，环境变量覆盖，校验归一化
+	if cm.applyAutopilotDefaults(data) {
+		needSaveDefaults = true
+	}
 	if cm.applyServiceTypeDefaults() {
 		needSaveDefaults = true
 	}
@@ -142,6 +146,7 @@ func (cm *ConfigManager) createDefaultConfig() error {
 		ThinkingCache: ThinkingCacheConfig{
 			TTLHours: ThinkingCacheDefaultTTLHours,
 		},
+		AutopilotRouting: DefaultAutopilotRoutingConfig(),
 		// StripBillingHeader 旧全局字段默认关闭；新语义已下沉到渠道级开关
 	}
 
@@ -197,6 +202,31 @@ func (cm *ConfigManager) applyConfigDefaults(rawJSON []byte) bool {
 			needSave = migrated || needSave
 		}
 	}
+
+	return needSave
+}
+
+// applyAutopilotDefaults 处理 AutopilotRouting 配置的默认值、环境变量覆盖与校验。
+// 返回 true 表示配置被修改（需要保存）。
+func (cm *ConfigManager) applyAutopilotDefaults(rawJSON []byte) bool {
+	needSave := false
+
+	// 检查 config.json 中是否已包含 "autopilot" 块
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &rawMap); err == nil {
+		if _, exists := rawMap["autopilot"]; !exists {
+			// 缺失 autopilot 块，使用默认值
+			cm.config.AutopilotRouting = DefaultAutopilotRoutingConfig()
+			needSave = true
+			log.Printf("[Config-Migration] autopilot 配置块不存在，使用默认值")
+		}
+	}
+
+	// 环境变量覆盖（始终生效，不写入配置文件）
+	applyAutopilotEnvOverrides(&cm.config.AutopilotRouting)
+
+	// 校验与归一化（非法值回退到安全默认）
+	cm.config.AutopilotRouting.Validate()
 
 	return needSave
 }

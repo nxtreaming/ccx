@@ -200,19 +200,7 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		trace.setStage("candidate_filter", len(activeChannels))
 	}
 
-	// SmartFilter 注入点（设计 §4.6.5：CandidateFilter 之后、显式控制之前）。
-	// 设计 §4.6.3：显式人工控制（X-Channel / ManualOverride / Promotion）优先于 SmartRouter。
-	// shadow 模式：记录 RoutingDecisionTrace，返回原始列表（不影响真实调度）。
-	if opts.SmartFilter != nil {
-		filtered := opts.SmartFilter(ctx, activeChannels)
-		if len(filtered) > 0 {
-			activeChannels = filtered
-		}
-		// len(filtered)==0 时保留原列表，避免 SmartFilter bug 阻断全部调度
-		trace.setStage("smart_filter", len(activeChannels))
-	}
-
-	// 指定渠道名（X-Channel 头）：在 SmartFilter 之后定位，显式控制优先。
+	// 指定渠道名（X-Channel 头）：显式控制优先于 SmartFilter。
 	if channelName != "" {
 		for _, ch := range activeChannels {
 			if ch.Name == channelName {
@@ -288,6 +276,19 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		prefix := kindSchedulerLogPrefix(kind)
 		log.Printf("[%s-Promotion] 警告: 促销渠道 [%d] %s 已在本次请求中失败，跳过", prefix, promotedChannel.Index, promotedChannel.Name)
 		trace.skipChannel(*promotedChannel, "promotion", "failed_in_request", "")
+	}
+
+	// SmartFilter 注入点（设计 §4.6.3 / §4.6.5：显式控制之后、默认调度之前）。
+	// X-Channel / ManualOverride / Promotion 均在 SmartFilter 之前执行，
+	// 确保显式用户意图不受 SmartRouter 过滤影响。
+	// shadow 模式：记录 RoutingDecisionTrace，返回原始列表（不影响真实调度）。
+	if opts.SmartFilter != nil {
+		filtered := opts.SmartFilter(ctx, activeChannels)
+		if len(filtered) > 0 {
+			activeChannels = filtered
+		}
+		// len(filtered)==0 时保留原列表，避免 SmartFilter bug 阻断全部调度
+		trace.setStage("smart_filter", len(activeChannels))
 	}
 
 	// 1. 检查 Trace 亲和性（促销渠道失败时或无促销渠道时）
