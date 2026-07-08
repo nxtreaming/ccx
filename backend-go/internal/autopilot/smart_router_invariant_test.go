@@ -552,3 +552,398 @@ func TestInvariant_RoutingTraceRecorded(t *testing.T) {
 		t.Error("Candidates 不应为空")
 	}
 }
+
+// ── assist/auto 模式不变量测试 ──
+
+// TestInvariant_AssistMode_PermutationInvariant 验证：
+// assist 模式下，输出是输入的一个排列（长度相等、集合相等）。
+func TestInvariant_AssistMode_PermutationInvariant(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode: "assist",
+		KillSwitch:  false,
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	smartRouter := createTestSmartRouter(t, cfgManager)
+	profile := testProfile()
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter == nil {
+		t.Fatal("assist 模式下 filter 不应为 nil")
+	}
+
+	channels := []scheduler.ChannelInfo{
+		{Index: 0, Name: "ch-premium", Priority: 1, Status: "active"},
+		{Index: 1, Name: "ch-standard", Priority: 2, Status: "active"},
+		{Index: 2, Name: "ch-economy", Priority: 3, Status: "active"},
+	}
+
+	upstreamCfgs := cfg.Upstream
+	upstreamFor := func(ch scheduler.ChannelInfo) *config.UpstreamConfig {
+		if ch.Index >= 0 && ch.Index < len(upstreamCfgs) {
+			u := upstreamCfgs[ch.Index]
+			return &u
+		}
+		return nil
+	}
+	available := func(ch scheduler.ChannelInfo, u *config.UpstreamConfig) bool {
+		return ch.Status == "active" && len(u.APIKeys) > 0
+	}
+
+	result, err := filter(channels, upstreamFor, available)
+	if err != nil {
+		t.Fatalf("filter 执行失败: %v", err)
+	}
+
+	// 长度相等
+	if len(result) != len(channels) {
+		t.Fatalf("assist 模式应保持所有候选: 期望 %d，实际 %d", len(channels), len(result))
+	}
+
+	// 集合相等（排列不变量）
+	inputSet := make(map[string]bool)
+	for _, ch := range channels {
+		inputSet[ch.Name] = true
+	}
+	for _, ch := range result {
+		if !inputSet[ch.Name] {
+			t.Errorf("assist 输出包含输入中不存在的渠道: %s", ch.Name)
+		}
+		delete(inputSet, ch.Name)
+	}
+	if len(inputSet) > 0 {
+		t.Errorf("assist 输出缺少输入中的渠道: %v", inputSet)
+	}
+}
+
+// TestInvariant_AssistMode_RecordsTrace 验证：
+// assist 模式正确记录 RoutingDecisionTrace。
+func TestInvariant_AssistMode_RecordsTrace(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode: "assist",
+		KillSwitch:  false,
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	traceStore, err := NewTraceStoreWithDB(nil)
+	if err != nil {
+		t.Fatalf("创建 TraceStore 失败: %v", err)
+	}
+
+	smartRouter := &SmartRouter{
+		configManager: cfgManager,
+		traceStore:    traceStore,
+	}
+
+	profile := testProfile()
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter == nil {
+		t.Fatal("assist 模式下 filter 不应为 nil")
+	}
+
+	channels := []scheduler.ChannelInfo{
+		{Index: 0, Name: "ch-premium", Priority: 1, Status: "active"},
+		{Index: 1, Name: "ch-standard", Priority: 2, Status: "active"},
+		{Index: 2, Name: "ch-economy", Priority: 3, Status: "active"},
+	}
+
+	upstreamCfgs := cfg.Upstream
+	upstreamFor := func(ch scheduler.ChannelInfo) *config.UpstreamConfig {
+		if ch.Index >= 0 && ch.Index < len(upstreamCfgs) {
+			u := upstreamCfgs[ch.Index]
+			return &u
+		}
+		return nil
+	}
+	available := func(ch scheduler.ChannelInfo, u *config.UpstreamConfig) bool {
+		return ch.Status == "active" && len(u.APIKeys) > 0
+	}
+
+	_, _ = filter(channels, upstreamFor, available)
+
+	traces := traceStore.ListRecent(1)
+	if len(traces) != 1 {
+		t.Fatalf("应记录 1 条 trace，实际: %d", len(traces))
+	}
+
+	trace := traces[0]
+	if trace.Mode != RoutingModeAssist {
+		t.Errorf("trace Mode 应为 assist，实际: %s", trace.Mode)
+	}
+	if len(trace.SortReasons) == 0 {
+		t.Error("trace SortReasons 不应为空")
+	}
+	hasAssistSort := false
+	for _, r := range trace.SortReasons {
+		if r == "assist_reorder" {
+			hasAssistSort = true
+			break
+		}
+	}
+	if !hasAssistSort {
+		t.Errorf("trace SortReasons 应包含 assist_reorder，实际: %v", trace.SortReasons)
+	}
+}
+
+// TestInvariant_AutoMode_VisionFilter 验证：
+// auto 模式下，vision 请求过滤掉不支持识图的渠道。
+func TestInvariant_AutoMode_VisionFilter(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode: "auto",
+		KillSwitch:  false,
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	// 读取 ConfigManager 自动分配的 ChannelUID
+	processedCfg := cfgManager.GetConfig()
+	ch0UID := processedCfg.Upstream[0].ChannelUID
+	ch1UID := processedCfg.Upstream[1].ChannelUID
+	ch2UID := processedCfg.Upstream[2].ChannelUID
+	if ch0UID == "" || ch1UID == "" || ch2UID == "" {
+		t.Fatalf("ConfigManager 未分配 ChannelUID: ch0=%s ch1=%s ch2=%s", ch0UID, ch1UID, ch2UID)
+	}
+
+	// 创建带 ProfileStore 的 SmartRouter，给 ch-premium 设置 SupportsVision=true
+	profileStore := newTestProfileStore(t)
+	if profileStore != nil {
+		// ch-premium 支持识图
+		err := profileStore.Upsert(&KeyEndpointProfile{
+			EndpointUID:    "ep-premium-0",
+			ChannelUID:     ch0UID,
+			MetricsKey:     "https://premium.example.com|sk-premium",
+			HealthState:    HealthStateHealthy,
+			SupportsVision: true,
+			QualityTier:    QualityTierHigh,
+			StabilityTier:  StabilityTierStable,
+			SpeedTier:      SpeedTierFast,
+			CostTier:       CostTierNormal,
+			SuccessRate15m: 0.99,
+			P95LatencyMs:   100,
+		})
+		if err != nil {
+			t.Fatalf("Upsert premium 画像失败: %v", err)
+		}
+		// ch-standard 不支持识图（SupportsVision=false）
+		err = profileStore.Upsert(&KeyEndpointProfile{
+			EndpointUID:    "ep-standard-0",
+			ChannelUID:     ch1UID,
+			MetricsKey:     "https://standard.example.com|sk-standard",
+			HealthState:    HealthStateHealthy,
+			SupportsVision: false,
+			QualityTier:    QualityTierNormal,
+			StabilityTier:  StabilityTierNormal,
+			SpeedTier:      SpeedTierNormal,
+			CostTier:       CostTierNormal,
+			SuccessRate15m: 0.95,
+			P95LatencyMs:   200,
+		})
+		if err != nil {
+			t.Fatalf("Upsert standard 画像失败: %v", err)
+		}
+		// ch-economy 不支持识图
+		err = profileStore.Upsert(&KeyEndpointProfile{
+			EndpointUID:    "ep-economy-0",
+			ChannelUID:     ch2UID,
+			MetricsKey:     "https://economy.example.com|sk-economy",
+			HealthState:    HealthStateHealthy,
+			SupportsVision: false,
+			QualityTier:    QualityTierLow,
+			StabilityTier:  StabilityTierNormal,
+			SpeedTier:      SpeedTierNormal,
+			CostTier:       CostTierCheap,
+			SuccessRate15m: 0.90,
+			P95LatencyMs:   300,
+		})
+		if err != nil {
+			t.Fatalf("Upsert economy 画像失败: %v", err)
+		}
+	}
+
+	smartRouter := &SmartRouter{
+		configManager: cfgManager,
+		profileStore:  profileStore,
+	}
+
+	// vision 请求
+	profile := testProfile()
+	profile.VisionNeed = true
+
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter == nil {
+		t.Fatal("auto 模式下 filter 不应为 nil")
+	}
+
+	channels := []scheduler.ChannelInfo{
+		{Index: 0, Name: "ch-premium", Priority: 1, Status: "active"},
+		{Index: 1, Name: "ch-standard", Priority: 2, Status: "active"},
+		{Index: 2, Name: "ch-economy", Priority: 3, Status: "active"},
+	}
+
+	upstreamCfgs := processedCfg.Upstream
+	upstreamFor := func(ch scheduler.ChannelInfo) *config.UpstreamConfig {
+		if ch.Index >= 0 && ch.Index < len(upstreamCfgs) {
+			u := upstreamCfgs[ch.Index]
+			return &u
+		}
+		return nil
+	}
+	available := func(ch scheduler.ChannelInfo, u *config.UpstreamConfig) bool {
+		return ch.Status == "active" && len(u.APIKeys) > 0
+	}
+
+	result, err := filter(channels, upstreamFor, available)
+	if err != nil {
+		t.Fatalf("filter 执行失败: %v", err)
+	}
+
+	// 只有 ch-premium 支持 vision，应被保留
+	if len(result) != 1 {
+		t.Fatalf("auto vision 过滤后应剩 1 个候选，实际: %d", len(result))
+	}
+	if result[0].Name != "ch-premium" {
+		t.Errorf("auto vision 过滤后应选择 ch-premium，实际: %s", result[0].Name)
+	}
+}
+
+// TestInvariant_AutoMode_FailOpen 验证：
+// auto 模式下，全部候选被硬约束过滤时回退到重排（fail-open）。
+func TestInvariant_AutoMode_FailOpen(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode: "auto",
+		KillSwitch:  false,
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	// ProfileStore 为 nil，所有渠道 SupportsVision=false（默认值）
+	smartRouter := createTestSmartRouter(t, cfgManager)
+
+	// vision 请求，但无渠道支持 vision
+	profile := testProfile()
+	profile.VisionNeed = true
+
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter == nil {
+		t.Fatal("auto 模式下 filter 不应为 nil")
+	}
+
+	channels := []scheduler.ChannelInfo{
+		{Index: 0, Name: "ch-premium", Priority: 1, Status: "active"},
+		{Index: 1, Name: "ch-standard", Priority: 2, Status: "active"},
+		{Index: 2, Name: "ch-economy", Priority: 3, Status: "active"},
+	}
+
+	upstreamCfgs := cfg.Upstream
+	upstreamFor := func(ch scheduler.ChannelInfo) *config.UpstreamConfig {
+		if ch.Index >= 0 && ch.Index < len(upstreamCfgs) {
+			u := upstreamCfgs[ch.Index]
+			return &u
+		}
+		return nil
+	}
+	available := func(ch scheduler.ChannelInfo, u *config.UpstreamConfig) bool {
+		return ch.Status == "active" && len(u.APIKeys) > 0
+	}
+
+	result, err := filter(channels, upstreamFor, available)
+	if err != nil {
+		t.Fatalf("filter 执行失败: %v", err)
+	}
+
+	// fail-open：全部被过滤时回退到重排，返回完整列表
+	if len(result) != len(channels) {
+		t.Fatalf("auto fail-open 应返回全部候选: 期望 %d，实际 %d", len(channels), len(result))
+	}
+
+	// 验证集合一致
+	inputSet := make(map[string]bool)
+	for _, ch := range channels {
+		inputSet[ch.Name] = true
+	}
+	for _, ch := range result {
+		delete(inputSet, ch.Name)
+	}
+	if len(inputSet) > 0 {
+		t.Errorf("auto fail-open 输出缺少输入中的渠道: %v", inputSet)
+	}
+}
+
+// TestInvariant_AutoMode_FailOpen_TraceRecorded 验证：
+// auto fail-open 模式下 trace 正确记录 FallbackUsed 和过滤原因。
+func TestInvariant_AutoMode_FailOpen_TraceRecorded(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
+		RoutingMode: "auto",
+		KillSwitch:  false,
+	}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	traceStore, err := NewTraceStoreWithDB(nil)
+	if err != nil {
+		t.Fatalf("创建 TraceStore 失败: %v", err)
+	}
+
+	smartRouter := &SmartRouter{
+		configManager: cfgManager,
+		traceStore:    traceStore,
+	}
+
+	profile := testProfile()
+	profile.VisionNeed = true
+
+	filter := smartRouter.CandidateFilterFor(profile)
+	if filter == nil {
+		t.Fatal("auto 模式下 filter 不应为 nil")
+	}
+
+	channels := []scheduler.ChannelInfo{
+		{Index: 0, Name: "ch-premium", Priority: 1, Status: "active"},
+		{Index: 1, Name: "ch-standard", Priority: 2, Status: "active"},
+		{Index: 2, Name: "ch-economy", Priority: 3, Status: "active"},
+	}
+
+	upstreamCfgs := cfg.Upstream
+	upstreamFor := func(ch scheduler.ChannelInfo) *config.UpstreamConfig {
+		if ch.Index >= 0 && ch.Index < len(upstreamCfgs) {
+			u := upstreamCfgs[ch.Index]
+			return &u
+		}
+		return nil
+	}
+	available := func(ch scheduler.ChannelInfo, u *config.UpstreamConfig) bool {
+		return ch.Status == "active" && len(u.APIKeys) > 0
+	}
+
+	_, _ = filter(channels, upstreamFor, available)
+
+	traces := traceStore.ListRecent(1)
+	if len(traces) != 1 {
+		t.Fatalf("应记录 1 条 trace，实际: %d", len(traces))
+	}
+
+	trace := traces[0]
+	if trace.Mode != RoutingModeAuto {
+		t.Errorf("trace Mode 应为 auto，实际: %s", trace.Mode)
+	}
+	if !trace.FallbackUsed {
+		t.Error("trace FallbackUsed 应为 true（全部候选被过滤）")
+	}
+	if _, ok := trace.GlobalFilterReasons["auto_failopen"]; !ok {
+		t.Error("trace GlobalFilterReasons 应包含 auto_failopen")
+	}
+	if _, ok := trace.GlobalFilterReasons["auto_hard_constraints"]; !ok {
+		t.Error("trace GlobalFilterReasons 应包含 auto_hard_constraints")
+	}
+}

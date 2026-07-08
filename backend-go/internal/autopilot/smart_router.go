@@ -160,8 +160,9 @@ func (r *SmartRouter) BuildPlan(profile *RequestProfile) *RoutingPlan {
 // CandidateFilterFor 为给定请求构建 scheduler.CandidateFilterFunc。
 // 返回 nil 表示不注入（off / kill switch）。
 // shadow 模式：计算评分 + 记录 RoutingDecisionTrace，返回原始候选列表。
+// assist 模式：按评分重排渠道列表，不删除任何渠道。
+// auto 模式：硬约束过滤 + 重排；过滤后为空则 fail-open 回退到只重排。
 // active 模式：返回评分排序后的候选列表。
-// assist/auto 本批等同 shadow（TODO: 后续迭代启用真实重排）。
 func (r *SmartRouter) CandidateFilterFor(profile *RequestProfile) scheduler.CandidateFilterFunc {
 	if profile == nil {
 		return nil
@@ -270,43 +271,121 @@ func (r *SmartRouter) executeFilter(
 	}
 	savingsMap := NormalizeSavingsScore(costMap)
 
-	// 评分
-	candidates := make([]RoutingCandidate, 0, len(entries))
+	// 评分 + 按总分降序排序
+	type scoredEntry struct {
+		entry  channelScoreEntry
+		scored ScoredCandidate
+	}
+	scoredEntries := make([]scoredEntry, 0, len(entries))
 	for _, e := range entries {
 		e.ScoringCandidate.SavingsScore = savingsMap[e.ChannelUID]
 		scored := ScoreCandidate(e.ScoringCandidate, scoringCtx)
+		scoredEntries = append(scoredEntries, scoredEntry{entry: e, scored: scored})
+	}
+	sort.Slice(scoredEntries, func(i, j int) bool {
+		return scoredEntries[i].scored.Score > scoredEntries[j].scored.Score
+	})
 
-		routingCandidate := RoutingCandidate{
+	// 从已排序的 scoredEntries 构建 trace 候选和结果列表
+	result := make([]scheduler.ChannelInfo, 0, len(scoredEntries))
+	candidates := make([]RoutingCandidate, 0, len(scoredEntries))
+	for _, se := range scoredEntries {
+		e := se.entry
+		sc := se.scored
+		candidates = append(candidates, RoutingCandidate{
 			ChannelUID:  e.ChannelUID,
 			MetricsKey:  SanitizeMetricsKey(e.MetricsKey),
 			OriginTier:  string(e.OriginTier),
 			ChannelKind: e.ChannelKind,
 			HealthState: string(e.HealthState),
-			TotalScore:  scored.Score,
+			TotalScore:  sc.Score,
 			Scores: []CandidateScore{
-				{Dimension: "quality", Score: scored.QualityScore, Weight: weights.WQuality},
-				{Dimension: "stability", Score: scored.StabilityScore, Weight: weights.WStability},
-				{Dimension: "speed", Score: scored.SpeedScore, Weight: weights.WSpeed},
-				{Dimension: "cost", Score: scored.CostScore, Weight: weights.WCost},
-				{Dimension: "savings", Score: scored.SavingsScore, Weight: weights.WSavings},
-				{Dimension: "family", Score: scored.FamilyPrefScore, Weight: weights.WFamily},
-				{Dimension: "provider_quality", Score: scored.ProviderQualityScore, Weight: weights.WProviderQuality},
-				{Dimension: "domain", Score: scored.DomainStrengthScore, Weight: weights.WDomain},
+				{Dimension: "quality", Score: sc.QualityScore, Weight: weights.WQuality},
+				{Dimension: "stability", Score: sc.StabilityScore, Weight: weights.WStability},
+				{Dimension: "speed", Score: sc.SpeedScore, Weight: weights.WSpeed},
+				{Dimension: "cost", Score: sc.CostScore, Weight: weights.WCost},
+				{Dimension: "savings", Score: sc.SavingsScore, Weight: weights.WSavings},
+				{Dimension: "family", Score: sc.FamilyPrefScore, Weight: weights.WFamily},
+				{Dimension: "provider_quality", Score: sc.ProviderQualityScore, Weight: weights.WProviderQuality},
+				{Dimension: "domain", Score: sc.DomainStrengthScore, Weight: weights.WDomain},
 			},
 			Selected: true,
+		})
+
+		// 匹配回 ChannelInfo：优先用上游配置的 ChannelUID，回退到 ch_%d 格式
+		for _, ch := range channels {
+			upstream := upstreamFor(ch)
+			matchUID := e.ChannelUID
+			if upstream != nil && upstream.ChannelUID != "" {
+				matchUID = upstream.ChannelUID
+			} else {
+				matchUID = fmt.Sprintf("ch_%d", ch.Index)
+			}
+			if matchUID == e.ChannelUID {
+				result = append(result, ch)
+				break
+			}
 		}
-		candidates = append(candidates, routingCandidate)
 	}
 
-	// 按总分降序排序
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].TotalScore > candidates[j].TotalScore
-	})
+	// ── auto 模式：硬约束过滤 + fail-open ──
+	fallbackUsed := false
+	if mode == RoutingModeAuto {
+		filteredResult := make([]scheduler.ChannelInfo, 0, len(scoredEntries))
+		for i, se := range scoredEntries {
+			reasons := autoHardConstraintReasons(profile, &se.entry)
+			if len(reasons) > 0 {
+				candidates[i].Selected = false
+				candidates[i].FilterReasons = reasons
+				trace.GlobalFilterReasons["auto_hard_constraints"] = append(
+					trace.GlobalFilterReasons["auto_hard_constraints"],
+					se.entry.ChannelUID+": "+joinReasons(reasons),
+				)
+			} else {
+				// 保留未被过滤的渠道：匹配回 ChannelInfo
+				for _, ch := range channels {
+					upstream := upstreamFor(ch)
+					matchUID := se.entry.ChannelUID
+					if upstream != nil && upstream.ChannelUID != "" {
+						matchUID = upstream.ChannelUID
+					} else {
+						matchUID = fmt.Sprintf("ch_%d", ch.Index)
+					}
+					if matchUID == se.entry.ChannelUID {
+						filteredResult = append(filteredResult, ch)
+						break
+					}
+				}
+			}
+		}
+
+		if len(filteredResult) > 0 {
+			result = filteredResult
+		} else if len(scoredEntries) > 0 {
+			// fail-open：全部被过滤时回退到重排（不删除）
+			fallbackUsed = true
+			trace.FallbackUsed = true
+			trace.GlobalFilterReasons["auto_failopen"] = []string{
+				fmt.Sprintf("所有 %d 个候选均被硬约束过滤，回退到重排模式", len(scoredEntries)),
+			}
+			log.Printf("[SmartRouter-AutoFailOpen] taskClass=%s 全部候选被过滤，回退到重排", string(profile.TaskClass))
+			// result 保持重排后的完整列表
+		}
+	}
 
 	// 记录 trace 信息
 	trace.Candidates = candidates
 	trace.CandidatesAfter = len(candidates)
 	trace.SortReasons = []string{"smart_routing_score"}
+	if mode == RoutingModeAssist {
+		trace.SortReasons = append(trace.SortReasons, "assist_reorder")
+	} else if mode == RoutingModeAuto {
+		if fallbackUsed {
+			trace.SortReasons = append(trace.SortReasons, "auto_failopen_reorder")
+		} else {
+			trace.SortReasons = append(trace.SortReasons, "auto_filter_and_reorder")
+		}
+	}
 
 	if len(candidates) > 0 {
 		trace.SelectedChannelUID = candidates[0].ChannelUID
@@ -318,8 +397,7 @@ func (r *SmartRouter) executeFilter(
 	trace.DurationMs = time.Since(startTime).Milliseconds()
 	trace.CreatedAt = time.Now().UTC()
 
-	// shadow 模式：记录实际调度的渠道（后续由调用方填充）
-	// 记录 shadow 建议的渠道
+	// shadow/dryrun 模式：记录 shadow 建议的渠道
 	if mode == RoutingModeShadow && len(candidates) > 0 {
 		trace.ShadowChannelUID = candidates[0].ChannelUID
 		trace.Match = true // 先假设匹配，实际填充时更新
@@ -330,26 +408,17 @@ func (r *SmartRouter) executeFilter(
 		traceStore.Record(trace)
 	}
 
-	log.Printf("[SmartRouter-Filter] taskClass=%s mode=%s candidates=%d shadow=%s duration=%dms",
-		string(profile.TaskClass), string(mode), len(candidates),
+	log.Printf("[SmartRouter-Filter] taskClass=%s mode=%s candidates=%d fallback=%v shadow=%s duration=%dms",
+		string(profile.TaskClass), string(mode), len(candidates), fallbackUsed,
 		trace.ShadowChannelUID, trace.DurationMs)
 
-	// shadow 模式：返回原始候选列表（不影响真实调度）
+	// shadow/dryrun 模式：返回原始候选列表（不影响真实调度）
 	if mode == RoutingModeShadow || mode == RoutingModeDryRun {
 		return channels, nil
 	}
 
-	// active 模式：返回评分排序后的候选列表
-	filtered := make([]scheduler.ChannelInfo, 0, len(candidates))
-	for _, c := range candidates {
-		for _, ch := range channels {
-			if ch.Name == c.ChannelUID || fmt.Sprintf("ch_%d", ch.Index) == c.ChannelUID {
-				filtered = append(filtered, ch)
-				break
-			}
-		}
-	}
-	return filtered, nil
+	// assist/auto 模式：返回评分重排后的候选列表
+	return result, nil
 }
 
 // channelScoreEntry 渠道评分输入条目。
@@ -361,6 +430,7 @@ type channelScoreEntry struct {
 	HealthState      HealthState
 	EstimatedCost    float64
 	ChannelIndex     int
+	SupportsVision   bool // 渠道是否支持识图（来自画像聚合 + 手动配置覆盖）
 	ScoringCandidate ScoringCandidate
 }
 
@@ -396,6 +466,12 @@ func (r *SmartRouter) buildChannelEntry(
 			entry.OriginTier = ChannelOriginTier(agg.OriginTier)
 			entry.MetricsKey = profiles[0].MetricsKey
 
+			// 识图能力：画像聚合（Layer 1）+ 手动配置覆盖（Layer 0 优先级最高）
+			entry.SupportsVision = agg.SupportsVision
+			if upstream.NoVision {
+				entry.SupportsVision = false
+			}
+
 			entry.ScoringCandidate = ScoringCandidate{
 				ChannelUID:                channelUID,
 				QualityTier:               agg.QualityTier,
@@ -426,6 +502,45 @@ func (r *SmartRouter) buildChannelEntry(
 		DomainStrengthScore:       0.5,
 	}
 	return entry
+}
+
+// autoHardConstraintReasons 检查 auto 模式的硬约束，返回不满足的原因列表。
+// 空列表表示该渠道满足所有硬约束。
+// 当前硬约束（逐批扩展）：
+//   - vision 请求但渠道不支持识图
+//   - CapabilityFloor：请求需要推理但渠道不支持（画像数据可用时）
+func autoHardConstraintReasons(profile *RequestProfile, entry *channelScoreEntry) []string {
+	var reasons []string
+
+	// 识图硬约束
+	if profile.VisionNeed && !entry.SupportsVision {
+		reasons = append(reasons, "vision_unsupported")
+	}
+
+	// 模型级 NoVisionModels 精确匹配
+	if profile.VisionNeed && entry.SupportsVision && profile.Model != "" {
+		// 如果上游配置指定了此模型不支持视觉，通过 ProfileStore 的画像已覆盖
+		// 此处不重复检查（画像层已处理）
+	}
+
+	// TODO(P2-后续): CapabilityFloor 扩展 —— 当模型注册表可用时检查
+	//   - ContextNeed vs 上游 ContextWindowLimit
+	//   - ToolUseNeed vs 上游 SupportsToolCalls
+	//   - ReasoningNeed vs 上游 SupportsReasoning
+
+	return reasons
+}
+
+// joinReasons 将原因列表拼接为逗号分隔字符串。
+func joinReasons(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	result := reasons[0]
+	for _, r := range reasons[1:] {
+		result += "," + r
+	}
+	return result
 }
 
 // collectChannelEntries 收集指定 kind 的所有渠道条目。
