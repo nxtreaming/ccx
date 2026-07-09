@@ -115,6 +115,19 @@ func SetNotifyEndpointResultHook(hook func(endpointUID string, success bool)) {
 	notifyEndpointResultHook = hook
 }
 
+// PostSuccessfulProxyHook 可选的代理成功后回调。
+// 由 main.go 在 autopilot A/B 测试初始化后注入。
+// 在主响应已写回客户端之后、函数返回之前触发。
+// 签名：(channelKind, model, channelUID string, statusCode int, latencyMs int64, bodyBytes []byte)。
+// 回调函数不应阻塞（如果需要异步操作，由回调内部自行管理）。
+var postSuccessfulProxyHook func(channelKind, model, channelUID string, statusCode int, latencyMs int64, bodyBytes []byte)
+
+// SetPostSuccessfulProxyHook 设置代理成功后回调钩子。
+// 由 main.go 在 autopilot ABTestSampler 初始化后调用；nil 表示不触发。
+func SetPostSuccessfulProxyHook(hook func(channelKind, model, channelUID string, statusCode int, latencyMs int64, bodyBytes []byte)) {
+	postSuccessfulProxyHook = hook
+}
+
 func shouldNormalizeMetadataUserID(kind scheduler.ChannelKind, upstream *config.UpstreamConfig) bool {
 	if upstream == nil {
 		return false
@@ -745,6 +758,16 @@ func TryUpstreamWithAllKeys(
 					c.Header("X-CCX-Original-Model", model)
 					c.Header("X-CCX-Mapping-Source", "auto_resolve")
 				}
+			}
+
+			// Phase 4 Item 8: 代理成功后回调（A/B 测试用）。
+			// 在主响应已写回客户端之后触发，不影响主请求路径。
+			if postSuccessfulProxyHook != nil {
+				latencyMs := time.Since(attemptStartedAt).Milliseconds()
+				// 复制 bodyBytes 防止异步使用时被原始切片回收
+				bodyCopy := make([]byte, len(requestBody))
+				copy(bodyCopy, requestBody)
+				postSuccessfulProxyHook(string(kind), model, upstream.ChannelUID, http.StatusOK, latencyMs, bodyCopy)
 			}
 
 			return true, apiKey, originalIdx, nil, usage, nil

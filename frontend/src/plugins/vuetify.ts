@@ -170,6 +170,7 @@ import {
   mdiAlertCircleOutline,
   mdiChartLineVariant,
   mdiChartTimelineVariant,
+  mdiFlaskOutline,
   mdiChartAreaspline,
   mdiChartLine,
   mdiViewDashboardOutline,
@@ -395,6 +396,7 @@ const iconMap: Record<string, string> = {
 
   // 图表与数据
   'chart-timeline-variant': mdiChartTimelineVariant,
+  'flask-outline': mdiFlaskOutline,
   'chart-areaspline': mdiChartAreaspline,
   'chart-line': mdiChartLine,
   'chart-line-variant': mdiChartLineVariant,

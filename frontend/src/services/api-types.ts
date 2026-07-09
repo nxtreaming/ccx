@@ -1160,3 +1160,62 @@ export interface CostReportResponse {
   duration: string
   rows: CostReportRow[]
 }
+
+// ── A/B 测试（Phase 4 Item 8） ──
+
+export interface ABTestRecord {
+  recordUid: string
+  model: string
+  channelKind: string
+  primaryChannelUid: string
+  primarySuccess: boolean
+  primaryStatusCode: number
+  primaryLatencyMs: number
+  shadowChannelUid: string
+  shadowSuccess: boolean
+  shadowStatusCode: number
+  shadowLatencyMs: number
+  shadowError?: string
+  shadowCostUsd: number
+  traceUid?: string
+  createdAt: string
+}
+
+export interface ABTestChannelStats {
+  channelUid: string
+  count: number
+  successCount: number
+  successRate: number
+  avgLatencyMs: number
+  totalCostUsd: number
+}
+
+export interface ABTestStats {
+  totalRecords: number
+  shadowSuccessCount: number
+  shadowFailCount: number
+  shadowSuccessRate: number
+  avgShadowLatencyMs: number
+  totalShadowCostUsd: number
+  byChannel?: Record<string, ABTestChannelStats>
+}
+
+export interface ABTestResultsResponse {
+  enabled: boolean
+  sampleRatio: number
+  shadowCandidateCount: number
+  budgetUsed: number
+  budgetRemaining: number
+  maxBudgetPerHour: number
+  killSwitchActive: boolean
+  stats: ABTestStats
+  recentRecords: ABTestRecord[]
+  totalShadowCostUsd: number
+}
+
+export interface ABTestEmergencyStopResponse {
+  ok: boolean
+  action: string
+  reason: string
+  note: string
+}

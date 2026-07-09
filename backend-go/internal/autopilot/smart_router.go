@@ -34,7 +34,12 @@ type SmartRouter struct {
 	advisor           *TrustedRoutingAdvisor      // Phase 2: 可信路由顾问（nil = 不启用）
 	decisionStore     *AdvisorDecisionStore        // Phase 2: advisor 决策记录存储
 	localRuntimeStore *LocalRuntimeStore           // Phase 2: 本地运行时存储（nil = 不纳入本地候选）
-	mu                sync.RWMutex
+
+	// onCandidatesRanked Phase 4 Item 8: 候选排名回调（A/B 测试用）。
+	// executeFilter 完成评分排序后调用，传入 ranked candidates。
+	onCandidatesRanked func(model, channelKind string, candidates []RoutingCandidate)
+
+	mu sync.RWMutex
 }
 
 // NewSmartRouter 创建 SmartRouter 实例。
@@ -83,6 +88,12 @@ func (r *SmartRouter) SetAdvisor(advisor *TrustedRoutingAdvisor, decisionStore *
 // nil 表示不纳入本地候选（fail-safe：不影响调度）。
 func (r *SmartRouter) SetLocalRuntimeStore(store *LocalRuntimeStore) {
 	r.localRuntimeStore = store
+}
+
+// SetOnCandidatesRanked 设置候选排名回调（Phase 4 Item 8: A/B 测试用）。
+// executeFilter 完成评分排序后调用，将排名结果传递给调用方。
+func (r *SmartRouter) SetOnCandidatesRanked(fn func(model, channelKind string, candidates []RoutingCandidate)) {
+	r.onCandidatesRanked = fn
 }
 
 // BuildPlan 为请求构建路由计划（§4.6.1）。
@@ -741,6 +752,12 @@ func (r *SmartRouter) executeFilter(
 	// 持久化 trace
 	if traceStore != nil {
 		traceStore.Record(trace)
+	}
+
+	// Phase 4 Item 8: 候选排名回调（A/B 测试用）
+	// 在 trace 持久化之后、返回之前调用，确保候选数据已稳定。
+	if r.onCandidatesRanked != nil && len(candidates) > 0 {
+		r.onCandidatesRanked(profile.Model, profile.ChannelKind, candidates)
 	}
 
 	intentUID := ""

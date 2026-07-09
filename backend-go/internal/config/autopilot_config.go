@@ -90,6 +90,10 @@ type AutopilotRoutingConfig struct {
 	// subscriptionAutoRefresh 订阅余额自动刷新配置。
 	// 仅对显式填写了 BillingAPIKey 的订阅生效，且必须双门控（开关打开 + BillingAPIKey 非空）。
 	SubscriptionAutoRefresh SubscriptionAutoRefreshConfig `json:"subscriptionAutoRefresh,omitempty"`
+
+	// abTest A/B 测试（低比例统计抽样双发）配置。
+	// 主请求路径完全不变，影子请求在主响应返回后异步发起。
+	ABTest ABTestConfig `json:"abTest,omitempty"`
 }
 
 // ── §9.1 子配置类型 ──
@@ -311,6 +315,28 @@ type SLORollbackConfig struct {
 	ConsecutiveWindows int `json:"consecutiveWindows,omitempty"`
 }
 
+// ABTestConfig A/B 测试（低比例统计抽样双发）配置。
+// 主请求路径完全不变：影子请求在主响应返回后异步发起，不影响主请求延迟或结果。
+// 默认关闭，需显式 opt-in（Phase 4 Item 8 安全守则）。
+type ABTestConfig struct {
+	// Enabled 是否启用 A/B 测试抽样双发。
+	// 默认 false，需显式 opt-in。
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SampleRatio 抽样比例，0.0~1.0。
+	// 默认 0.01（1% 流量），防止配置失误导致成本失控。
+	SampleRatio float64 `json:"sampleRatio,omitempty"`
+
+	// MaxShadowRequestsPerHour 每小时影子请求硬预算上限。
+	// 仿 L2 探测每日 200 次预算先例，防止配置失误导致成本失控。
+	// 默认 60（约每分钟 1 次）。
+	MaxShadowRequestsPerHour int `json:"maxShadowRequestsPerHour,omitempty"`
+
+	// ShadowCandidateCount 影子候选数量。
+	// 默认 1，即只对比排名第二的候选渠道，不做多渠道混战。
+	ShadowCandidateCount int `json:"shadowCandidateCount,omitempty"`
+}
+
 // ── 模式常量 ──
 
 const (
@@ -486,6 +512,13 @@ func DefaultAutopilotRoutingConfig() AutopilotRoutingConfig {
 			RefreshIntervalHours:  24,
 			DailyBudget:           100,
 			RequestTimeoutSeconds: 15,
+		},
+
+		ABTest: ABTestConfig{
+			Enabled:                  false, // 默认关闭，需显式 opt-in（Phase 4 Item 8 安全守则）
+			SampleRatio:              0.01,  // 默认 1% 抽样
+			MaxShadowRequestsPerHour: 60,    // 默认每小时 60 次上限
+			ShadowCandidateCount:     1,     // 默认只对比排名第二的候选
 		},
 	}
 }
@@ -705,6 +738,20 @@ func (cm *ConfigManager) SetCostPreference(cp CostPreferenceConfig) error {
 		return err
 	}
 	log.Printf("[Config-Autopilot] 价格偏向已更新: %s", cp.Mode)
+	cm.fireConfigChangeCallbacks()
+	return nil
+}
+
+// SetABTestEnabled 更新 A/B 测试开关并持久化。
+// enabled=false 时立即停止所有影子请求采样。
+func (cm *ConfigManager) SetABTestEnabled(enabled bool) error {
+	cm.mu.Lock()
+	cm.config.AutopilotRouting.ABTest.Enabled = enabled
+	if err := cm.saveConfigLocked(cm.config); err != nil {
+		cm.mu.Unlock()
+		return err
+	}
+	log.Printf("[Config-Autopilot] A/B 测试开关已更新: enabled=%v", enabled)
 	cm.fireConfigChangeCallbacks()
 	return nil
 }

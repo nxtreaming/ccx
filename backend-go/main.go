@@ -536,6 +536,54 @@ func main() {
 
 				autopilotManager.StartWorker(context.Background())
 				log.Printf("[Autopilot-Init] 健康中心已初始化 (DB: %s, 间隔: 5分钟)", paths.AutopilotDBPath)
+
+				// Phase 4 Item 8: A/B 测试（低比例统计抽样双发）
+				// 默认关闭（Enabled=false），需显式 opt-in。
+				// 主请求路径完全不变：影子请求在主响应返回后异步发起。
+				abTestStore, abErr := autopilot.NewABTestStoreWithDB(autopilotStore.DB())
+				if abErr != nil {
+					log.Printf("[Autopilot-Init] 警告: 初始化 ABTestStore 失败: %v (A/B 测试将不可用)", abErr)
+				} else {
+					autopilotManager.SetABTestStore(abTestStore)
+					abTestSampler := autopilot.NewABTestSampler(abTestStore, func() autopilot.ABTestSamplerConfig {
+						abCfg := cfgManager.GetAutopilotRouting().ABTest
+						return autopilot.ABTestSamplerConfig{
+							Enabled:                  abCfg.Enabled,
+							SampleRatio:              abCfg.SampleRatio,
+							MaxShadowRequestsPerHour: abCfg.MaxShadowRequestsPerHour,
+							ShadowCandidateCount:     abCfg.ShadowCandidateCount,
+						}
+					})
+					autopilotManager.SetABTestSampler(abTestSampler)
+					// 将 SmartRouter 候选排名回调连接到 A/B 测试缓存
+					if smartRouter != nil {
+						smartRouter.SetOnCandidatesRanked(abTestSampler.OnCandidatesRanked())
+					}
+					// 注册代理成功后回调：主响应已返回客户端后异步发起影子请求
+					// 影子请求在独立 goroutine 中执行，不阻塞主请求路径
+					common.SetPostSuccessfulProxyHook(func(channelKind, model, channelUID string, statusCode int, latencyMs int64, bodyBytes []byte) {
+						// 获取全局 KillSwitch 状态
+						routingCfg := cfgManager.GetAutopilotRouting()
+						killSwitchActive := routingCfg.KillSwitch
+						if envKillSwitch := os.Getenv("AUTOPILOT_KILL_SWITCH"); envKillSwitch == "true" || envKillSwitch == "1" {
+							killSwitchActive = true
+						}
+						if !abTestSampler.ShouldSample(killSwitchActive) {
+							return
+						}
+						abTestSampler.ExecuteShadowRequest(
+							context.Background(),
+							cfgManager,
+							bodyBytes,
+							model,
+							channelKind,
+							channelUID,
+							statusCode,
+							latencyMs,
+						)
+					})
+					log.Printf("[Autopilot-Init] ABTestSampler 已初始化 (默认关闭, 抽样率: 0.01)")
+				}
 			}
 		}
 	}
@@ -1047,6 +1095,15 @@ func main() {
 			autopilot.RegisterCockpitRoutes(apiGroup, autopilotManager)
 			// Advisor shadow 决策记录 API
 			autopilot.RegisterAdvisorRoutes(apiGroup, autopilotManager.AdvisorDecisionStore())
+
+			// Phase 4 Item 8: A/B 测试结果 + 紧急停止 API
+			if autopilotManager.ABTestSampler() != nil && autopilotManager.ABTestStore() != nil {
+				autopilot.RegisterABTestRoutes(apiGroup, &autopilot.ABTestDeps{
+					Sampler:    autopilotManager.ABTestSampler(),
+					Store:      autopilotManager.ABTestStore(),
+					CfgManager: cfgManager,
+				})
+			}
 			// 路由追踪 API
 			if autopilotManager.TraceStore() != nil {
 				autopilot.RegisterTraceRoutes(apiGroup, autopilotManager.TraceStore())

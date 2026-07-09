@@ -49,7 +49,9 @@ import type {
   AutoAddChannelRequest,
   AutoAddChannelResponse,
   ChannelAutoStatusResponse,
-  CostReportResponse
+  CostReportResponse,
+  ABTestResultsResponse,
+  ABTestEmergencyStopResponse
 } from './api-types'
 
 export * from './api-helpers'
@@ -1252,6 +1254,21 @@ export class ApiService {
   /** 获取成本报表（按 user/model/key 分组） */
   async getCostReport(groupBy: string = 'user', duration: string = '7d', apiType: string = 'messages'): Promise<CostReportResponse> {
     return this.request(`/reports/cost?groupBy=${groupBy}&duration=${duration}&type=${apiType}`)
+  }
+
+  // ============== A/B 测试 API（Phase 4 Item 8） ==============
+
+  /** 获取 A/B 测试结果统计 */
+  async getABTestResults(): Promise<ABTestResultsResponse> {
+    return this.request('/autopilot/ab-test-results')
+  }
+
+  /** 紧急停止 A/B 测试 */
+  async emergencyStopABTest(reason?: string): Promise<ABTestEmergencyStopResponse> {
+    return this.request('/autopilot/ab-test/emergency-stop', {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    })
   }
 
 }
