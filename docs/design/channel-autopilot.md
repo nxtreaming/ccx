@@ -2890,6 +2890,28 @@ SmartRouter：按任务类型、硬约束、实时质量和有效成本排序
 - 当低信任等级渠道短时间服务更好时，驾驶舱和渠道中心都应显示「低信任来源当前表现更优」，但仍禁止它承担隐私敏感的 AI 判定。
 - 所有价格、余额、充值倍率优先从订阅中心读；渠道/key 只保留必要 override。
 
+#### 8.0.1 实现现状与演进方向（2026-07-09 核实）
+
+四界面在 **Web 前端（`frontend/src`）已大面积落地**，不是纯文档：
+
+| 界面 | Web 实现 | Desktop 实现 |
+|------|----------|--------------|
+| 健康中心 | ✅ `HealthCenterView.vue` + `HealthCenterStats`/`HealthChannelTable`/`HealthChannelDetail`/`ProfileChangelogTimeline`，路由 `/health` | ❌ 无 |
+| 订阅中心 | ✅ `SubscriptionsView.vue` + `SubscriptionPlanTable`，CRUD + 刷新余额，路由 `/subscriptions` | ⚠️ 独立旧实现 `subscriptions/SubscriptionTab.vue`（与 Web 两套代码） |
+| 渠道中心 | ✅ `ChannelOrchestration.vue`（六态 `ChannelHealthBadge`、来源 chips、`autoManaged` 图标齐备） | ❌ 未同步 |
+| 管理面板 | ⚠️ `AutopilotModePanel.vue` 仅暴露 mode/killSwitch/costPreference | ❌ 无 |
+| 驾驶舱 | ✅ `CockpitView.vue`（观测型总览：健康统计+余额汇总+渠道推荐） | ⚠️ `cockpit` tab 渲染的是会话 Dashboard，职责不同 |
+
+**与本设计意图的关系**（对齐用户「自动调度为主、废旧手动驾驶舱」的诉求）：
+- **旧的「手动调度驾驶舱」在 Web 端已不存在**。`CockpitView` 已是 §8.7 定义的观测型总览，只回答健康/省钱/风险/待办四问题，不做渠道配置编辑，符合「程序自动选、人只观测+有限干预」的方向。无需再废除，只需继续收敛为纯观测。
+- **统一提交入口已存在**（§8.4 快速添加 + §8.5 订阅中心），new-api 集成（§8.5.1）在此之上把「填 baseURL+key」进一步自动化。
+
+**前端演进待办**（本设计新增/明确）：
+1. **补 `ManualRoutingIntent` 前端**：这是用户要的「有限偏向性干预」，后端已有、两个前端均未实现（§8.3 试用意图入口尚缺）。
+2. **Desktop 前端对齐 Web**：健康中心/渠道自动托管/管理面板/观测型驾驶舱在 Desktop 几乎空白，需同步或复用 Web 组件，避免长期维护两套。
+3. **管理面板补字段**：暴露 `l2ProbeEnabled`、探测预算、new-api/多来源订阅 adapter 开关（§8.5.2）等，当前只有 3 个字段。
+4. **订阅中心接 §8.5.1/§8.5.2**：新增「new-api」订阅类型与 Provider Adapter 能力矩阵驱动的动态表单。
+
 ### 8.1 健康中心视图
 
 新增 `HealthCenter.vue` 页面，作为渠道中心的高级视图。
@@ -3064,6 +3086,183 @@ SmartRouter：按任务类型、硬约束、实时质量和有效成本排序
 - 公益站允许没有余额和价格，仍可维护来源、备注、RPM 建议和风险说明。
 - 一个订阅可绑定多个渠道；一个渠道默认只绑定一个订阅。需要多个来源时建议拆 channel。
 - 余额刷新 adapter 是可选能力；MVP 允许手动录入余额和更新时间。
+
+### 8.5.1 new-api 订阅集成（统一账号接入）
+
+**目标**：用户在订阅中心手填一个 new-api（及其 fork）账号的「系统访问令牌」即可，CCX 自动用该令牌创建代理专用 key、拉取分组倍率、查询额度余额，并把「站点 baseURL + 新建 key」自动落成一个上游渠道，交给 Autopilot 探测与调度。
+
+**范围约束**：
+- 只使用 new-api 用户在「个人设置」生成的 **系统访问令牌（access_token）** 一种凭据；令牌用于 API 调用的身份验证，属敏感数据，须妥善加密存储。
+- **不做** cookie 登录 + 2FA + 导出后台渠道明文 key 的管理员迁移路径（all-api-hub 的 newApiSession 能力），本设计不涉及。
+- new-api 归入 `OriginType=relay`、`OriginTier=second`（中转站），信任等级不因自动化提升；实时质量仍由运行画像决定。
+- 认证令牌像其他订阅凭据一样由用户手动录入，CCX 不代替用户在 new-api 侧注册或登录。
+
+**认证与凭据模型**：
+
+new-api family 的管理接口鉴权（依据 all-api-hub 传输层实现）：
+
+```text
+Authorization: Bearer <access_token>     # 系统访问令牌；raw 模式可去掉 Bearer 前缀
+New-API-User: <userId>                    # 当前用户 ID（必带）
+User-id: <userId>                         # fork 兼容回退（Veloera/voapi/Super-API 等）
+Content-Type: application/json
+```
+
+统一响应信封：`{ "success": bool, "data": T, "message": string }`；解析时先判 `success`，再取 `data`。
+
+**SubscriptionProfile 扩展**：
+
+在 §3.2.2 的 `SubscriptionProfile` 基础上，为可自动接入的订阅新增 provider 集成字段（沿用「默认关闭 + 显式 opt-in」守则）：
+
+```go
+// SubscriptionProfile 新增字段（复用 Phase 4 Item 6 的 SubscriptionAutoRefresh 开关）
+type SubscriptionIntegration struct {
+    Kind        string `json:"kind"`         // "new_api" | "openai" | "anthropic" | "google" | ...
+    BaseURL     string `json:"baseUrl"`      // new-api 站点地址（同时作为新建渠道的上游 baseURL）
+    AccessToken string `json:"-"`            // 系统访问令牌；加密存储，不出 API 响应
+    UserID      string `json:"userId"`       // New-API-User 头所需
+    AuthTokenMode string `json:"authTokenMode,omitempty"` // "bearer"(默认) | "raw"
+    // 自动建 key 的模板
+    ProvisionKeyName   string   `json:"provisionKeyName,omitempty"`   // 默认 "ccx-autopilot"
+    ProvisionGroup     string   `json:"provisionGroup,omitempty"`     // 建 key 时指定分组，空=默认分组
+    ProvisionModels    []string `json:"provisionModels,omitempty"`    // model_limits，空=不限制
+    // 自动同步产物（回填，只读展示）
+    ProvisionedTokenID int    `json:"provisionedTokenId,omitempty"`
+    LinkedChannelUID   string `json:"linkedChannelUid,omitempty"`
+}
+```
+
+`AccessToken` 必须与现有敏感字段一样走加密存储，序列化到前端时脱敏（仅显示尾部若干位）。
+
+**new-api 接口清单**（本集成实际调用的子集，路径以主线 new-api 为准，字段名保持与上游一致）：
+
+| 用途 | 方法 | 路径 | 请求体 | 响应关键字段 |
+|------|------|------|--------|--------------|
+| 校验令牌 + 查用户/余额 | GET | `/api/user/self` | — | `data.id`、`data.username`、`data.quota`（剩余额度）、`data.used_quota` |
+| 拉分组倍率 | GET | `/api/user/self/groups` | — | `data: { <group>: { desc, ratio } }` |
+| 站点全部分组 | GET | `/api/group` | — | `data: string[]` |
+| 账号可用模型 | GET | `/api/user/models` | — | `data: string[]` |
+| 创建代理 key | POST | `/api/token/` | `CreateTokenRequest`（见下） | `data.key` / `success` |
+| key 列表 | GET | `/api/token/?p={p}&size={n}` | — | `data.items[]`（含 `id/key/name/status/remain_quota`） |
+| 更新 key | PUT | `/api/token/` | `{ ...token, id }` | `success` |
+| 删除 key | DELETE | `/api/token/{id}` | — | `success` |
+
+`CreateTokenRequest`：
+
+```json
+{
+  "name": "ccx-autopilot",
+  "remain_quota": 0,
+  "expired_time": -1,
+  "unlimited_quota": true,
+  "model_limits_enabled": false,
+  "model_limits": "",
+  "allow_ips": "",
+  "group": ""
+}
+```
+
+`quota` 是 new-api 内部额度单位（非美元），换算比例读 `GET /api/status` 的 `price` / `PaymentUSDRate`（无鉴权），或允许用户在订阅中手填换算率；MVP 直接以 quota 原值展示 + 站点换算率估算余额。
+
+**接入流程**（订阅中心「新增订阅 → 类型选 new-api」）：
+
+```text
+1. 用户输入：站点 baseURL + 系统访问令牌(access_token) + userId
+   （userId 可选自动获取：先用令牌调 /api/user/self 拿 data.id 回填）
+2. 校验：GET /api/user/self
+   ├─ success=false / 401 → 令牌无效或 userId 不匹配，报错停止
+   └─ 成功 → 记录 username、quota，创建 SubscriptionProfile(provider=new_api, originTier=second)
+3. 拉分组：GET /api/user/self/groups → 写入 GroupMultipliers（{group: ratio}）
+          GET /api/user/models       → 记录账号可用模型，供渠道 supportedModels 参考
+4. 建 key：POST /api/token/（按 ProvisionKeyName/Group/Models 模板）
+   ├─ 已存在同名 ccx-autopilot key → 复用其 id，不重复创建（列表比对 name）
+   └─ 新建成功 → 回填 ProvisionedTokenID，取 data.key 作为渠道 apiKey
+5. 自动建渠道：用 baseURL + 新建 key 创建一个上游渠道
+   ├─ channelKind 由用户选择或按站点探测（messages/chat/responses/gemini）
+   ├─ status=unknown，autoManaged=true，OriginType=relay
+   ├─ 建立 SubscriptionUID → ChannelUID 链接（回填 LinkedChannelUID）
+   └─ 触发 §8.4 的 Discovery + 能力测试标准流程
+6. 完成：订阅卡片显示余额、分组倍率、已绑定渠道、探测进度
+```
+
+关键点：new-api 集成**不额外造探测逻辑**，第 5 步之后完全复用现有 §8.4「添加并探测」链路；集成层只负责「令牌 → key + 分组 + 余额 + baseURL」的自动填充，把手填 baseURL/key 的动作自动化掉。
+
+**刷新与同步**（复用 `POST /api/subscriptions/{uid}/refresh`）：
+
+| 触发 | 动作 |
+|------|------|
+| 手动刷新余额 | `GET /api/user/self` 更新 `Balance` + `BalanceUpdatedAt` |
+| 定时刷新（可选，opt-in） | 复用 Phase 4 Item 6 `SubscriptionAutoRefresh`；new-api 作为 `relay` provider adapter 纳入，默认关闭 |
+| 分组倍率变更 | 刷新时对比 `/api/user/self/groups`，`GroupMultipliers` 变化 → 更新并提示「套餐倍率已变」 |
+| key 失效检测 | 渠道侧探测到该 key 全 401 → 订阅卡片提示「key 可能已删除/禁用」，提供「重新建 key」一键动作（重跑第 4-5 步，复用旧渠道，只换 apiKey） |
+| 可用模型变更 | `/api/user/models` 结果哈希变化 → 触发对应渠道重新 Discovery |
+
+**安全与边界**：
+- `access_token` 权限等同 new-api 账户，须加密存储、脱敏展示、禁止写入日志；刷新失败连续 N 次自动停用该订阅的自动刷新，只保留手动。
+- 自动建 key 默认 `unlimited_quota=true` 但可由用户改为限额模板；建 key 是有副作用的写操作，须在接入前明确告知用户「将在 new-api 侧创建一个名为 ccx-autopilot 的令牌」。
+- new-api 是 `OriginTier=second`，**不得**用作隐私敏感的 routing advisor / classifier（遵守 §3.2.1 约束）。
+- fork 兼容：请求同时带 `New-API-User` 与 `User-id` 头；响应信封字段名（`success/data/message`）在部分 fork 可能不同，adapter 需容错解析，失败时回退手动录入。
+- 一个 new-api 订阅默认只自动建/绑定一个渠道；用户如需该站多协议渠道，可在同订阅下手动增建，共用同一 key。
+
+### 8.5.2 订阅 Provider Adapter 框架（多来源余额与接入）
+
+§8.5.1 的 new-api 集成不是特例，而是「订阅 Provider Adapter」框架的一个实现。Phase 4 Item 6 已落地 openai/anthropic/google 的余额刷新 adapter，本框架把它抽象成统一接口，让 new-api 及后续来源（GitHub Copilot、Codex、Nvidia、MiniMax、DeepSeek 等）按相同契约接入，避免每加一个来源就散落一套逻辑（DRY）。
+
+**统一接口**：
+
+```go
+// backend-go/internal/autopilot/subscription/adapter.go
+type ProviderAdapter interface {
+    Kind() string // "new_api" | "openai" | "anthropic" | "google" | "copilot" | "deepseek" | ...
+
+    // 校验凭据，返回账号身份（用户名/账户标识）；失败即凭据无效
+    Verify(ctx context.Context, cred Credential) (AccountInfo, error)
+    // 查余额/额度；不支持返回 ErrUnsupported，由 UI 降级为手动录入
+    FetchBalance(ctx context.Context, cred Credential) (Balance, error)
+    // 拉分组倍率；仅 new-api 类中转有，官方直连返回 ErrUnsupported
+    FetchGroups(ctx context.Context, cred Credential) (map[string]GroupRatio, error)
+    // 自动创建代理 key；官方直连通常不支持（key 即用户 API key），返回 ErrUnsupported
+    ProvisionKey(ctx context.Context, cred Credential, tmpl KeyTemplate) (ProvisionedKey, error)
+    // 可用模型列表；用于渠道 supportedModels 参考
+    FetchModels(ctx context.Context, cred Credential) ([]string, error)
+}
+```
+
+每个能力独立、可选：adapter 只实现自己支持的部分，不支持的统一返回 `ErrUnsupported`（接口隔离原则），UI 据此隐藏/降级对应入口。所有 adapter 共用 `SubscriptionAutoRefresh` 的 opt-in 开关与 `Validate()` 兜底，与 Phase 4 现有防御模式一致。
+
+**能力矩阵**（✅ 支持 / ⚠️ 部分或需确认 / ❌ 不支持，走手动）：
+
+| 来源 | Kind | 验证 | 查余额 | 拉分组 | 自动建 key | OriginTier |
+|------|------|:----:|:------:|:------:|:----------:|------------|
+| new-api family | `new_api` | ✅ | ✅ quota | ✅ | ✅ | second |
+| OpenAI 官方 | `openai` | ✅ | ⚠️ 计费 API | ❌ | ❌ | first |
+| Anthropic 官方 | `anthropic` | ✅ | ⚠️ 计费 API | ❌ | ❌ | first |
+| Google 官方 | `google` | ✅ | ⚠️ | ❌ | ❌ | first |
+| GitHub Copilot | `copilot` | ⚠️ token | ❌ 无额度概念 | ❌ | ❌ | first |
+| Codex plan | `codex` | ⚠️ | ⚠️ 用量窗口 | ❌ | ❌ | first |
+| Nvidia NIM | `nvidia` | ✅ | ⚠️ credits | ❌ | ❌ | first |
+| MiniMax | `minimax` | ✅ | ⚠️ | ❌ | ❌ | first |
+| DeepSeek | `deepseek` | ✅ | ✅ balance API | ❌ | ❌ | first |
+
+说明：官方直连来源普遍**不支持自动建 key**（用户的 API key 本身就是凭据，直接作为渠道 apiKey 录入即可）、也**没有分组倍率**（价格按官方定价表）。它们的 adapter 价值集中在「验证 + 查余额/用量窗口」，把 §3.2.4 UsageWindow 的官方用量 API 来源坐实。DeepSeek 有独立余额查询端点，可完整支持余额。Copilot 属订阅制、无 token 余额概念，只做验证 + 用量提示。
+
+**接入分层**（YAGNI：不强求一次做全，按价值排期）：
+
+```text
+P0（本轮）：new_api（完整：验证+余额+分组+建key+自动建渠道）
+            —— 覆盖用户最主要的中转站场景
+P1：deepseek（验证+余额）、官方三家余额已在 Phase 4 完成 → 补 UsageWindow 对齐
+P2：nvidia / minimax（验证+credits/余额）
+P3：copilot / codex（验证+用量窗口提示，无余额）
+```
+
+每个来源的具体端点在实现时于 `adapter.go` 各 provider 文件内落地，本设计只固定接口契约与能力矩阵，避免文档与上游 API 变动强耦合。新增来源 = 实现 `ProviderAdapter` + 在能力矩阵登记，不改框架。
+
+**能力缺失与降级**：
+- adapter 任一能力返回 `ErrUnsupported` → 订阅中心对应字段回退为手动录入（余额手填、倍率手填），不报错、不阻塞接入。
+- adapter 验证失败/超时 → 订阅可仍以「手动模式」创建，仅失去自动刷新与自动建 key，其余流程（手填 baseURL+key 建渠道）不受影响。
+- 官方来源无「自动建 key」时，接入流程退化为 §8.4 标准快速添加：用户填 API key，adapter 只补验证与余额。
+- 所有自动刷新遵守 `SubscriptionAutoRefresh` 默认关闭；连续失败自动停用自动刷新并在驾驶舱「人工待办」提示。
 
 ### 8.6 管理面板
 
