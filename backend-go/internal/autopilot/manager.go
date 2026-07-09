@@ -477,6 +477,27 @@ func (m *Manager) SetProbeWorker(pw *ProbeWorker) {
 	m.probeWorker = pw
 }
 
+// ResolveAPIKey 根据 channelUID + keyHash 反查明文 API Key，供 ProbeWorker.APIKeyResolver 使用。
+// KeyEndpointProfile 只存 sha256(apiKey) 摘要（MetricsKey），无法直接还原明文，
+// 需要遍历当前配置里该渠道的 APIKeys，逐个计算摘要与 keyHash 比对。
+// 返回 ok=false 表示渠道已删除或 key 已轮换，调用方（ProbeWorker）应跳过本次探测。
+func (m *Manager) ResolveAPIKey(channelUID, keyHash string) (string, bool) {
+	if channelUID == "" || keyHash == "" {
+		return "", false
+	}
+	for _, entry := range m.gatherChannelEntries() {
+		if entry.ChannelUID != channelUID {
+			continue
+		}
+		for _, key := range entry.APIKeys {
+			if KeyHashFromAPIKey(key) == keyHash {
+				return key, true
+			}
+		}
+	}
+	return "", false
+}
+
 // RateLimitApplier 返回内部 RateLimitApplier 引用。
 func (m *Manager) RateLimitApplier() *RateLimitApplier {
 	return m.rateLimitApplier
@@ -623,6 +644,13 @@ func (m *Manager) collectAll() {
 				profile.UsageWindows = m.usageMeter.ComputeWindows(profile.EndpointUID)
 			}
 
+			// L2 探测字段 carry-forward：DeriveEndpointProfile 每轮都构造全新 struct，
+			// Probe* 字段是零值。若不从旧画像搬运过来，ProbeWorker 刚写入的
+			// LastProbeAt/ConsecutiveProbeSuccess 等会被本轮 Upsert 整行覆盖清零，
+			// 导致 scanAndEnqueue 的探测冷却期形同虚设。HealthState/HealthConfidence
+			// 等 L1 诊断字段不受影响，继续以本轮真实流量信号为准。
+			carryForwardProbeFields(m.store.Get(profile.EndpointUID), &profile)
+
 			// ── Phase 3A：画像变更事件检测（只读展示，不影响调度）──
 			// 必须在 Upsert 覆盖缓存之前读取旧值，否则 diff 永远为空。
 			m.emitProfileChangeEvents(profile.EndpointUID, &profile, groupChanged)
@@ -651,6 +679,23 @@ func (m *Manager) collectAll() {
 		log.Printf("[Autopilot-Worker] 本轮完成: 渠道=%d, 画像=%d, 诊断=%d, 耗时=%s",
 			len(entries), profiled, diagnosed, elapsed.Truncate(time.Millisecond))
 	}
+}
+
+// carryForwardProbeFields 将旧画像的 L2 探测字段搬运到本轮新构造的画像上。
+// DeriveEndpointProfile 每轮都是全新 struct，Probe* 字段零值；不搬运的话
+// ProbeWorker.applyProbeResult 写入的探测状态会在下一轮 L1 循环里被无声清零，
+// 破坏 scanAndEnqueue 的冷却期判定和 ConsecutiveProbeSuccess 的连续计数语义。
+// old 为 nil（首次画像）时是 no-op。
+func carryForwardProbeFields(old *KeyEndpointProfile, current *KeyEndpointProfile) {
+	if old == nil || current == nil {
+		return
+	}
+	current.LastProbeAt = old.LastProbeAt
+	current.ProbeSuccess = old.ProbeSuccess
+	current.ProbeLatencyMs = old.ProbeLatencyMs
+	current.ProbeConfidence = old.ProbeConfidence
+	current.ProbeStatusCode = old.ProbeStatusCode
+	current.ConsecutiveProbeSuccess = old.ConsecutiveProbeSuccess
 }
 
 // emitProfileChangeEvents 对比 endpointUID 的旧画像与本轮新画像，

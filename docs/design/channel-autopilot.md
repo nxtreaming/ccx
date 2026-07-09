@@ -3531,18 +3531,18 @@ Autopilot 需要一个后台 worker，但必须是保守、可停止、可观测
 
 **Phase 3A 状态（2026-07-09）**：低风险、不改真实路由语义的子集已完成并接入真实链路——`Manager.collectAll()` 新旧画像对比产出变更事件（`DetectProfileChanges`）、`ProfileChangelogStore`（环形内存 + SQLite，30 天机会性清理）、`EventHub` 内存 pub/sub、`GET /api/health-center/changelog`（历史）+ `GET /api/health-center/events`（WebSocket 实时推送）、`AutoDiscoveryRunner` 发布 `discovery_completed`/`auto_mapping_applied`、前端 `ProfileChangelogTimeline.vue` 接入健康中心页并支持断线自动重连。均为只读展示，未修改 `SmartRouter`/`EndpointAttemptPolicy` 调度逻辑。落地时顺带发现并修复一个真实缺口：浏览器原生 WebSocket 无法设自定义 header，为此给 `middleware.getAPIKey` 增加了 `Sec-WebSocket-Protocol` 鉴权回退（业界标准做法，仅新增一个 key 来源，不降低现有校验）。
 
-**Phase 3B（暂缓）**：模型自动映射、自动恢复探测、晋升/降级机制会直接改变真实调度决策，风险明显高于 3A。§12.2 P1.5 的 SQLite schema version / 版本化 migration / `OriginType`&`OriginTier` 旧配置 backfill / `killSwitch`+按 task class/channel disable **已于 2026-07-09 补强完成**（详见 §12.2 P1.5）；仅剩 SLO regression 自动 rollback 待独立设计，不阻塞 3B 启动评估，但启动前仍建议对 3B 涉及的调度语义变更单独过一遍风险评审。
+**Phase 3B（部分启动）**：模型自动映射、自动恢复探测、晋升/降级机制会直接改变真实调度决策，风险明显高于 3A。§12.2 P1.5 的 SQLite schema version / 版本化 migration / `OriginType`&`OriginTier` 旧配置 backfill / `killSwitch`+按 task class/channel disable **已于 2026-07-09 补强完成**（详见 §12.2 P1.5）。**Phase 3B-1（自动恢复探测补全）已于 2026-07-09 完成**：修复了 L2 探测子系统里此前从未打通的两个真实 bug——① `collectAll()` 每轮把新构造的画像整行 Upsert，会把 `ProbeWorker` 刚写入的 `LastProbeAt`/`ProbeSuccess`/`ConsecutiveProbeSuccess` 等字段清零，导致 6 小时探测冷却期形同虚设（修复：`carryForwardProbeFields` 在 Upsert 前搬运 Probe* 字段，不影响 L1 诊断字段的现有覆盖逻辑）；② `extractRawAPIKey` 是返回 `KeyMask` 掩码值的占位 stub，探测请求实际带的是假 key（修复：新增 `APIKeyResolver` 回调 + `Manager.ResolveAPIKey`，通过遍历配置里对应渠道的 `APIKeys` 逐个计算 `KeyHashFromAPIKey` 比对来还原明文；resolver 未注入或未命中时 fail-open 跳过探测且不消耗预算）。同时补齐了 `degraded/limited → healthy` 的连续成功恢复路径（新增 `KeyEndpointProfile.ConsecutiveProbeSuccess` 计数器 + `HealthCheckConfig.ProbeRecoveryThreshold`，默认连续 2 次探测成功才恢复，避免单次探测噪声导致状态抖动；探测失败计数器清零）。全程只做“让已声明的设计正确工作”，未新增调度语义，且 L2 探测默认关闭（`L2ProbeEnabled=false`），对未开启的用户零行为变化。模型自动映射、晋升/降级机制体量和风险仍明显更高，连同 SLO regression 自动回滚一起留待独立立项；启动前建议单独过一遍风险评审。
 
 **范围**：
 - [x] 运行时指标驱动画像实时更新（Phase 3A：`collectAll()` 每轮 diff + changelog + WebSocket 推送）
-- [ ] 模型自动映射（ModelResolver + ModelSupportResolver + request-scoped mappedModel）—— Phase 3B
-- [ ] active model filter / context filter 支持自动映射前置判定 —— Phase 3B
-- [ ] 自动恢复探测（limited/dead → healthy）—— Phase 3B
-- [ ] 晋升/降级机制（连续成功→升级，连续失败→降级）—— Phase 3B
+- [ ] 模型自动映射（ModelResolver + ModelSupportResolver + request-scoped mappedModel）—— Phase 3B，待独立立项
+- [ ] active model filter / context filter 支持自动映射前置判定 —— Phase 3B，待独立立项
+- [x] 自动恢复探测（limited/dead → healthy）—— Phase 3B-1（2026-07-09 完成）：`APIKeyResolver` + `carryForwardProbeFields` + `ConsecutiveProbeSuccess`/`ProbeRecoveryThreshold`
+- [ ] 晋升/降级机制（连续成功→升级，连续失败→降级）—— Phase 3B，与 SLO regression 自动回滚合并留待独立立项（同属"根据历史表现自动调整调度权重"）
 - [x] WebSocket 推送画像变更事件（Phase 3A：`GET /api/health-center/events`）
 - [x] 前端画像变更历史/时间线（Phase 3A：`ProfileChangelogTimeline.vue`）
 
-**预估工期**：2-3 周（3A 已完成；P1.5 迁移契约已补强，3B 待单独立项评估工期）
+**预估工期**：2-3 周（3A、3B-1 已完成；模型自动映射与晋升/降级机制待单独立项评估工期）
 
 ### Phase 4：高级特性
 

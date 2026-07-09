@@ -314,7 +314,7 @@ func TestBuildProbeRequest(t *testing.T) {
 				KeyMask:     "sk-***test",
 			}
 
-			req, err := buildProbeRequest(profile)
+			req, err := buildProbeRequest(profile, "sk-real-test-key")
 			if err != nil {
 				t.Fatalf("buildProbeRequest 失败: %v", err)
 			}
@@ -337,13 +337,18 @@ func TestBuildProbeRequest_UnsupportedServiceType(t *testing.T) {
 		BaseURL:     "https://example.com",
 		ServiceType: "unknown_type",
 	}
-	_, err := buildProbeRequest(profile)
+	_, err := buildProbeRequest(profile, "sk-real-test-key")
 	if err == nil {
 		t.Error("不支持的 serviceType 应返回错误")
 	}
 }
 
 // ── ProbeWorker 集成测试（httptest 模拟）──
+
+// alwaysResolveKey 测试用 APIKeyResolver：始终返回固定的假 key，模拟 resolver 命中。
+func alwaysResolveKey(channelUID, keyHash string) (string, bool) {
+	return "sk-test-real-key", true
+}
 
 func TestProbeWorker_CooldownSkip(t *testing.T) {
 	// 准备：一个最近刚探测过的 endpoint
@@ -429,6 +434,7 @@ func TestProbeWorker_BudgetExhausted(t *testing.T) {
 		QuietLogs:   true,
 		TimeFunc:    func() time.Time { return now },
 	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
 
 	worker.scanAndEnqueue()
 	if worker.QueueLen() != 10 {
@@ -472,6 +478,7 @@ func TestProbeWorker_ProbeSuccess(t *testing.T) {
 		QuietLogs:   true,
 		TimeFunc:    func() time.Time { return now },
 	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
 
 	// 手动入队并处理
 	worker.queue.Enqueue(probeQueueItem{
@@ -528,6 +535,7 @@ func TestProbeWorker_ProbeAuthFailure(t *testing.T) {
 		QuietLogs:   true,
 		TimeFunc:    func() time.Time { return now },
 	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
 
 	worker.queue.Enqueue(probeQueueItem{
 		EndpointUID: "ep-auth-fail",
@@ -575,6 +583,7 @@ func TestProbeWorker_ProbeServerDown(t *testing.T) {
 		QuietLogs:   true,
 		TimeFunc:    func() time.Time { return now },
 	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
 
 	worker.queue.Enqueue(probeQueueItem{
 		EndpointUID: "ep-down",
@@ -624,6 +633,7 @@ func TestProbeWorker_DeadToDegraded(t *testing.T) {
 		QuietLogs:   true,
 		TimeFunc:    func() time.Time { return now },
 	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
 
 	worker.queue.Enqueue(probeQueueItem{
 		EndpointUID: "ep-dead-recover",
@@ -733,6 +743,7 @@ func TestProbeWorker_BudgetLog(t *testing.T) {
 		QuietLogs:   true,
 		TimeFunc:    func() time.Time { return now },
 	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
 
 	worker.scanAndEnqueue()
 	queueLenBefore := worker.QueueLen()
@@ -795,7 +806,7 @@ func TestBuildProbeRequest_BodyValidJSON(t *testing.T) {
 				KeyMask:     "sk-***test",
 			}
 
-			req, err := buildProbeRequest(profile)
+			req, err := buildProbeRequest(profile, "sk-real-test-key")
 			if err != nil {
 				t.Fatalf("buildProbeRequest 失败: %v", err)
 			}
@@ -819,7 +830,7 @@ func TestBuildProbeRequest_WithModelMapping(t *testing.T) {
 		},
 	}
 
-	req, err := buildProbeRequest(profile)
+	req, err := buildProbeRequest(profile, "sk-real-test-key")
 	if err != nil {
 		t.Fatalf("buildProbeRequest 失败: %v", err)
 	}
@@ -858,6 +869,7 @@ func TestProbeWorker_ProbeConfidence(t *testing.T) {
 		QuietLogs:   true,
 		TimeFunc:    func() time.Time { return now },
 	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
 
 	worker.queue.Enqueue(probeQueueItem{
 		EndpointUID: "ep-conf",
@@ -873,5 +885,249 @@ func TestProbeWorker_ProbeConfidence(t *testing.T) {
 	// 成功探测置信度应为 0.8
 	if result.ProbeConfidence != 0.8 {
 		t.Errorf("ProbeConfidence: got %f, want 0.8", result.ProbeConfidence)
+	}
+}
+
+// ── APIKeyResolver fail-open 测试 ──
+
+func TestProbeWorker_NoResolverSkipsProbeWithoutConsumingBudget(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// 上游若被调用应记录到 called，用于验证探测请求确实没有发出
+	var called bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	store := newTestProfileStore(t)
+	store.Upsert(&KeyEndpointProfile{
+		EndpointUID: "ep-no-resolver",
+		ChannelUID:  "ch-1",
+		BaseURL:     server.URL,
+		ServiceType: "claude",
+		HealthState: HealthStateUnknown,
+		KeyMask:     "sk-***test",
+	})
+
+	worker := NewProbeWorker(store, ProbeWorkerConfig{
+		Cooldown:    6 * time.Hour,
+		DailyBudget: 100,
+		QuietLogs:   true,
+		TimeFunc:    func() time.Time { return now },
+	})
+	// 未调用 SetAPIKeyResolver，resolver 保持 nil
+
+	worker.queue.Enqueue(probeQueueItem{
+		EndpointUID: "ep-no-resolver",
+		Priority:    ProbePriorityUnknown,
+		EnqueuedAt:  now,
+	})
+	worker.processQueue()
+
+	if called {
+		t.Error("resolver 未注入时不应发起真实探测请求")
+	}
+	if worker.BudgetRemaining() != 100 {
+		t.Errorf("resolver 未注入时不应消耗预算: remaining=%d, want 100", worker.BudgetRemaining())
+	}
+	result := store.Get("ep-no-resolver")
+	if result.LastProbeAt != nil {
+		t.Error("跳过的探测不应写入 LastProbeAt")
+	}
+}
+
+func TestProbeWorker_ResolverMissReturnsFalseSkipsProbe(t *testing.T) {
+	now := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	var called bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	store := newTestProfileStore(t)
+	store.Upsert(&KeyEndpointProfile{
+		EndpointUID: "ep-resolver-miss",
+		ChannelUID:  "ch-deleted",
+		BaseURL:     server.URL,
+		ServiceType: "claude",
+		HealthState: HealthStateUnknown,
+	})
+
+	worker := NewProbeWorker(store, ProbeWorkerConfig{
+		Cooldown:    6 * time.Hour,
+		DailyBudget: 100,
+		QuietLogs:   true,
+		TimeFunc:    func() time.Time { return now },
+	})
+	// resolver 命中不到（渠道已删除），始终返回 ok=false
+	worker.SetAPIKeyResolver(func(channelUID, keyHash string) (string, bool) {
+		return "", false
+	})
+
+	worker.queue.Enqueue(probeQueueItem{
+		EndpointUID: "ep-resolver-miss",
+		Priority:    ProbePriorityUnknown,
+		EnqueuedAt:  now,
+	})
+	worker.processQueue()
+
+	if called {
+		t.Error("resolver 未命中时不应发起真实探测请求")
+	}
+	if worker.BudgetRemaining() != 100 {
+		t.Errorf("resolver 未命中时不应消耗预算: remaining=%d, want 100", worker.BudgetRemaining())
+	}
+}
+
+// ── degraded/limited → healthy 恢复阈值测试 ──
+
+func TestProbeWorker_DegradedToHealthyRequiresConsecutiveSuccesses(t *testing.T) {
+	clock := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	store := newTestProfileStore(t)
+	store.Upsert(&KeyEndpointProfile{
+		EndpointUID: "ep-recover",
+		ChannelUID:  "ch-1",
+		BaseURL:     server.URL,
+		ServiceType: "claude",
+		HealthState: HealthStateDegraded,
+		KeyMask:     "sk-***test",
+	})
+
+	worker := NewProbeWorker(store, ProbeWorkerConfig{
+		Cooldown:               1 * time.Hour, // 每次手动触发前推进时钟越过冷却期
+		DailyBudget:            100,
+		ProbeRecoveryThreshold: 2,
+		QuietLogs:              true,
+		TimeFunc:               func() time.Time { return clock },
+	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
+
+	// 第一次探测成功：连续成功计数=1，未达阈值，应保持 degraded
+	worker.queue.Enqueue(probeQueueItem{EndpointUID: "ep-recover", Priority: ProbePriorityDegraded, EnqueuedAt: clock})
+	worker.processQueue()
+
+	result := store.Get("ep-recover")
+	if result.ConsecutiveProbeSuccess != 1 {
+		t.Fatalf("第 1 次成功后 ConsecutiveProbeSuccess: got %d, want 1", result.ConsecutiveProbeSuccess)
+	}
+	if result.HealthState != HealthStateDegraded {
+		t.Fatalf("未达阈值前应保持 degraded: got %s", result.HealthState)
+	}
+
+	// 推进时钟越过冷却期，第二次探测成功：连续成功计数=2，达到阈值，应恢复 healthy
+	clock = clock.Add(2 * time.Hour)
+	worker.queue.Enqueue(probeQueueItem{EndpointUID: "ep-recover", Priority: ProbePriorityDegraded, EnqueuedAt: clock})
+	worker.processQueue()
+
+	result = store.Get("ep-recover")
+	if result.ConsecutiveProbeSuccess != 2 {
+		t.Fatalf("第 2 次成功后 ConsecutiveProbeSuccess: got %d, want 2", result.ConsecutiveProbeSuccess)
+	}
+	if result.HealthState != HealthStateHealthy {
+		t.Errorf("达到恢复阈值后应变为 healthy: got %s", result.HealthState)
+	}
+}
+
+func TestProbeWorker_LimitedToHealthyRequiresConsecutiveSuccesses(t *testing.T) {
+	clock := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	store := newTestProfileStore(t)
+	store.Upsert(&KeyEndpointProfile{
+		EndpointUID: "ep-limited-recover",
+		ChannelUID:  "ch-1",
+		BaseURL:     server.URL,
+		ServiceType: "claude",
+		HealthState: HealthStateLimited,
+		KeyMask:     "sk-***test",
+	})
+
+	worker := NewProbeWorker(store, ProbeWorkerConfig{
+		Cooldown:               1 * time.Hour,
+		DailyBudget:            100,
+		ProbeRecoveryThreshold: 2,
+		QuietLogs:              true,
+		TimeFunc:               func() time.Time { return clock },
+	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
+
+	worker.queue.Enqueue(probeQueueItem{EndpointUID: "ep-limited-recover", Priority: ProbePriorityDegraded, EnqueuedAt: clock})
+	worker.processQueue()
+	if store.Get("ep-limited-recover").HealthState != HealthStateLimited {
+		t.Fatal("第 1 次成功后未达阈值应保持 limited")
+	}
+
+	clock = clock.Add(2 * time.Hour)
+	worker.queue.Enqueue(probeQueueItem{EndpointUID: "ep-limited-recover", Priority: ProbePriorityDegraded, EnqueuedAt: clock})
+	worker.processQueue()
+	if store.Get("ep-limited-recover").HealthState != HealthStateHealthy {
+		t.Error("达到恢复阈值后 limited 应变为 healthy")
+	}
+}
+
+func TestProbeWorker_FailureResetsConsecutiveSuccessCounter(t *testing.T) {
+	clock := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	var statusCode atomic.Int32
+	statusCode.Store(http.StatusOK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(int(statusCode.Load()))
+	}))
+	defer server.Close()
+
+	store := newTestProfileStore(t)
+	store.Upsert(&KeyEndpointProfile{
+		EndpointUID: "ep-flap",
+		ChannelUID:  "ch-1",
+		BaseURL:     server.URL,
+		ServiceType: "claude",
+		HealthState: HealthStateDegraded,
+		KeyMask:     "sk-***test",
+	})
+
+	worker := NewProbeWorker(store, ProbeWorkerConfig{
+		Cooldown:               1 * time.Hour,
+		DailyBudget:            100,
+		ProbeRecoveryThreshold: 2,
+		QuietLogs:              true,
+		TimeFunc:               func() time.Time { return clock },
+	})
+	worker.SetAPIKeyResolver(alwaysResolveKey)
+
+	// 第一次成功：计数=1
+	worker.queue.Enqueue(probeQueueItem{EndpointUID: "ep-flap", Priority: ProbePriorityDegraded, EnqueuedAt: clock})
+	worker.processQueue()
+	if store.Get("ep-flap").ConsecutiveProbeSuccess != 1 {
+		t.Fatal("第 1 次成功后计数应为 1")
+	}
+
+	// 推进时钟越过冷却期，第二次失败（500）：计数应清零，且不应因为之前累计的成功次数误恢复
+	clock = clock.Add(2 * time.Hour)
+	statusCode.Store(http.StatusInternalServerError)
+	worker.queue.Enqueue(probeQueueItem{EndpointUID: "ep-flap", Priority: ProbePriorityDegraded, EnqueuedAt: clock})
+	worker.processQueue()
+
+	result := store.Get("ep-flap")
+	if result.ConsecutiveProbeSuccess != 0 {
+		t.Errorf("探测失败后 ConsecutiveProbeSuccess 应清零: got %d", result.ConsecutiveProbeSuccess)
+	}
+	if result.HealthState != HealthStateDegraded {
+		t.Errorf("失败不应改变 HealthState: got %s, want degraded", result.HealthState)
 	}
 }

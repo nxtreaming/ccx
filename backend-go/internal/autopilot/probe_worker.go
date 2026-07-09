@@ -53,6 +53,14 @@ type ProbeResult struct {
 	ProbedAt     time.Time
 }
 
+// ── API Key 解析 ──
+
+// APIKeyResolver 根据 channelUID + keyHash（即 profile.MetricsKey）反查真实 API Key。
+// ProbeWorker 本身不持有明文 key，画像里只存 sha256 摘要（KeyHashFromAPIKey），
+// 无法从画像反解出可用于鉴权的明文。返回 ok=false 表示未找到匹配
+// （渠道已删除/key 已轮换），调用方应跳过本次探测，不发送带假 key 的请求。
+type APIKeyResolver func(channelUID, keyHash string) (apiKey string, ok bool)
+
 // ── 探测请求 ──
 
 // ProbeRequest 描述一次 L2 探测的 HTTP 请求。
@@ -255,22 +263,24 @@ func (b *ProbeBudget) Used() int {
 // ── 默认配置 ──
 
 const (
-	DefaultProbeScanInterval = 10 * time.Minute // 探测循环间隔
-	DefaultProbeBatchSize    = 5                // 每批最大探测数
-	DefaultProbeTimeout      = 5 * time.Second  // 单次探测超时
-	DefaultProbeDailyBudget  = 200              // 每日探测上限
-	DefaultProbeCooldown     = 6 * time.Hour    // 每 endpoint 冷却期
+	DefaultProbeScanInterval      = 10 * time.Minute // 探测循环间隔
+	DefaultProbeBatchSize         = 5                // 每批最大探测数
+	DefaultProbeTimeout           = 5 * time.Second  // 单次探测超时
+	DefaultProbeDailyBudget       = 200              // 每日探测上限
+	DefaultProbeCooldown          = 6 * time.Hour    // 每 endpoint 冷却期
+	DefaultProbeRecoveryThreshold = 2                // degraded/limited→healthy 所需连续探测成功次数
 )
 
 // ProbeWorkerConfig ProbeWorker 可调参数。
 type ProbeWorkerConfig struct {
-	ScanInterval time.Duration    // 探测循环间隔，默认 10 分钟
-	BatchSize    int              // 每批最大探测数，默认 5
-	ProbeTimeout time.Duration    // 单次探测超时，默认 5s
-	DailyBudget  int              // 每日探测上限，默认 200
-	Cooldown     time.Duration    // 每 endpoint 探测冷却期，默认 6h
-	QuietLogs    bool             // 是否静默日志
-	TimeFunc     func() time.Time // 自定义时钟（测试用）
+	ScanInterval           time.Duration    // 探测循环间隔，默认 10 分钟
+	BatchSize              int              // 每批最大探测数，默认 5
+	ProbeTimeout           time.Duration    // 单次探测超时，默认 5s
+	DailyBudget            int              // 每日探测上限，默认 200
+	Cooldown               time.Duration    // 每 endpoint 探测冷却期，默认 6h
+	ProbeRecoveryThreshold int              // degraded/limited→healthy 所需连续探测成功次数，默认 2
+	QuietLogs              bool             // 是否静默日志
+	TimeFunc               func() time.Time // 自定义时钟（测试用）
 }
 
 func (c ProbeWorkerConfig) withDefaults() ProbeWorkerConfig {
@@ -289,6 +299,9 @@ func (c ProbeWorkerConfig) withDefaults() ProbeWorkerConfig {
 	if c.Cooldown <= 0 {
 		c.Cooldown = DefaultProbeCooldown
 	}
+	if c.ProbeRecoveryThreshold <= 0 {
+		c.ProbeRecoveryThreshold = DefaultProbeRecoveryThreshold
+	}
 	if c.TimeFunc == nil {
 		c.TimeFunc = time.Now
 	}
@@ -302,12 +315,13 @@ func (c ProbeWorkerConfig) withDefaults() ProbeWorkerConfig {
 // 将需要探测的 endpoint 入队，按优先级出队执行轻量 HTTP 探测。
 // 探测请求直接通过 http.Client 发起，不经过 MetricsManager/调度器/Provider 转换链路。
 type ProbeWorker struct {
-	store  *ProfileStore
-	config ProbeWorkerConfig
-	budget *ProbeBudget
-	queue  *ProbeQueue
-	client *http.Client
-	timeFn func() time.Time
+	store    *ProfileStore
+	config   ProbeWorkerConfig
+	budget   *ProbeBudget
+	queue    *ProbeQueue
+	client   *http.Client
+	timeFn   func() time.Time
+	resolver APIKeyResolver // 可选：由 main.go 装配注入，未设置时探测请求全部跳过（fail-open）
 
 	cancel func()
 	wg     sync.WaitGroup
@@ -324,6 +338,11 @@ func NewProbeWorker(store *ProfileStore, cfg ProbeWorkerConfig) *ProbeWorker {
 		client: &http.Client{Timeout: cfg.ProbeTimeout},
 		timeFn: cfg.TimeFunc,
 	}
+}
+
+// SetAPIKeyResolver 注入 API Key 解析回调。未注入时所有探测请求会被跳过（不消耗预算）。
+func (w *ProbeWorker) SetAPIKeyResolver(resolver APIKeyResolver) {
+	w.resolver = resolver
 }
 
 // Start 启动探测 worker 后台循环。
@@ -423,17 +442,6 @@ func (w *ProbeWorker) processQueue() {
 	}
 
 	for i, item := range batch {
-		// 预算检查
-		if !w.budget.TryConsume() {
-			log.Printf("[ProbeWorker-Budget] 每日探测预算耗尽 (limit=%d)，跳过剩余 %d 个 endpoint",
-				w.config.DailyBudget, len(batch)-i)
-			// 预算耗尽，将当前及后续未处理条目重新入队（明天再试）
-			for _, remaining := range batch[i:] {
-				w.queue.Enqueue(remaining)
-			}
-			return
-		}
-
 		// 从 store 获取最新画像（可能在入队后已更新）
 		profile := w.store.Get(item.EndpointUID)
 		if profile == nil {
@@ -447,14 +455,44 @@ func (w *ProbeWorker) processQueue() {
 			continue
 		}
 
-		result := w.executeProbe(profile)
+		// 解析真实 API Key：resolver 未注入或未命中时跳过本次探测，不消耗预算，
+		// 也不会用假 key（如 KeyMask 掩码值）发送探测请求。
+		apiKey, ok := w.resolveAPIKey(profile)
+		if !ok {
+			if !w.config.QuietLogs {
+				log.Printf("[ProbeWorker-Probe] endpoint=%s 未能解析 API Key，跳过本次探测", profile.EndpointUID)
+			}
+			continue
+		}
+
+		// 预算检查
+		if !w.budget.TryConsume() {
+			log.Printf("[ProbeWorker-Budget] 每日探测预算耗尽 (limit=%d)，跳过剩余 %d 个 endpoint",
+				w.config.DailyBudget, len(batch)-i)
+			// 预算耗尽，将当前及后续未处理条目重新入队（明天再试）
+			for _, remaining := range batch[i:] {
+				w.queue.Enqueue(remaining)
+			}
+			return
+		}
+
+		result := w.executeProbe(profile, apiKey)
 		w.applyProbeResult(result)
 	}
 }
 
+// resolveAPIKey 通过注入的 APIKeyResolver 反查明文 API Key。
+// resolver 未设置时始终返回 ok=false（fail-open：跳过探测而非发送假 key）。
+func (w *ProbeWorker) resolveAPIKey(profile *KeyEndpointProfile) (string, bool) {
+	if w.resolver == nil {
+		return "", false
+	}
+	return w.resolver(profile.ChannelUID, profile.MetricsKey)
+}
+
 // executeProbe 对单个 endpoint 执行 L2 探测。
 // 直接通过 http.Client 发起 HTTP 请求，不经过 MetricsManager/调度器。
-func (w *ProbeWorker) executeProbe(profile *KeyEndpointProfile) ProbeResult {
+func (w *ProbeWorker) executeProbe(profile *KeyEndpointProfile, apiKey string) ProbeResult {
 	now := w.timeFn()
 	result := ProbeResult{
 		EndpointUID: profile.EndpointUID,
@@ -462,7 +500,7 @@ func (w *ProbeWorker) executeProbe(profile *KeyEndpointProfile) ProbeResult {
 	}
 
 	// 构造探测请求
-	probeReq, err := buildProbeRequest(profile)
+	probeReq, err := buildProbeRequest(profile, apiKey)
 	if err != nil {
 		result.ErrorMessage = fmt.Sprintf("构造探测请求失败: %v", err)
 		if !w.config.QuietLogs {
@@ -527,6 +565,7 @@ func (w *ProbeWorker) applyProbeResult(result ProbeResult) {
 
 	if result.Success {
 		profile.ProbeConfidence = 0.8
+		profile.ConsecutiveProbeSuccess++
 		// 探测成功：如果是 dead/degraded/limited，提升健康状态
 		switch profile.HealthState {
 		case HealthStateDead:
@@ -538,9 +577,23 @@ func (w *ProbeWorker) applyProbeResult(result ProbeResult) {
 			profile.HealthState = HealthStateHealthy
 			profile.HealthEvidence = append(profile.HealthEvidence,
 				fmt.Sprintf("[L2-Probe] 探测成功（status=%d），unknown→healthy", result.StatusCode))
+		case HealthStateDegraded, HealthStateLimited:
+			// degraded/limited → healthy 需要连续多次探测成功，避免单次探测噪声导致 flapping
+			if profile.ConsecutiveProbeSuccess >= w.config.ProbeRecoveryThreshold {
+				previous := profile.HealthState
+				profile.HealthState = HealthStateHealthy
+				profile.HealthEvidence = append(profile.HealthEvidence,
+					fmt.Sprintf("[L2-Probe] 连续探测成功 %d 次（status=%d），%s→healthy",
+						profile.ConsecutiveProbeSuccess, result.StatusCode, previous))
+			} else {
+				profile.HealthEvidence = append(profile.HealthEvidence,
+					fmt.Sprintf("[L2-Probe] 探测成功（status=%d），连续成功 %d/%d 次，尚未达到恢复阈值",
+						result.StatusCode, profile.ConsecutiveProbeSuccess, w.config.ProbeRecoveryThreshold))
+			}
 		}
 	} else {
 		profile.ProbeConfidence = 0.3
+		profile.ConsecutiveProbeSuccess = 0
 		profile.HealthEvidence = append(profile.HealthEvidence,
 			fmt.Sprintf("[L2-Probe] 探测失败: %s (status=%d)", result.ErrorMessage, result.StatusCode))
 	}
@@ -569,16 +622,16 @@ func (w *ProbeWorker) BudgetRemaining() int {
 
 // buildProbeRequest 根据 endpoint 的 serviceType 和配置构造最小探测请求。
 // L2 探测目标：验证连通性和认证，不验证模型能力。
-func buildProbeRequest(profile *KeyEndpointProfile) (*ProbeRequest, error) {
+func buildProbeRequest(profile *KeyEndpointProfile, apiKey string) (*ProbeRequest, error) {
 	switch profile.ServiceType {
 	case "claude":
-		return buildClaudeProbeRequest(profile), nil
+		return buildClaudeProbeRequest(profile, apiKey), nil
 	case "openai":
-		return buildChatProbeRequest(profile), nil
+		return buildChatProbeRequest(profile, apiKey), nil
 	case "responses":
-		return buildResponsesProbeRequest(profile), nil
+		return buildResponsesProbeRequest(profile, apiKey), nil
 	case "gemini":
-		return buildGeminiProbeRequest(profile), nil
+		return buildGeminiProbeRequest(profile, apiKey), nil
 	default:
 		return nil, fmt.Errorf("不支持的 serviceType: %s", profile.ServiceType)
 	}
@@ -586,7 +639,7 @@ func buildProbeRequest(profile *KeyEndpointProfile) (*ProbeRequest, error) {
 
 // buildClaudeProbeRequest 构造 Claude Messages 探测请求。
 // 优先使用 count_tokens（最轻量），回退到最小 messages 请求。
-func buildClaudeProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
+func buildClaudeProbeRequest(profile *KeyEndpointProfile, apiKey string) *ProbeRequest {
 	baseURL := strings.TrimRight(profile.BaseURL, "/")
 	probeModel := pickProbeModel(profile, "claude-3-5-haiku-20241022")
 
@@ -598,7 +651,7 @@ func buildClaudeProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
 
 	headers := map[string]string{
 		"Content-Type":      "application/json",
-		"x-api-key":         extractRawAPIKey(profile),
+		"x-api-key":         apiKey,
 		"anthropic-version": "2023-06-01",
 	}
 
@@ -612,7 +665,7 @@ func buildClaudeProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
 
 // buildChatProbeRequest 构造 OpenAI Chat 探测请求。
 // 发送最小 chat completion 请求。
-func buildChatProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
+func buildChatProbeRequest(profile *KeyEndpointProfile, apiKey string) *ProbeRequest {
 	baseURL := strings.TrimRight(profile.BaseURL, "/")
 	probeModel := pickProbeModel(profile, "gpt-4o-mini")
 
@@ -626,7 +679,7 @@ func buildChatProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
 
 	headers := map[string]string{
 		"Content-Type":  "application/json",
-		"Authorization": "Bearer " + extractRawAPIKey(profile),
+		"Authorization": "Bearer " + apiKey,
 	}
 
 	return &ProbeRequest{
@@ -638,7 +691,7 @@ func buildChatProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
 }
 
 // buildResponsesProbeRequest 构造 Codex Responses 探测请求。
-func buildResponsesProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
+func buildResponsesProbeRequest(profile *KeyEndpointProfile, apiKey string) *ProbeRequest {
 	baseURL := strings.TrimRight(profile.BaseURL, "/")
 	probeModel := pickProbeModel(profile, "codex-mini")
 
@@ -655,7 +708,7 @@ func buildResponsesProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
 
 	headers := map[string]string{
 		"Content-Type":  "application/json",
-		"Authorization": "Bearer " + extractRawAPIKey(profile),
+		"Authorization": "Bearer " + apiKey,
 	}
 
 	return &ProbeRequest{
@@ -667,7 +720,7 @@ func buildResponsesProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
 }
 
 // buildGeminiProbeRequest 构造 Gemini 探测请求。
-func buildGeminiProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
+func buildGeminiProbeRequest(profile *KeyEndpointProfile, apiKey string) *ProbeRequest {
 	baseURL := strings.TrimRight(profile.BaseURL, "/")
 	probeModel := pickProbeModel(profile, "gemini-2.0-flash")
 
@@ -685,7 +738,7 @@ func buildGeminiProbeRequest(profile *KeyEndpointProfile) *ProbeRequest {
 
 	headers := map[string]string{
 		"Content-Type":   "application/json",
-		"x-goog-api-key": extractRawAPIKey(profile),
+		"x-goog-api-key": apiKey,
 	}
 
 	return &ProbeRequest{
@@ -738,14 +791,4 @@ func pickProbeModel(profile *KeyEndpointProfile, defaultModel string) string {
 		}
 	}
 	return defaultModel
-}
-
-// extractRawAPIKey 从 KeyMask 推导原始 API Key。
-// 注意：KeyMask 是掩码后的值（如 sk-***abc），无法还原原始 key。
-// 这里返回 KeyMask 本身作为占位——实际集成时应从 ConfigManager 获取原始 key。
-// 当前 Phase 2 为 shadow 模式，此函数为后续集成预留接口。
-func extractRawAPIKey(profile *KeyEndpointProfile) string {
-	// Phase 2 shadow 模式：返回 KeyMask 作为占位。
-	// 正式集成时由 Manager 传入 ConfigManager 或 APIKeyResolver。
-	return profile.KeyMask
 }

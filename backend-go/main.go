@@ -618,9 +618,11 @@ func main() {
 			probeWorker := autopilot.NewProbeWorker(
 				autopilotManager.ProfileStore(),
 				autopilot.ProbeWorkerConfig{
-					QuietLogs: envCfg.QuietPollingLogs,
+					QuietLogs:              envCfg.QuietPollingLogs,
+					ProbeRecoveryThreshold: autopilotCfg.HealthCheck.ProbeRecoveryThreshold,
 				},
 			)
+			probeWorker.SetAPIKeyResolver(autopilotManager.ResolveAPIKey)
 			autopilotManager.SetProbeWorker(probeWorker)
 			log.Printf("[Autopilot-Init] L2 ProbeWorker 已创建 (将在 StartWorker 时启动)")
 		}

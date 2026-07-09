@@ -142,6 +142,9 @@ type HealthCheckConfig struct {
 	DeadProbeIntervalHours  int     `json:"deadProbeIntervalHours,omitempty"`
 	DeadConfidenceThreshold float64 `json:"deadConfidenceThreshold,omitempty"`
 	AutoExcludeDead         bool    `json:"autoExcludeDead,omitempty"`
+	// ProbeRecoveryThreshold degraded/limited→healthy 所需的连续探测成功次数。
+	// 默认 2：避免单次探测噪声导致状态在 degraded 和 healthy 之间抖动（flapping）。
+	ProbeRecoveryThreshold int `json:"probeRecoveryThreshold,omitempty"`
 }
 
 // FastDecayRoutingConfig 快速衰减路由配置。
@@ -313,6 +316,7 @@ func DefaultAutopilotRoutingConfig() AutopilotRoutingConfig {
 			DeadProbeIntervalHours:  6,
 			DeadConfidenceThreshold: 0.80,
 			AutoExcludeDead:         true,
+			ProbeRecoveryThreshold:  2,
 		},
 
 		FastDecay: FastDecayRoutingConfig{
@@ -452,6 +456,11 @@ func (c *AutopilotRoutingConfig) Validate() {
 	// 5. 禁用名单：去空白项、去重，避免无意义的重复配置
 	c.DisabledTaskClasses = dedupeNonEmptyStrings(c.DisabledTaskClasses)
 	c.DisabledChannelUIDs = dedupeNonEmptyStrings(c.DisabledChannelUIDs)
+
+	// 6. 健康检测：连续探测恢复阈值兜底（旧配置文件可能没有该字段，反序列化后为 0）
+	if c.HealthCheck.ProbeRecoveryThreshold <= 0 {
+		c.HealthCheck.ProbeRecoveryThreshold = 2
+	}
 }
 
 // dedupeNonEmptyStrings 去除空白项（trim 后为空则丢弃）并去重，保持首次出现的顺序。
