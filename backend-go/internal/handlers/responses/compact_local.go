@@ -55,6 +55,45 @@ func needsLocalCompact(upstream *config.UpstreamConfig) bool {
 	return upstream.ServiceType != "responses"
 }
 
+// ── 本地任务模板：请求分类推导 ──
+
+// inferCompactTaskDomain 从 compact 请求的 instructions（系统提示词）推导任务域。
+// 简化版关键词匹配，不依赖 autopilot 包；无匹配返回 "general"。
+func inferCompactTaskDomain(req types.ResponsesRequest) string {
+	if req.Instructions != "" {
+		lower := strings.ToLower(req.Instructions)
+		keywordMap := map[string]string{
+			"code review": "code_review", "审查代码": "code_review", "code audit": "code_review",
+			"ui": "aesthetics_ui", "设计": "aesthetics_ui", "css": "aesthetics_ui", "前端设计": "aesthetics_ui",
+			"翻译": "translation", "translate": "translation", "localization": "translation",
+			"算法": "reasoning", "数学": "reasoning", "推理": "reasoning",
+			"写作": "writing", "文案": "writing", "文章": "writing",
+			"实现": "coding", "编码": "coding", "代码": "coding", "implement": "coding", "coding": "coding",
+			"agent": "agentic", "工具调用": "agentic", "workflow": "agentic",
+		}
+		for keyword, domain := range keywordMap {
+			if strings.Contains(lower, keyword) {
+				return domain
+			}
+		}
+	}
+	return "general"
+}
+
+// inferCompactTaskClass 从 transcript 大小推导任务类别（轻量 heuristic）。
+// compact 请求不携带原始 TaskClass，用 transcript 长度粗略分类。
+func inferCompactTaskClass(transcript string) string {
+	runeCount := len([]rune(transcript))
+	switch {
+	case runeCount > 100000:
+		return "long_context"
+	case runeCount > 10000:
+		return "worker"
+	default:
+		return "lightweight"
+	}
+}
+
 // PLACEHOLDER_FORMAT_TRANSCRIPT
 
 func formatItemsAsTranscript(items []types.ResponsesItem) string {
@@ -222,11 +261,16 @@ func truncateRunes(s string, max int) string {
 
 // PLACEHOLDER_BUILD_REQUEST
 
-func buildLocalCompactRequestBody(originalBody []byte, stream bool, sessionManager *session.SessionManager, upstream *config.UpstreamConfig) ([]byte, error) {
-	return buildLocalCompactRequestBodyWithLogTag(originalBody, stream, sessionManager, "", upstream)
+// TaskTemplateStore 接口用于查询本地任务模板，避免 compact 层直接依赖 autopilot 包。
+type TaskTemplateStore interface {
+	FindBestPrompt(taskClass, domain, transcript string) string
 }
 
-func buildLocalCompactRequestBodyWithLogTag(originalBody []byte, stream bool, sessionManager *session.SessionManager, logTag string, upstream *config.UpstreamConfig) ([]byte, error) {
+func buildLocalCompactRequestBody(originalBody []byte, stream bool, sessionManager *session.SessionManager, upstream *config.UpstreamConfig, templateStore TaskTemplateStore) ([]byte, error) {
+	return buildLocalCompactRequestBodyWithLogTag(originalBody, stream, sessionManager, "", upstream, templateStore)
+}
+
+func buildLocalCompactRequestBodyWithLogTag(originalBody []byte, stream bool, sessionManager *session.SessionManager, logTag string, upstream *config.UpstreamConfig, templateStore TaskTemplateStore) ([]byte, error) {
 	var originalReq types.ResponsesRequest
 	if err := json.Unmarshal(originalBody, &originalReq); err != nil {
 		return nil, fmt.Errorf("解析 compact 请求失败: %w", err)
@@ -270,9 +314,21 @@ func buildLocalCompactRequestBodyWithLogTag(originalBody []byte, stream bool, se
 		common.LogWithTag(logTag, "[Compact-Local] 使用配置的 compact_model: %s (原始: %s)", compactModel, originalReq.Model)
 	}
 
+	// 解析模板：优先使用用户配置的本地任务模板，未命中回退默认硬编码提示词。
+	// 零模板（templateStore == nil 或无匹配模板）时行为与改动前字节级一致。
+	instructions := localCompactSystemPrompt
+	if templateStore != nil {
+		taskDomain := inferCompactTaskDomain(originalReq)
+		taskClass := inferCompactTaskClass(transcript)
+		if resolved := templateStore.FindBestPrompt(taskClass, taskDomain, transcript); resolved != "" {
+			instructions = resolved
+			common.LogWithTag(logTag, "[Compact-Local] 使用本地任务模板: class=%s domain=%s", taskClass, taskDomain)
+		}
+	}
+
 	compactReq := map[string]interface{}{
 		"model":             compactModel,
-		"instructions":      localCompactSystemPrompt,
+		"instructions":      instructions,
 		"input":             []interface{}{map[string]interface{}{"type": "message", "role": "user", "content": []interface{}{map[string]interface{}{"type": "input_text", "text": transcript}}}},
 		"stream":            stream,
 		"max_output_tokens": maxTokens,
@@ -293,6 +349,17 @@ func buildLocalCompactRequestBodyWithLogTag(originalBody []byte, stream bool, se
 
 // PLACEHOLDER_TRY_LOCAL_COMPACT
 
+// getTaskTemplateStoreFromContext 从 gin.Context 获取模板存储（供 compact 层使用）。
+// 使用与 autopilot.ContextKeyTaskTemplateStore 一致的 key。
+func getTaskTemplateStoreFromContext(c *gin.Context) TaskTemplateStore {
+	val, exists := c.Get("autopilot_task_template_store")
+	if !exists {
+		return nil
+	}
+	store, _ := val.(TaskTemplateStore)
+	return store
+}
+
 func tryLocalCompactWithKey(
 	c *gin.Context,
 	upstream *config.UpstreamConfig,
@@ -311,8 +378,9 @@ func tryLocalCompactWithKey(
 	stream := originalReq.Stream
 	common.RequestLogf(c, "[Compact-Local] 使用本地 compact: serviceType=%s model=%s stream=%v", upstream.ServiceType, originalReq.Model, stream)
 
-	// 构建本地 compact 请求体
-	localBody, err := buildLocalCompactRequestBodyWithLogTag(bodyBytes, stream, sessionManager, common.RequestLogTag(c), upstream)
+	// 构建本地 compact 请求体（注入用户配置的本地任务模板）
+	templateStore := getTaskTemplateStoreFromContext(c)
+	localBody, err := buildLocalCompactRequestBodyWithLogTag(bodyBytes, stream, sessionManager, common.RequestLogTag(c), upstream, templateStore)
 	if err != nil {
 		return false, &compactError{status: 400, body: []byte(fmt.Sprintf(`{"error":"%s"}`, err.Error())), shouldFailover: false, err: err}
 	}

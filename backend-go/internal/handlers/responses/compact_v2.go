@@ -101,7 +101,8 @@ func tryLocalCompactV2WithKey(
 
 	common.RequestLogf(c, "[Compact-V2-Local] 标准 Responses compaction_trigger 使用本地 compact: serviceType=%s model=%s stream=%v", upstream.ServiceType, originalReq.Model, originalReq.Stream)
 
-	localBody, err := buildLocalCompactRequestBodyWithLogTag(bodyBytes, originalReq.Stream, sessionManager, common.RequestLogTag(c), upstream)
+	templateStore := getTaskTemplateStoreFromContext(c)
+	localBody, err := buildLocalCompactRequestBodyWithLogTag(bodyBytes, originalReq.Stream, sessionManager, common.RequestLogTag(c), upstream, templateStore)
 	if err != nil {
 		return false, &compactError{status: 400, body: []byte(fmt.Sprintf(`{"error":"%s"}`, err.Error())), shouldFailover: false, err: err}
 	}

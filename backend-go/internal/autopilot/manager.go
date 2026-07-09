@@ -125,6 +125,9 @@ type Manager struct {
 	localRuntimeStore *LocalRuntimeStore
 	manualIntentStore *ManualIntentStore
 
+	// Phase 4 Item 7：本地任务模板存储
+	taskTemplateStore *LocalTaskTemplateStore
+
 	// Phase 1 新组件：advisor shadow + 决策存储 + 用量计量
 	advisorStore *AdvisorDecisionStore
 	advisor      *TrustedRoutingAdvisor
@@ -183,6 +186,11 @@ func NewManager(
 		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 ManualIntentStore 失败: %w", err)
 	}
 
+	ttStore, ttErr := NewLocalTaskTemplateStoreWithDB(db)
+	if ttErr != nil {
+		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 LocalTaskTemplateStore 失败: %w", ttErr)
+	}
+
 	advisorStore, asErr := NewAdvisorDecisionStoreWithDB(db)
 	if asErr != nil {
 		return nil, fmt.Errorf("[Autopilot-NewManager] 初始化 AdvisorDecisionStore 失败: %w", asErr)
@@ -217,6 +225,7 @@ func NewManager(
 		subscriptionStore: subStore,
 		localRuntimeStore: lrStore,
 		manualIntentStore: miStore,
+		taskTemplateStore: ttStore,
 
 		advisorStore: advisorStore,
 		advisor:      NewTrustedRoutingAdvisor(),
@@ -428,6 +437,11 @@ func (m *Manager) LocalRuntimeStore() *LocalRuntimeStore {
 // ManualIntentStore 返回内部 ManualIntentStore 引用。
 func (m *Manager) ManualIntentStore() *ManualIntentStore {
 	return m.manualIntentStore
+}
+
+// TaskTemplateStore 返回内部 LocalTaskTemplateStore 引用。
+func (m *Manager) TaskTemplateStore() *LocalTaskTemplateStore {
+	return m.taskTemplateStore
 }
 
 // AdvisorDecisionStore 返回内部 AdvisorDecisionStore 引用。

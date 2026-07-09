@@ -188,7 +188,7 @@ func TestBuildLocalCompactRequestBody_StripsClientAgentControls(t *testing.T) {
 		"stream":true
 	}`
 
-	localBody, err := buildLocalCompactRequestBody([]byte(body), true, nil, nil)
+	localBody, err := buildLocalCompactRequestBody([]byte(body), true, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildLocalCompactRequestBody failed: %v", err)
 	}

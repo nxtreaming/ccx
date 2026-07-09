@@ -1021,6 +1021,8 @@ func main() {
 			autopilot.RegisterLocalRuntimeRoutes(apiGroup, autopilotManager.LocalRuntimeStore())
 			// 手动意图 API
 			autopilot.RegisterManualIntentRoutes(apiGroup, autopilotManager.ManualIntentStore())
+			// 本地任务模板 API
+			autopilot.RegisterTaskTemplateRoutes(apiGroup, autopilotManager.TaskTemplateStore())
 			// 驾驶舱只读聚合 API
 			autopilot.RegisterCockpitRoutes(apiGroup, autopilotManager)
 			// Advisor shadow 决策记录 API
@@ -1114,8 +1116,15 @@ func main() {
 	r.GET("/:routePrefix/v1/responses", responsesWebSocketHandler)
 
 	compactHandler := responses.CompactHandler(envCfg, cfgManager, sessionManager, channelScheduler)
-	r.POST("/v1/responses/compact", compactHandler)
-	r.POST("/:routePrefix/v1/responses/compact", compactHandler)
+	// Phase 4 Item 7: 注入本地任务模板到 gin.Context（供 compact 层查询模板，nil 时使用默认提示词）
+	compactWithTemplates := func(c *gin.Context) {
+		if autopilotManager != nil && autopilotManager.TaskTemplateStore() != nil {
+			autopilot.SetTaskTemplateStore(c, autopilotManager.TaskTemplateStore())
+		}
+		compactHandler(c)
+	}
+	r.POST("/v1/responses/compact", compactWithTemplates)
+	r.POST("/:routePrefix/v1/responses/compact", compactWithTemplates)
 
 	// 代理端点 - Gemini API (原生协议)
 	// 使用通配符捕获 model:action 格式，如 gemini-pro:generateContent
