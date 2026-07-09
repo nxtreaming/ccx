@@ -560,6 +560,8 @@ func (m *Manager) collectAll() {
 
 	var profiled, diagnosed int
 	var allProfiles []*KeyEndpointProfile
+	// 读取 StabilityTier 滞后窗口配置（单次读取，避免循环内反复加锁）
+	stabilityHysteresisWindows := m.cfgManager.GetAutopilotRouting().HealthCheck.StabilityHysteresisWindows
 	for _, entry := range entries {
 		for _, apiKey := range entry.APIKeys {
 			profile := m.profiler.DeriveEndpointProfile(
@@ -649,7 +651,12 @@ func (m *Manager) collectAll() {
 			// LastProbeAt/ConsecutiveProbeSuccess 等会被本轮 Upsert 整行覆盖清零，
 			// 导致 scanAndEnqueue 的探测冷却期形同虚设。HealthState/HealthConfidence
 			// 等 L1 诊断字段不受影响，继续以本轮真实流量信号为准。
-			carryForwardProbeFields(m.store.Get(profile.EndpointUID), &profile)
+			oldProfile := m.store.Get(profile.EndpointUID)
+			carryForwardProbeFields(oldProfile, &profile)
+
+			// StabilityTier 晋降级滞后：连续 N 轮（N = stabilityHysteresisWindows）
+			// rawTier 一致才采纳，防止单轮噪声导致 EffectiveStabilityTier 抖动。
+			applyStabilityHysteresis(oldProfile, &profile, profile.StabilityTier, stabilityHysteresisWindows)
 
 			// ── Phase 3A：画像变更事件检测（只读展示，不影响调度）──
 			// 必须在 Upsert 覆盖缓存之前读取旧值，否则 diff 永远为空。

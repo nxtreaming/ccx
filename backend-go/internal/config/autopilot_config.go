@@ -145,6 +145,9 @@ type HealthCheckConfig struct {
 	// ProbeRecoveryThreshold degraded/limited→healthy 所需的连续探测成功次数。
 	// 默认 2：避免单次探测噪声导致状态在 degraded 和 healthy 之间抖动（flapping）。
 	ProbeRecoveryThreshold int `json:"probeRecoveryThreshold,omitempty"`
+	// StabilityHysteresisWindows StabilityTier 晋降级所需的连续窗口数。
+	// 默认 2：避免单轮噪声导致 StabilityTier 在 stable/normal/unstable 之间抖动。
+	StabilityHysteresisWindows int `json:"stabilityHysteresisWindows,omitempty"`
 }
 
 // FastDecayRoutingConfig 快速衰减路由配置。
@@ -310,13 +313,14 @@ func DefaultAutopilotRoutingConfig() AutopilotRoutingConfig {
 		},
 
 		HealthCheck: HealthCheckConfig{
-			Enabled:                 true,
-			L2ProbeIntervalMinutes:  120,
-			L2ProbeMaxPerDay:        12,
-			DeadProbeIntervalHours:  6,
-			DeadConfidenceThreshold: 0.80,
-			AutoExcludeDead:         true,
-			ProbeRecoveryThreshold:  2,
+			Enabled:                    true,
+			L2ProbeIntervalMinutes:     120,
+			L2ProbeMaxPerDay:           12,
+			DeadProbeIntervalHours:     6,
+			DeadConfidenceThreshold:    0.80,
+			AutoExcludeDead:            true,
+			ProbeRecoveryThreshold:     2,
+			StabilityHysteresisWindows: 2,
 		},
 
 		FastDecay: FastDecayRoutingConfig{
@@ -460,6 +464,10 @@ func (c *AutopilotRoutingConfig) Validate() {
 	// 6. 健康检测：连续探测恢复阈值兜底（旧配置文件可能没有该字段，反序列化后为 0）
 	if c.HealthCheck.ProbeRecoveryThreshold <= 0 {
 		c.HealthCheck.ProbeRecoveryThreshold = 2
+	}
+	// 7. StabilityTier 晋降级滞后窗口兜底
+	if c.HealthCheck.StabilityHysteresisWindows <= 0 {
+		c.HealthCheck.StabilityHysteresisWindows = 2
 	}
 }
 

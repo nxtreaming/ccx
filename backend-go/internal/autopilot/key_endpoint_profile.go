@@ -180,6 +180,11 @@ type KeyEndpointProfile struct {
 	CostTier         CostTier      `json:"costTier"`
 	CostProfile      CostProfile   `json:"costProfile,omitempty"`
 
+	// ── StabilityTier 晋降级滞后（Phase 3B-3）──
+	EffectiveStabilityTier StabilityTier `json:"effectiveStabilityTier,omitempty"` // 滞后后供评分使用的稳定档；零值时调用方回退到 StabilityTier
+	StabilityPendingTier   StabilityTier `json:"stabilityPendingTier,omitempty"`   // 当前正在累积连续窗口数的候选档
+	StabilityPendingStreak int           `json:"stabilityPendingStreak,omitempty"` // 候选档已连续出现的轮数
+
 	// ── 能力标签（该 endpoint 特有）──
 	SupportsVision    bool `json:"supportsVision"`
 	SupportsToolCalls bool `json:"supportsToolCalls"`

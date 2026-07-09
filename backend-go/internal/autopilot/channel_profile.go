@@ -204,8 +204,12 @@ func AggregateChannelProfile(channelUID string, channelID int, channelKind strin
 			bestQuality = qr
 		}
 
-		// StabilityTier: 取中位数
-		stabilityTiers = append(stabilityTiers, stabilityTierRank(ep.StabilityTier))
+		// StabilityTier: 取中位数（优先读滞后后的 EffectiveStabilityTier）
+		effTier := ep.EffectiveStabilityTier
+		if effTier == "" {
+			effTier = ep.StabilityTier
+		}
+		stabilityTiers = append(stabilityTiers, stabilityTierRank(effTier))
 
 		// SpeedTier: 取中位数
 		speedTiers = append(speedTiers, speedTierRank(ep.SpeedTier))
