@@ -30,6 +30,22 @@ type SubscriptionProfile struct {
 	Source            string   `json:"source"` // manual | imported | inferred
 	Confidence        float64  `json:"confidence"`
 
+	// ── Phase 4 Item 6：余额自动刷新 ──
+	// BillingAPIKey 用于查询 provider 账单/余额的专用密钥（与推理 APIKeys 分离）。
+	// 很多 provider 的账单 API 需要 admin/org 级密钥而非普通 API key，不能假设两者通用。
+	// 未填写则该订阅不参与自动刷新，静默跳过。
+	BillingAPIKey string `json:"billingApiKey,omitempty"`
+
+	// AutoRefreshEnabled 单订阅级开关。即使全局 SubscriptionAutoRefresh.Enabled=true，
+	// 该订阅也必须 AutoRefreshEnabled=true 且 BillingAPIKey 非空才纳入刷新队列。
+	AutoRefreshEnabled bool `json:"autoRefreshEnabled,omitempty"`
+
+	// LastBalanceRefreshAt 最近一次成功刷新余额的时间。
+	LastBalanceRefreshAt *time.Time `json:"lastBalanceRefreshAt,omitempty"`
+
+	// LastBalanceRefreshError 最近一次刷新失败的错误信息（成功后清空）。
+	LastBalanceRefreshError string `json:"lastBalanceRefreshError,omitempty"`
+
 	// ── 订阅级共享能力（§3.2.3，shadow 展示）──
 	SharedCapability *SharedCapability `json:"sharedCapability,omitempty"` // 从同订阅 endpoint 聚合的共享能力
 

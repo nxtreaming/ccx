@@ -86,6 +86,10 @@ type AutopilotRoutingConfig struct {
 	// sloRollback SLO regression 自动回滚配置。
 	// 仅作用于 TrustedRoutingAdvisor 已手动晋升到 active 的渠道。
 	SLORollback SLORollbackConfig `json:"sloRollback,omitempty"`
+
+	// subscriptionAutoRefresh 订阅余额自动刷新配置。
+	// 仅对显式填写了 BillingAPIKey 的订阅生效，且必须双门控（开关打开 + BillingAPIKey 非空）。
+	SubscriptionAutoRefresh SubscriptionAutoRefreshConfig `json:"subscriptionAutoRefresh,omitempty"`
 }
 
 // ── §9.1 子配置类型 ──
@@ -273,6 +277,27 @@ type LocalModelRoutingConfig struct {
 	ForbidAutoDecomposeAndMerge bool     `json:"forbidAutoDecomposeAndMerge,omitempty"`
 }
 
+// SubscriptionAutoRefreshConfig 订阅余额自动刷新配置。
+// 仅对 Provider 为 openai/anthropic/google 且显式填写了 BillingAPIKey 的订阅生效。
+// 中转/公益渠道（relay_x/community_x）不支持自动刷新，继续走手动维护。
+type SubscriptionAutoRefreshConfig struct {
+	// Enabled 是否启用订阅余额自动刷新。
+	// 默认 false，需显式 opt-in（Phase 4 Item 6 安全守则）。
+	Enabled bool `json:"enabled,omitempty"`
+
+	// RefreshIntervalHours 每张卡的刷新间隔（小时）。
+	// 默认 24，即每 24 小时刷新一次。
+	RefreshIntervalHours int `json:"refreshIntervalHours,omitempty"`
+
+	// DailyBudget 每日刷新调用总预算。
+	// 默认 100，防止触发 provider 侧限流。
+	DailyBudget int `json:"dailyBudget,omitempty"`
+
+	// RequestTimeoutSeconds 单次刷新请求超时（秒）。
+	// 默认 15。
+	RequestTimeoutSeconds int `json:"requestTimeoutSeconds,omitempty"`
+}
+
 // SLORollbackConfig SLO regression 自动回滚配置。
 // 仅作用于 TrustedRoutingAdvisor 里已被运维手动晋升到 active 状态的渠道。
 // 不做自动恢复：rolled_back 后只能运维手动重新晋升，避免自动升降级来回震荡。
@@ -455,6 +480,13 @@ func DefaultAutopilotRoutingConfig() AutopilotRoutingConfig {
 			Enabled:            false, // 默认关闭，需显式 opt-in（Phase 4 Item 3 安全守则）
 			ConsecutiveWindows: 3,
 		},
+
+		SubscriptionAutoRefresh: SubscriptionAutoRefreshConfig{
+			Enabled:               false, // 默认关闭，需显式 opt-in（Phase 4 Item 6 安全守则）
+			RefreshIntervalHours:  24,
+			DailyBudget:           100,
+			RequestTimeoutSeconds: 15,
+		},
 	}
 }
 
@@ -495,6 +527,17 @@ func (c *AutopilotRoutingConfig) Validate() {
 	// 8. SLO regression 自动回滚：连续窗口阈值兜底
 	if c.SLORollback.ConsecutiveWindows <= 0 {
 		c.SLORollback.ConsecutiveWindows = 3
+	}
+
+	// 9. 订阅余额自动刷新：参数兜底
+	if c.SubscriptionAutoRefresh.RefreshIntervalHours <= 0 {
+		c.SubscriptionAutoRefresh.RefreshIntervalHours = 24
+	}
+	if c.SubscriptionAutoRefresh.DailyBudget <= 0 {
+		c.SubscriptionAutoRefresh.DailyBudget = 100
+	}
+	if c.SubscriptionAutoRefresh.RequestTimeoutSeconds <= 0 {
+		c.SubscriptionAutoRefresh.RequestTimeoutSeconds = 15
 	}
 }
 

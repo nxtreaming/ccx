@@ -9,6 +9,7 @@
           <th class="text-left">{{ t('subscription.field.rechargeMultiplier') }}</th>
           <th class="text-left">{{ t('subscription.field.linkedChannels') }}</th>
           <th class="text-left">{{ t('subscription.field.source') }}</th>
+          <th class="text-left" style="width: 160px;">{{ t('subscription.field.autoRefreshSection') }}</th>
           <th class="text-right" style="width: 100px;">{{ t('app.actions.edit') }}</th>
         </tr>
       </thead>
@@ -78,8 +79,33 @@
             </v-chip>
           </td>
 
+          <!-- 自动刷新状态 -->
+          <td>
+            <div v-if="item.autoRefreshEnabled && item.autoRefreshSupported" class="d-flex align-center ga-1">
+              <v-icon size="14" :color="item.lastBalanceRefreshError ? 'error' : 'success'">
+                {{ item.lastBalanceRefreshError ? 'mdi-alert-circle' : 'mdi-check-circle' }}
+              </v-icon>
+              <span v-if="item.lastBalanceRefreshAt" class="text-caption">
+                {{ formatRefreshTime(item.lastBalanceRefreshAt) }}
+              </span>
+              <span v-else class="text-caption text-medium-emphasis">-</span>
+            </div>
+            <div v-else-if="item.autoRefreshEnabled && !item.autoRefreshSupported" class="text-caption text-medium-emphasis">
+              <v-icon size="14" color="grey">mdi-information</v-icon>
+              N/A
+            </div>
+            <span v-else class="text-caption text-medium-emphasis">-</span>
+          </td>
+
           <!-- 操作 -->
           <td class="text-right">
+            <v-tooltip v-if="item.autoRefreshEnabled && item.autoRefreshSupported" text="Refresh" location="top">
+              <template #activator="{ props }">
+                <v-btn v-bind="props" icon size="small" variant="text" color="primary" @click="$emit('refresh', item)">
+                  <v-icon size="18">mdi-refresh</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
             <v-btn icon size="small" variant="text" @click="$emit('edit', item)">
               <v-icon size="18">mdi-pencil</v-icon>
             </v-btn>
@@ -104,6 +130,7 @@ defineProps<{
 defineEmits<{
   edit: [item: SubscriptionItem]
   delete: [item: SubscriptionItem]
+  refresh: [item: SubscriptionItem]
 }>()
 
 const { t } = useI18n()
@@ -134,5 +161,15 @@ function getSourceLabel(source?: string): string {
   if (!source) return '-'
   const key = `subscription.source.${source}`
   return t(key)
+}
+
+function formatRefreshTime(isoStr?: string): string {
+  if (!isoStr) return '-'
+  try {
+    const d = new Date(isoStr)
+    return d.toLocaleString()
+  } catch {
+    return isoStr
+  }
 }
 </script>

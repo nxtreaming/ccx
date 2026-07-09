@@ -630,6 +630,26 @@ func main() {
 		}
 	}
 
+	// Phase 4 Item 6: SubscriptionRefreshWorker：按配置门控启动（默认关闭）
+	if autopilotManager != nil {
+		autopilotCfg := cfgManager.GetAutopilotRouting()
+		if autopilotCfg.SubscriptionAutoRefresh.Enabled {
+			refreshWorker := autopilot.NewSubscriptionRefreshWorker(
+				autopilotManager.SubscriptionStore(),
+				nil, // 使用默认 fetcher 注册表（OpenAI/Anthropic/Google）
+				autopilot.SubscriptionRefreshWorkerConfig{
+					RefreshInterval: time.Duration(autopilotCfg.SubscriptionAutoRefresh.RefreshIntervalHours) * time.Hour,
+					DailyBudget:     autopilotCfg.SubscriptionAutoRefresh.DailyBudget,
+					RefreshTimeout:  time.Duration(autopilotCfg.SubscriptionAutoRefresh.RequestTimeoutSeconds) * time.Second,
+					QuietLogs:       envCfg.QuietPollingLogs,
+				},
+				func() bool { return cfgManager.GetAutopilotRouting().SubscriptionAutoRefresh.Enabled },
+			)
+			autopilotManager.SetSubscriptionRefreshWorker(refreshWorker)
+			log.Printf("[Autopilot-Init] SubscriptionRefreshWorker 已创建 (将在 StartWorker 时启动)")
+		}
+	}
+
 	// Phase 3B-2: ModelSupportResolver 注入（无条件注册，安全门控在 ResolveModelSupport 内部）。
 	// 调度器候选筛选时调用，AutoManaged 渠道 + 三条件门控通过才走 ModelResolver，否则回退 ExplainModelSupport。
 	if autopilotManager != nil {
@@ -1016,7 +1036,7 @@ func main() {
 			autopilot.RegisterRoutes(apiGroup, autopilotManager)
 
 			// 订阅中心 API
-			autopilot.RegisterSubscriptionRoutes(apiGroup, autopilotManager.SubscriptionStore())
+			autopilot.RegisterSubscriptionRoutes(apiGroup, autopilotManager.SubscriptionStore(), autopilotManager.SubscriptionRefreshWorker())
 			// 本地 Runtime API
 			autopilot.RegisterLocalRuntimeRoutes(apiGroup, autopilotManager.LocalRuntimeStore())
 			// 手动意图 API

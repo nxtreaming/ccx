@@ -151,6 +151,9 @@ type Manager struct {
 	// Phase 3B-2：模型自动映射器（用于 resolveMappedModel + ResolveModelSupport）
 	modelResolver *ModelResolver
 
+	// Phase 4 Item 6：订阅余额自动刷新 worker
+	subscriptionRefreshWorker *SubscriptionRefreshWorker
+
 	cancel func()
 	wg     sync.WaitGroup
 }
@@ -356,6 +359,7 @@ func (m *Manager) ObserveRateLimitSignal(
 
 // StartWorker 启动后台聚合 worker。ctx 取消时退出循环。
 // 若 ProbeWorker 已设置，同步启动 L2 探测 worker。
+// 若 SubscriptionRefreshWorker 已设置，同步启动余额刷新 worker。
 func (m *Manager) StartWorker(ctx context.Context) {
 	ctx, m.cancel = context.WithCancel(ctx)
 	m.wg.Add(1)
@@ -367,11 +371,18 @@ func (m *Manager) StartWorker(ctx context.Context) {
 	if m.probeWorker != nil {
 		m.probeWorker.Start(ctx)
 	}
+	// 订阅余额刷新 worker（config 门控，由 main.go 按配置决定是否 SetSubscriptionRefreshWorker）
+	if m.subscriptionRefreshWorker != nil {
+		m.subscriptionRefreshWorker.Start(ctx)
+	}
 }
 
 // Stop 优雅停止后台 worker（等待当前循环完成）。
-// 若 ProbeWorker 已设置，同步停止。
+// 若 ProbeWorker / SubscriptionRefreshWorker 已设置，同步停止。
 func (m *Manager) Stop() {
+	if m.subscriptionRefreshWorker != nil {
+		m.subscriptionRefreshWorker.Stop()
+	}
 	if m.probeWorker != nil {
 		m.probeWorker.Stop()
 	}
@@ -503,6 +514,16 @@ func (m *Manager) ProbeWorker() *ProbeWorker {
 // SetProbeWorker 设置 ProbeWorker（由 main.go 在 NewManager 后调用）。
 func (m *Manager) SetProbeWorker(pw *ProbeWorker) {
 	m.probeWorker = pw
+}
+
+// SubscriptionRefreshWorker 返回内部 SubscriptionRefreshWorker 引用。
+func (m *Manager) SubscriptionRefreshWorker() *SubscriptionRefreshWorker {
+	return m.subscriptionRefreshWorker
+}
+
+// SetSubscriptionRefreshWorker 设置 SubscriptionRefreshWorker（由 main.go 在 NewManager 后调用）。
+func (m *Manager) SetSubscriptionRefreshWorker(rw *SubscriptionRefreshWorker) {
+	m.subscriptionRefreshWorker = rw
 }
 
 // ResolveAPIKey 根据 channelUID + keyHash 反查明文 API Key，供 ProbeWorker.APIKeyResolver 使用。

@@ -1,6 +1,7 @@
 package autopilot
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -23,6 +24,10 @@ type SubscriptionCreateRequest struct {
 	RechargeMultiplier float64            `json:"rechargeMultiplier"`
 	Notes              string             `json:"notes"`
 	Source             string             `json:"source"`
+
+	// Phase 4 Item 6：余额自动刷新
+	BillingAPIKey      string `json:"billingApiKey,omitempty"`
+	AutoRefreshEnabled bool   `json:"autoRefreshEnabled,omitempty"`
 }
 
 // SubscriptionUpdateRequest PUT /api/subscriptions/:uid 请求体。
@@ -40,6 +45,10 @@ type SubscriptionUpdateRequest struct {
 	Notes              *string            `json:"notes,omitempty"`
 	Source             *string            `json:"source,omitempty"`
 	Confidence         *float64           `json:"confidence,omitempty"`
+
+	// Phase 4 Item 6：余额自动刷新
+	BillingAPIKey      *string `json:"billingApiKey,omitempty"`
+	AutoRefreshEnabled *bool   `json:"autoRefreshEnabled,omitempty"`
 }
 
 // LinkRequest POST /api/subscriptions/:uid/link 请求体。
@@ -71,6 +80,13 @@ type SubscriptionItem struct {
 	CreatedAt          string             `json:"createdAt"`
 	UpdatedAt          string             `json:"updatedAt"`
 	ArchivedAt         string             `json:"archivedAt,omitempty"`
+
+	// Phase 4 Item 6：余额自动刷新
+	BillingAPIKey           string `json:"billingApiKey,omitempty"`
+	AutoRefreshEnabled      bool   `json:"autoRefreshEnabled,omitempty"`
+	AutoRefreshSupported    bool   `json:"autoRefreshSupported,omitempty"`    // provider 是否在白名单内
+	LastBalanceRefreshAt    string `json:"lastBalanceRefreshAt,omitempty"`
+	LastBalanceRefreshError string `json:"lastBalanceRefreshError,omitempty"`
 }
 
 // SubscriptionsListResponse GET /api/subscriptions 返回结构。
@@ -82,7 +98,7 @@ type SubscriptionsListResponse struct {
 // ─── 路由注册 ──────────────────────────────────────────────────────────────────
 
 // RegisterSubscriptionRoutes 注册订阅中心 CRUD + 渠道链接 API 到给定路由组。
-func RegisterSubscriptionRoutes(router gin.IRouter, store *SubscriptionStore) {
+func RegisterSubscriptionRoutes(router gin.IRouter, store *SubscriptionStore, refreshWorker *SubscriptionRefreshWorker) {
 	group := router.Group("/subscriptions")
 	{
 		group.GET("", handleListSubscriptions(store))
@@ -92,6 +108,7 @@ func RegisterSubscriptionRoutes(router gin.IRouter, store *SubscriptionStore) {
 		group.DELETE("/:uid", handleDeleteSubscription(store))
 		group.POST("/:uid/link", handleLinkChannel(store))
 		group.POST("/:uid/unlink", handleUnlinkChannel(store))
+		group.POST("/:uid/refresh", handleRefreshSubscription(store, refreshWorker))
 	}
 }
 
@@ -135,6 +152,9 @@ func handleCreateSubscription(store *SubscriptionStore) gin.HandlerFunc {
 			RechargeMultiplier: req.RechargeMultiplier,
 			Notes:              req.Notes,
 			Source:             req.Source,
+			// Phase 4 Item 6
+			BillingAPIKey:      req.BillingAPIKey,
+			AutoRefreshEnabled: req.AutoRefreshEnabled,
 		}
 		if profile.Source == "" {
 			profile.Source = "manual"
@@ -230,6 +250,13 @@ func handleUpdateSubscription(store *SubscriptionStore) gin.HandlerFunc {
 		if req.Confidence != nil {
 			existing.Confidence = *req.Confidence
 		}
+		// Phase 4 Item 6：余额自动刷新字段
+		if req.BillingAPIKey != nil {
+			existing.BillingAPIKey = *req.BillingAPIKey
+		}
+		if req.AutoRefreshEnabled != nil {
+			existing.AutoRefreshEnabled = *req.AutoRefreshEnabled
+		}
 
 		if err := store.Update(existing); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -316,6 +343,67 @@ func handleUnlinkChannel(store *SubscriptionStore) gin.HandlerFunc {
 	}
 }
 
+// handleRefreshSubscription POST /api/subscriptions/:uid/refresh
+// 手动触发指定订阅的余额刷新（不消耗全局每日预算）。
+// 需要 BillingAPIKey 非空且 Provider 在白名单内。
+func handleRefreshSubscription(store *SubscriptionStore, refreshWorker *SubscriptionRefreshWorker) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := c.Param("uid")
+		if uid == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "uid 不能为空"})
+			return
+		}
+
+		profile := store.Get(uid)
+		if profile == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在: " + uid})
+			return
+		}
+
+		if profile.BillingAPIKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "未配置 BillingAPIKey，无法刷新余额"})
+			return
+		}
+
+		if !IsAutoRefreshSupported(profile.Provider) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("provider=%s 不支持自动余额刷新", profile.Provider)})
+			return
+		}
+
+		// 使用 worker 的 fetcher 直接查询（不消耗预算）
+		if refreshWorker == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "余额刷新服务未就绪"})
+			return
+		}
+
+		// 直接调用 worker 的内部方法——构造临时 fetch 并回写
+		profilePtr := store.Get(uid) // 重新获取最新副本
+		if profilePtr == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在: " + uid})
+			return
+		}
+		result := refreshWorker.fetchBalance(profilePtr)
+		refreshWorker.applyResult(result)
+
+		// 返回更新后的订阅
+		updated := store.Get(uid)
+		if updated == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新后无法读取订阅"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"subscription": toSubscriptionItem(updated),
+			"refreshResult": gin.H{
+				"success":      result.Success,
+				"balance":      result.Balance,
+				"currency":     result.Currency,
+				"errorMessage": result.ErrorMessage,
+			},
+		})
+	}
+}
+
 // ─── 内部辅助 ──────────────────────────────────────────────────────────────────
 
 // toSubscriptionItem 将 SubscriptionProfile 转为 API 响应结构。
@@ -337,9 +425,17 @@ func toSubscriptionItem(p *SubscriptionProfile) SubscriptionItem {
 		Notes:              p.Notes,
 		CreatedAt:          p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:          p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		// Phase 4 Item 6：余额自动刷新
+		BillingAPIKey:        p.BillingAPIKey,
+		AutoRefreshEnabled:   p.AutoRefreshEnabled,
+		AutoRefreshSupported: IsAutoRefreshSupported(p.Provider),
+		LastBalanceRefreshError: p.LastBalanceRefreshError,
 	}
 	if p.ArchivedAt != nil {
 		item.ArchivedAt = p.ArchivedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	if p.LastBalanceRefreshAt != nil {
+		item.LastBalanceRefreshAt = p.LastBalanceRefreshAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 	return item
 }

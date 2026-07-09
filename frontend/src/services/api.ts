@@ -1193,6 +1193,12 @@ export class ApiService {
     })
   }
 
+  async refreshSubscription(uid: string): Promise<{ subscription: SubscriptionItem; refreshResult: { success: boolean; balance: number; currency: string; errorMessage: string } }> {
+    return this.request(`/subscriptions/${encodeURIComponent(uid)}/refresh`, {
+      method: 'POST',
+    })
+  }
+
   // ============== 驾驶舱 API ==============
 
   async getCockpitOverview(): Promise<CockpitOverviewResponse> {

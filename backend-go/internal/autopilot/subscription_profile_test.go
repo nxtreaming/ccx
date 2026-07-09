@@ -593,7 +593,7 @@ func setupSubRouter(t *testing.T) (*SubscriptionStore, *gin.Engine) {
 		t.Fatalf("NewSubscriptionStoreWithDB 失败: %v", err)
 	}
 	router := gin.New()
-	RegisterSubscriptionRoutes(router, store)
+	RegisterSubscriptionRoutes(router, store, nil)
 	return store, router
 }
 

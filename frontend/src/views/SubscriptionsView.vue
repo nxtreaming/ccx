@@ -42,6 +42,7 @@
       :subscriptions="filteredSubscriptions"
       @edit="openEditDialog"
       @delete="handleDelete"
+      @refresh="handleRefresh"
     />
 
     <!-- Create/Edit dialog -->
@@ -134,6 +135,29 @@
               rows="2"
               class="mb-2"
             />
+            <v-divider class="my-3" />
+            <div class="text-subtitle-2 mb-2 text-medium-emphasis">{{ t('subscription.field.autoRefreshSection') }}</div>
+            <v-text-field
+              v-model="form.billingApiKey"
+              :label="t('subscription.field.billingApiKey')"
+              variant="outlined"
+              density="compact"
+              class="mb-2"
+              type="password"
+              :placeholder="t('subscription.field.billingApiKeyPlaceholder')"
+              :hint="t('subscription.field.billingApiKeyHint')"
+              persistent-hint
+            />
+            <v-switch
+              v-model="form.autoRefreshEnabled"
+              :label="t('subscription.field.autoRefreshEnabled')"
+              color="primary"
+              density="compact"
+              class="mb-2"
+              :disabled="!form.billingApiKey"
+              :hint="t('subscription.field.autoRefreshHint')"
+              persistent-hint
+            />
             <v-select
               v-model="form.source"
               :label="t('subscription.field.source')"
@@ -215,6 +239,8 @@ const form = ref<SubscriptionCreateRequest>({
   rechargeMultiplier: 1,
   notes: '',
   source: 'manual',
+  billingApiKey: '',
+  autoRefreshEnabled: false,
 })
 
 const originTypeOptions = computed(() => [
@@ -270,6 +296,8 @@ function resetForm() {
     rechargeMultiplier: 1,
     notes: '',
     source: 'manual',
+    billingApiKey: '',
+    autoRefreshEnabled: false,
   }
 }
 
@@ -294,6 +322,8 @@ function openEditDialog(item: SubscriptionItem) {
     rechargeMultiplier: item.rechargeMultiplier || 1,
     notes: item.notes || '',
     source: item.source || 'manual',
+    billingApiKey: item.billingApiKey || '',
+    autoRefreshEnabled: item.autoRefreshEnabled || false,
   }
   showDialog.value = true
 }
@@ -320,6 +350,8 @@ async function handleSubmit() {
         rechargeMultiplier: form.value.rechargeMultiplier,
         notes: form.value.notes || undefined,
         source: form.value.source || undefined,
+        billingApiKey: form.value.billingApiKey || undefined,
+        autoRefreshEnabled: form.value.autoRefreshEnabled,
       }
       await api.updateSubscription(editingSubscription.value.subscriptionUid, updateData)
       showSnackbar(t('app.actions.save') + ' - OK', 'success')
@@ -355,6 +387,20 @@ async function confirmDelete() {
     showSnackbar(e instanceof Error ? e.message : 'Unknown error', 'error')
   } finally {
     deleting.value = false
+  }
+}
+
+async function handleRefresh(item: SubscriptionItem) {
+  try {
+    const result = await api.refreshSubscription(item.subscriptionUid)
+    if (result.refreshResult.success) {
+      showSnackbar(`${item.displayName}: ${t('app.actions.refresh')} OK`, 'success')
+    } else {
+      showSnackbar(`${item.displayName}: ${result.refreshResult.errorMessage || 'Refresh failed'}`, 'error')
+    }
+    await fetchSubscriptions()
+  } catch (e) {
+    showSnackbar(e instanceof Error ? e.message : 'Unknown error', 'error')
   }
 }
 

@@ -910,6 +910,13 @@ export interface SubscriptionItem {
   createdAt: string
   updatedAt: string
   archivedAt?: string
+
+  // Phase 4 Item 6: 余额自动刷新
+  billingApiKey?: string
+  autoRefreshEnabled?: boolean
+  autoRefreshSupported?: boolean
+  lastBalanceRefreshAt?: string
+  lastBalanceRefreshError?: string
 }
 
 export interface SubscriptionsListResponse {
@@ -930,6 +937,10 @@ export interface SubscriptionCreateRequest {
   rechargeMultiplier?: number
   notes?: string
   source?: string
+
+  // Phase 4 Item 6: 余额自动刷新
+  billingApiKey?: string
+  autoRefreshEnabled?: boolean
 }
 
 export interface SubscriptionUpdateRequest {
@@ -945,6 +956,10 @@ export interface SubscriptionUpdateRequest {
   notes?: string
   source?: string
   confidence?: number
+
+  // Phase 4 Item 6: 余额自动刷新
+  billingApiKey?: string
+  autoRefreshEnabled?: boolean
 }
 
 // ============== 驾驶舱类型 ==============
