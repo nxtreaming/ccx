@@ -231,6 +231,7 @@ import {
   mdiGift,
   mdiClockAlert,
   mdiSteering,
+  mdiConnection,
 } from '@mdi/js'
 
 // 图标名称到 SVG path 的映射 (使用 kebab-case)
@@ -466,6 +467,7 @@ const iconMap: Record<string, string> = {
   'gift': mdiGift,
   'clock-alert': mdiClockAlert,
   'steering': mdiSteering,
+  'connection': mdiConnection,
 }
 
 // 自定义 SVG iconset - 处理 mdi-xxx 字符串格式
