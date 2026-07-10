@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "originTypes": [
+    { "value": "official_api", "tier": "first" },
+    { "value": "official_token_plan", "tier": "first" },
+    { "value": "relay", "tier": "second" },
+    { "value": "community", "tier": "third" },
+    { "value": "local_runtime", "tier": "local" },
+    { "value": "unknown", "tier": "unknown" }
+  ],
+  "billingModes": ["token_plan", "pay_as_you_go", "shared_free", "unknown"],
+  "sources": ["manual", "auto_discovered"],
+  "autoRefreshProviders": ["openai", "anthropic", "google"],
+  "newApiDefaults": {
+    "originType": "relay",
+    "originTier": "second",
+    "billingMode": "token_plan"
+  },
+  "originTypeAliases": {
+    "public_benefit": "community"
+  }
+}

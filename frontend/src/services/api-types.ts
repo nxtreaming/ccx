@@ -1371,3 +1371,32 @@ export interface ABTestEmergencyStopResponse {
   reason: string
   note: string
 }
+
+// ─── 预置数据（GET /api/presets）───────────────────────────────────────────
+// 与后端 presetstore.PresetBundle 对齐；前端订阅表单选项由此派生，取代硬编码副本。
+
+export interface PresetOriginTypeEntry {
+  value: string
+  tier: string
+}
+
+export interface PresetNewApiDefaults {
+  originType: string
+  originTier: string
+  billingMode: string
+}
+
+export interface SubscriptionPreset {
+  originTypes: PresetOriginTypeEntry[]
+  billingModes: string[]
+  sources: string[]
+  autoRefreshProviders: string[]
+  newApiDefaults: PresetNewApiDefaults
+  originTypeAliases: Record<string, string>
+}
+
+export interface PresetBundle {
+  schemaVersion: number
+  dataVersion: string
+  subscription: SubscriptionPreset
+}

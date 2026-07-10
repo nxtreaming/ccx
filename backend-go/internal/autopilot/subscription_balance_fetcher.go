@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/BenedictKing/ccx/internal/presetstore"
 )
 
 // ── 余额查询接口 ──
@@ -227,15 +229,22 @@ func DefaultBalanceFetcherRegistry() *BalanceFetcherRegistry {
 	return r
 }
 
-// supportedAutoRefreshProviders 定义支持自动余额刷新的 provider 白名单。
-// 不在此列表中的 provider（relay_x/community_x/custom 等）不参与自动刷新。
-var supportedAutoRefreshProviders = map[string]bool{
+// builtinAutoRefreshProviders 是编译期兜底白名单，presetstore 未提供时使用。
+// 不在白名单中的 provider（relay_x/community_x/custom 等）不参与自动刷新。
+var builtinAutoRefreshProviders = map[string]bool{
 	"openai":    true,
 	"anthropic": true,
 	"google":    true,
 }
 
 // IsAutoRefreshSupported 判断给定 provider 是否支持自动余额刷新。
+//
+// 优先查 presetstore（可远程更新的白名单）；预置为空时回退编译期兜底。
 func IsAutoRefreshSupported(provider string) bool {
-	return supportedAutoRefreshProviders[strings.ToLower(strings.TrimSpace(provider))]
+	p := strings.ToLower(strings.TrimSpace(provider))
+	sub := presetstore.Default().Subscription()
+	if len(sub.AutoRefreshProviders) > 0 {
+		return sub.SupportsAutoRefresh(p)
+	}
+	return builtinAutoRefreshProviders[p]
 }

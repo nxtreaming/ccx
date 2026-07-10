@@ -250,11 +250,35 @@ import type {
   SubscriptionCreateRequest,
   SubscriptionUpdateRequest,
   NewApiProvisionResponse,
+  SubscriptionPreset,
 } from '@/services/api-types'
 
 const { t } = useI18n()
 
+// 预置兜底：/api/presets 不可用时保证表单选项仍可渲染。
+// 与后端 shared/subscription-preset 编译期兜底保持一致。
+function fallbackPreset(): SubscriptionPreset {
+  return {
+    originTypes: [
+      { value: 'official_api', tier: 'first' },
+      { value: 'official_token_plan', tier: 'first' },
+      { value: 'relay', tier: 'second' },
+      { value: 'community', tier: 'third' },
+      { value: 'local_runtime', tier: 'local' },
+      { value: 'unknown', tier: 'unknown' },
+    ],
+    billingModes: ['token_plan', 'pay_as_you_go', 'shared_free', 'unknown'],
+    sources: ['manual', 'auto_discovered'],
+    autoRefreshProviders: ['openai', 'anthropic', 'google'],
+    newApiDefaults: { originType: 'relay', originTier: 'second', billingMode: 'token_plan' },
+    originTypeAliases: { public_benefit: 'community' },
+  }
+}
+
 const subscriptions = ref<SubscriptionItem[]>([])
+// 订阅预置：来源类型/计费模式/来源等表单选项来源，替代前端硬编码副本。
+// 后端 /api/presets 提供，失败时回退到 fallbackPreset 保证表单可用。
+const preset = ref<SubscriptionPreset>(fallbackPreset())
 const loading = ref(true)
 const saving = ref(false)
 const deleting = ref(false)
@@ -282,28 +306,21 @@ const form = ref<SubscriptionCreateRequest>({
   autoRefreshEnabled: false,
 })
 
-const originTypeOptions = computed(() => [
-  { title: t('subscription.originType.official_api'), value: 'official_api' },
-  { title: t('subscription.originType.official_token_plan'), value: 'official_token_plan' },
-  { title: t('subscription.originType.relay'), value: 'relay' },
-  { title: t('subscription.originType.public_benefit'), value: 'public_benefit' },
-])
+const originTypeOptions = computed(() =>
+  preset.value.originTypes.map((o) => ({
+    title: t(`subscription.originType.${o.value}`),
+    value: o.value,
+  })),
+)
 
-// 来源等级由来源类型系统推导，与后端 InferOriginTier 语义对齐：
-// official_api / official_token_plan -> first；relay -> second；
-// public_benefit(community) -> third；其余 -> unknown。
+// 来源等级由来源类型推导，语义与后端 InferOriginTier 对齐：
+// 先按预置别名归一化（如 public_benefit -> community），再查预置 tier；
+// 未命中回退 unknown。等级映射随预置更新，无需改前端。
 function inferOriginTier(originType?: string): string {
-  switch (originType) {
-    case 'official_api':
-    case 'official_token_plan':
-      return 'first'
-    case 'relay':
-      return 'second'
-    case 'public_benefit':
-      return 'third'
-    default:
-      return 'unknown'
-  }
+  if (!originType) return 'unknown'
+  const canonical = preset.value.originTypeAliases[originType] ?? originType
+  const entry = preset.value.originTypes.find((o) => o.value === canonical)
+  return entry?.tier ?? 'unknown'
 }
 
 const derivedOriginTier = computed(() => inferOriginTier(form.value.originType))
@@ -312,19 +329,32 @@ const derivedOriginTierLabel = computed(() =>
   t(`subscription.originTier.${derivedOriginTier.value}`),
 )
 
-const billingModeOptions = computed(() => [
-  { title: t('subscription.billingMode.token_plan'), value: 'token_plan' },
-  { title: t('subscription.billingMode.pay_as_you_go'), value: 'pay_as_you_go' },
-  { title: t('subscription.billingMode.shared_free'), value: 'shared_free' },
-  { title: t('subscription.billingMode.unknown'), value: 'unknown' },
-])
+const billingModeOptions = computed(() =>
+  preset.value.billingModes.map((m) => ({
+    title: t(`subscription.billingMode.${m}`),
+    value: m,
+  })),
+)
 
-const sourceOptions = computed(() => [
-  { title: t('subscription.source.manual'), value: 'manual' },
-  { title: t('subscription.source.auto_discovered'), value: 'auto_discovered' },
-])
+const sourceOptions = computed(() =>
+  preset.value.sources.map((s) => ({
+    title: t(`subscription.source.${s}`),
+    value: s,
+  })),
+)
 
 const filteredSubscriptions = computed(() => subscriptions.value)
+
+async function fetchPresets() {
+  try {
+    const bundle = await api.getPresets()
+    if (bundle?.subscription) {
+      preset.value = bundle.subscription
+    }
+  } catch {
+    // 预置拉取失败不阻断页面：保留 fallbackPreset 选项。
+  }
+}
 
 async function fetchSubscriptions() {
   loading.value = true
@@ -479,5 +509,8 @@ function handleNewApiError(message: string) {
   showSnackbar(message, 'error')
 }
 
-onMounted(fetchSubscriptions)
+onMounted(() => {
+  fetchPresets()
+  fetchSubscriptions()
+})
 </script>

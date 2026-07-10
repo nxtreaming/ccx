@@ -21,6 +21,7 @@ import (
 	"github.com/BenedictKing/ccx/internal/autopilot"
 	"github.com/BenedictKing/ccx/internal/config"
 	"github.com/BenedictKing/ccx/internal/conversation"
+	"github.com/BenedictKing/ccx/internal/presetstore"
 	"github.com/BenedictKing/ccx/internal/handlers"
 	"github.com/BenedictKing/ccx/internal/handlers/chat"
 	"github.com/BenedictKing/ccx/internal/handlers/common"
@@ -888,6 +889,9 @@ func main() {
 		apiGroup.POST("/copilot/oauth/device/code", copilot.RequestDeviceCode())
 		apiGroup.POST("/copilot/oauth/token", copilot.PollAccessToken())
 		apiGroup.POST("/copilot/oauth/verify", copilot.VerifyToken())
+
+		// 预置数据（订阅来源分类等），前端表单选项来源；独立于 autopilot 开关。
+		apiGroup.GET("/presets", presetstore.Handler(presetstore.Default()))
 
 		apiGroup.POST("/channel-discovery", handlers.ChannelDiscoveryWithModelFetchers(cfgManager, discoveryModelFetchers))
 

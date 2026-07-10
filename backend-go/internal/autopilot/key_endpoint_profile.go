@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"time"
+
+	"github.com/BenedictKing/ccx/internal/presetstore"
 )
 
 // ── 健康状态 ──
@@ -47,7 +49,20 @@ const (
 )
 
 // InferOriginTier 从 OriginType 推导 OriginTier。
+//
+// 优先查 presetstore（可远程更新的来源分类预置）；预置未命中该来源类型时，
+// 回退到下方编译期 switch 兜底，保证离线/首启与旧枚举行为不变。
 func InferOriginTier(originType ChannelOriginType) ChannelOriginTier {
+	sub := presetstore.Default().Subscription()
+	// 经别名归一化后在预置里查等级；命中且非 unknown 直接采用。
+	if tier := sub.TierFor(string(originType)); tier != "" && tier != string(OriginTierUnknown) {
+		return ChannelOriginTier(tier)
+	}
+	return inferOriginTierBuiltin(originType)
+}
+
+// inferOriginTierBuiltin 是编译期兜底映射，预置缺失时使用。
+func inferOriginTierBuiltin(originType ChannelOriginType) ChannelOriginTier {
 	switch originType {
 	case OriginOfficialAPI, OriginOfficialTokenPlan:
 		return OriginTierFirst

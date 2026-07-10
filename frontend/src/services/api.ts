@@ -40,6 +40,7 @@ import type {
   SubscriptionItem,
   SubscriptionsListResponse,
   SubscriptionUpdateRequest,
+  PresetBundle,
   CreateIntentRequest,
   ManualRoutingIntent,
   IntentListResponse,
@@ -1160,6 +1161,10 @@ export class ApiService {
   }
 
   // ============== 订阅中心 API ==============
+
+  async getPresets(): Promise<PresetBundle> {
+    return this.request('/presets')
+  }
 
   async getSubscriptions(): Promise<SubscriptionsListResponse> {
     return this.request('/subscriptions')

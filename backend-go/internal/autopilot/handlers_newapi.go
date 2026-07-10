@@ -9,10 +9,27 @@ import (
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
+	"github.com/BenedictKing/ccx/internal/presetstore"
 	"github.com/gin-gonic/gin"
 )
 
 // ─── new-api 订阅集成路由（§8.5.1）──────────────────────────────────────────
+
+// newApiDefaults 返回 new-api 接入的建议预填值：优先取 presetstore，
+// 缺失字段回退到编译期兜底（relay/second/token_plan）。
+func newApiDefaults() presetstore.NewApiDefaults {
+	d := presetstore.Default().Subscription().NewApiDefaults
+	if d.OriginType == "" {
+		d.OriginType = "relay"
+	}
+	if d.OriginTier == "" {
+		d.OriginTier = "second"
+	}
+	if d.BillingMode == "" {
+		d.BillingMode = "token_plan"
+	}
+	return d
+}
 
 // NewApiRouteDeps new-api 端点所需的依赖注入。
 // Verify 端点只需要 SubscriptionStore；Provision 端点额外需要 CfgManager + Runner 来建渠道并触发 Discovery。
@@ -127,6 +144,7 @@ func handleNewApiVerify(deps *NewApiRouteDeps) gin.HandlerFunc {
 		// 3) 拉可用模型（失败不阻断）
 		models, _ := adapter.FetchModels(ctx, req.BaseURL, req.AccessToken, derivedUserID, req.AuthTokenMode)
 
+		defaults := newApiDefaults()
 		resp := NewApiVerifyResponse{
 			Username:            self.Username,
 			UserID:              self.ID,
@@ -134,8 +152,8 @@ func handleNewApiVerify(deps *NewApiRouteDeps) gin.HandlerFunc {
 			UsedQuota:           self.UsedQuota,
 			Groups:              groups,
 			AvailableModels:     models,
-			SuggestedOriginType: "relay",
-			SuggestedOriginTier: "second",
+			SuggestedOriginType: defaults.OriginType,
+			SuggestedOriginTier: defaults.OriginTier,
 			AccessTokenMasked:   maskAccessToken(req.AccessToken),
 		}
 		c.JSON(http.StatusOK, resp)
@@ -211,13 +229,14 @@ func handleNewApiProvision(deps *NewApiRouteDeps) gin.HandlerFunc {
 
 		// 4) 建 profile
 		now := time.Now()
+		defaults := newApiDefaults()
 		profile := &SubscriptionProfile{
 			SubscriptionUID:    req.SubscriptionUID,
 			DisplayName:        req.DisplayName,
 			Provider:           "new_api",
-			OriginType:         "relay",
-			OriginTier:         "second",
-			BillingMode:        "token_plan",
+			OriginType:         defaults.OriginType,
+			OriginTier:         defaults.OriginTier,
+			BillingMode:        defaults.BillingMode,
 			Currency:           "quota",
 			Balance:            float64(self.Quota),
 			GroupMultipliers:   groups,
