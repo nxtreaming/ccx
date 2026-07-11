@@ -3,6 +3,7 @@ package autopilot
 import (
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
@@ -20,7 +21,7 @@ import (
 //   - off / kill switch → BuildEndpointPolicy 返回 nil（不注入）
 //   - shadow / dry_run → 计算评分 + 记录 trace，但原样返回输入（不影响真实调度）
 //   - assist → 真实排序但不过滤（FilterURLs/FilterKeys 原样返回）
-//   - auto → 真实过滤（dead endpoint / low-decay key）+ 排序，fail-open 兜底
+//   - auto → binding 级真实过滤（健康 / 衰减 / 模型能力）+ 排序，未知画像 fail-open
 
 // ── EndpointCandidate（§4.6.2 契约）──
 
@@ -53,7 +54,7 @@ type EndpointCandidate struct {
 // EndpointAttemptPolicy 为 TryUpstreamWithAllKeys 提供 endpoint 级策略。
 // 通过四个函数字段实现 §4.6.2a 的四步插入点：
 //
-//  1. FilterURLs — 步骤 1：移除画像中 HealthState=dead 的 baseURL
+//  1. FilterURLs — 步骤 1：保留 URL 集合，硬过滤下沉到 binding
 //  2. SortURLs — 步骤 2：按 EndpointCandidate.Score 降序排列 baseURL
 //  3. FilterKeys — 步骤 5：移除 FastDecay 分数过低的 key
 //  4. SortKeys — 步骤 6：按 EndpointCandidate.Score 降序排列 key
@@ -80,6 +81,14 @@ type EndpointAttemptPolicy struct {
 	// shadow 模式下记录评分但返回原始顺序。
 	SortKeys func(baseURL string, apiKeys []string) ([]string, []EndpointCandidate)
 
+	// FilterKeyBindings 对当前渠道内的 endpoint binding 做硬过滤。
+	// 与 FilterKeys 不同，它携带 channelUID，可精确定位 channel + baseURL + key 画像。
+	// 返回空列表表示当前端点没有可用于该请求模型的 binding，调用方不得 fail-open。
+	FilterKeyBindings func(channelUID, baseURL string, apiKeys []string) []string
+
+	// SortKeyBindings 对当前渠道内的 endpoint binding 做排序。
+	SortKeyBindings func(channelUID, baseURL string, apiKeys []string) ([]string, []EndpointCandidate)
+
 	// RequestModel 请求的目标模型（用于查找 endpoint 画像的 MappedModel）。
 	RequestModel string
 
@@ -98,10 +107,10 @@ type EndpointAttemptPolicy struct {
 // EndpointPolicyDeps 封装 EndpointAttemptPolicy 构建所需的依赖。
 // 通过依赖注入避免与 Manager 的循环引用。
 type EndpointPolicyDeps struct {
-	ProfileStore  *ProfileStore    // endpoint 画像存储
-	FastDecay     *FastDecayScorer // 快速衰减评分器
-	TraceStore    *TraceStore      // 路由决策追踪存储
-	ModelResolver *ModelResolver   // Phase 3B-2: 自动模型映射器（nil 时不触发自动映射）
+	ProfileStore  *ProfileStore                        // endpoint 画像存储
+	FastDecay     *FastDecayScorer                     // 快速衰减评分器
+	TraceStore    *TraceStore                          // 路由决策追踪存储
+	ModelResolver *ModelResolver                       // Phase 3B-2: 自动模型映射器（nil 时不触发自动映射）
 	GetRoutingCfg func() config.AutopilotRoutingConfig // Phase 3B-2: 路由配置读取（用于 AutoResolve 门控）
 }
 
@@ -114,7 +123,7 @@ type EndpointPolicyDeps struct {
 //   - off / kill switch → nil
 //   - shadow / dry_run → 计算评分 + 记录 trace，但原样返回输入
 //   - assist → 真实排序（FilterURLs/FilterKeys 原样返回，只排序不删减）
-//   - auto → 真实过滤（dead endpoint / low-decay key）+ 排序，fail-open 兜底
+//   - auto → binding 级真实过滤（健康 / 衰减 / 模型能力）+ 排序，未知画像 fail-open
 func BuildEndpointPolicy(deps EndpointPolicyDeps, req *RequestProfile, mode RoutingMode) *EndpointAttemptPolicy {
 	if req == nil {
 		return nil
@@ -127,7 +136,7 @@ func BuildEndpointPolicy(deps EndpointPolicyDeps, req *RequestProfile, mode Rout
 		// assist：真实排序但不过滤（FilterURLs/FilterKeys 原样返回）
 		return buildActivePolicy(deps, req, false)
 	case RoutingModeAuto:
-		// auto：真实过滤（dead endpoint + low-decay key）+ 排序，fail-open 兜底
+		// auto：在 binding 层真实过滤 + 排序，未知画像 fail-open
 		return buildActivePolicy(deps, req, true)
 	default:
 		// off 或未知模式
@@ -212,6 +221,12 @@ func buildShadowPolicy(deps EndpointPolicyDeps, req *RequestProfile) *EndpointAt
 		// 原样返回
 		return apiKeys, candidates
 	}
+	policy.FilterKeyBindings = func(channelUID, baseURL string, apiKeys []string) []string {
+		return apiKeys
+	}
+	policy.SortKeyBindings = func(channelUID, baseURL string, apiKeys []string) ([]string, []EndpointCandidate) {
+		return scoreAndSortKeyBindings(deps, req, modelByUID, channelUID, baseURL, apiKeys, false)
+	}
 
 	policy.ResolvedModelByEndpointUID = buildResolvedModelLookup(modelByUID)
 	return policy
@@ -227,31 +242,10 @@ func buildActivePolicy(deps EndpointPolicyDeps, req *RequestProfile, enableFilte
 		Mode:         RoutingModeActive,
 	}
 
-	if enableFilter {
-		// ── auto 模式：过滤 dead URL ──
-		policy.FilterURLs = func(urls []string) []string {
-			if len(urls) == 0 {
-				return urls
-			}
-			filtered := make([]string, 0, len(urls))
-			for _, url := range urls {
-				profile := findProfileByBaseURL(deps.ProfileStore, url)
-				if profile != nil && profile.HealthState == HealthStateDead {
-					continue
-				}
-				filtered = append(filtered, url)
-			}
-			// FailOpen：过滤后为空则回退全量
-			if len(filtered) == 0 {
-				return urls
-			}
-			return filtered
-		}
-	} else {
-		// ── assist 模式：原样返回 ──
-		policy.FilterURLs = func(urls []string) []string {
-			return urls
-		}
+	// URL 本身不是调度最小单元。同一 URL 下可能同时存在 healthy/dead 的 Key，
+	// 因此不能根据任意一条画像删除整个 URL；硬过滤统一在 FilterKeyBindings 完成。
+	policy.FilterURLs = func(urls []string) []string {
+		return urls
 	}
 
 	// active SortURLs：按评分降序排列（含 panic 恢复）
@@ -397,8 +391,52 @@ func buildActivePolicy(deps EndpointPolicyDeps, req *RequestProfile, enableFilte
 		return sortedKeys, candidates
 	}
 
+	policy.FilterKeyBindings = func(channelUID, baseURL string, apiKeys []string) []string {
+		if !enableFilter || len(apiKeys) == 0 {
+			return apiKeys
+		}
+		filtered := make([]string, 0, len(apiKeys))
+		for _, key := range apiKeys {
+			profile := findProfileForBinding(deps.ProfileStore, channelUID, baseURL, key)
+			if profile == nil {
+				filtered = append(filtered, key)
+				continue
+			}
+			if profile.HealthState == HealthStateDead || profile.HealthState == HealthStateMisconfigured {
+				continue
+			}
+			if deps.FastDecay != nil && deps.FastDecay.Score(profile.EndpointUID) < fastDecayFilterThreshold {
+				continue
+			}
+			if !profileSupportsRequestModel(profile, req.Model, req, &deps) {
+				continue
+			}
+			filtered = append(filtered, key)
+		}
+		return filtered
+	}
+	policy.SortKeyBindings = func(channelUID, baseURL string, apiKeys []string) ([]string, []EndpointCandidate) {
+		return scoreAndSortKeyBindings(deps, req, modelByUID, channelUID, baseURL, apiKeys, true)
+	}
+
 	policy.ResolvedModelByEndpointUID = buildResolvedModelLookup(modelByUID)
 	return policy
+}
+
+func scoreAndSortKeyBindings(deps EndpointPolicyDeps, req *RequestProfile, modelByUID map[string]string, channelUID, baseURL string, apiKeys []string, active bool) ([]string, []EndpointCandidate) {
+	candidates := make([]EndpointCandidate, 0, len(apiKeys))
+	for _, key := range apiKeys {
+		cand := scoreEndpointForBinding(deps.ProfileStore, deps.FastDecay, req.Model, channelUID, baseURL, key, req, &deps)
+		candidates = append(candidates, cand)
+		if cand.MappedModel != "" && cand.EndpointUID != "" {
+			modelByUID[cand.EndpointUID] = cand.MappedModel
+		}
+	}
+	sorted := append([]string(nil), apiKeys...)
+	if active {
+		sortEndpointsByScore(sorted, candidates)
+	}
+	return sorted, candidates
 }
 
 // ── endpoint 级评分函数 ──
@@ -635,6 +673,70 @@ func scoreEndpointForKey(store *ProfileStore, fastDecay *FastDecayScorer, model,
 	cand.Reason = "profile_scored"
 
 	return cand
+}
+
+func scoreEndpointForBinding(store *ProfileStore, fastDecay *FastDecayScorer, model, channelUID, baseURL, apiKey string, req *RequestProfile, deps *EndpointPolicyDeps) EndpointCandidate {
+	endpointUID := GenerateEndpointUID(channelUID, baseURL, KeyHashFromAPIKey(apiKey))
+	cand := EndpointCandidate{
+		ChannelUID:  channelUID,
+		BaseURL:     baseURL,
+		KeyMask:     maskKeyForDisplay(apiKey),
+		EndpointUID: endpointUID,
+		Score:       neutralEndpointScore,
+		Reason:      "no_profile",
+	}
+	if store == nil {
+		return cand
+	}
+	profile := store.Get(endpointUID)
+	if profile == nil {
+		return cand
+	}
+	return scoreEndpointProfile(cand, profile, fastDecay, model, req, deps)
+}
+
+func scoreEndpointProfile(cand EndpointCandidate, profile *KeyEndpointProfile, fastDecay *FastDecayScorer, model string, req *RequestProfile, deps *EndpointPolicyDeps) EndpointCandidate {
+	cand.ChannelUID = profile.ChannelUID
+	cand.ChannelKind = profile.ChannelKind
+	cand.OriginTier = ChannelOriginTier(profile.OriginTier)
+	cand.MetricsKey = profile.MetricsKey
+	cand.KeyMask = profile.KeyMask
+	cand.EndpointUID = profile.EndpointUID
+	cand.MappedModel = resolveMappedModel(profile, model, req, deps)
+	fastDecayScore := 1.0
+	if fastDecay != nil {
+		fastDecayScore = fastDecay.Score(profile.EndpointUID)
+	}
+	cand.HealthScore = endpointHealthScore(profile.HealthState)
+	cand.FastDecayScore = fastDecayScore * 100
+	cand.SuccessRate = profile.SuccessRate15m
+	cand.LatencyScore = latencyToScore(profile.P95LatencyMs)
+	cand.CostScore = endpointCostScore(profile.CostTier)
+	cand.Score = scoreEndpoint(profile, fastDecayScore)
+	cand.Reason = "profile_scored"
+	return cand
+}
+
+func findProfileForBinding(store *ProfileStore, channelUID, baseURL, apiKey string) *KeyEndpointProfile {
+	if store == nil || channelUID == "" || baseURL == "" || apiKey == "" {
+		return nil
+	}
+	return store.Get(GenerateEndpointUID(channelUID, baseURL, KeyHashFromAPIKey(apiKey)))
+}
+
+func profileSupportsRequestModel(profile *KeyEndpointProfile, model string, req *RequestProfile, deps *EndpointPolicyDeps) bool {
+	if profile == nil || model == "" || len(profile.AvailableModels) == 0 {
+		return true
+	}
+	for _, available := range profile.AvailableModels {
+		if strings.EqualFold(strings.TrimSpace(available), strings.TrimSpace(model)) {
+			return true
+		}
+	}
+	if mapped := resolveMappedModel(profile, model, req, deps); mapped != "" {
+		return true
+	}
+	return false
 }
 
 // findProfileByBaseURL 从 ProfileStore 查找匹配 baseURL 的画像。

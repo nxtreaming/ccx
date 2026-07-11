@@ -417,9 +417,9 @@ func TestNoDeletion_NoDuplication_NoLoss(t *testing.T) {
 	}
 }
 
-// ── active 模式 FilterURLs 测试（需要 store）──
+// ── active 模式 FilterURLs 测试 ──
 
-func TestActiveFilterURLs_RemovesDead(t *testing.T) {
+func TestActiveFilterURLs_PreservesBindingContainers(t *testing.T) {
 	store := newTestProfileStore(t)
 
 	// 插入 dead 画像
@@ -451,29 +451,13 @@ func TestActiveFilterURLs_RemovesDead(t *testing.T) {
 	urls := []string{"https://dead.com", "https://healthy.com", "https://unknown.com"}
 	filtered := policy.FilterURLs(urls)
 
-	// dead 应被过滤
-	for _, url := range filtered {
-		if url == "https://dead.com" {
-			t.Error("dead URL 应被 FilterURLs 过滤")
-		}
+	if len(filtered) != len(urls) {
+		t.Fatalf("URL 是 binding 容器，不应按单条画像删除: got %v, want %v", filtered, urls)
 	}
-
-	// healthy 和 unknown 应保留
-	hasHealthy := false
-	hasUnknown := false
-	for _, url := range filtered {
-		if url == "https://healthy.com" {
-			hasHealthy = true
+	for i := range urls {
+		if filtered[i] != urls[i] {
+			t.Fatalf("FilterURLs 改变了 URL 集合: got %v, want %v", filtered, urls)
 		}
-		if url == "https://unknown.com" {
-			hasUnknown = true
-		}
-	}
-	if !hasHealthy {
-		t.Error("healthy URL 应被保留")
-	}
-	if !hasUnknown {
-		t.Error("unknown URL 应被保留（无画像不惩罚）")
 	}
 }
 
@@ -999,6 +983,109 @@ func TestScoreEndpointForKey_EndpointUIDMatchesHandlerComputation(t *testing.T) 
 	}
 	if candidates[0].EndpointUID != realEndpointUID {
 		t.Errorf("cand.EndpointUID = %q, 期望等于命中的 profile.EndpointUID = %q", candidates[0].EndpointUID, realEndpointUID)
+	}
+}
+
+func TestAutoPolicyFiltersBindingsByKeyModelProfile(t *testing.T) {
+	store := newTestProfileStore(t)
+	const (
+		channelUID = "ch-model-isolation"
+		baseURL    = "https://api.example.com"
+		keyA       = "sk-model-a"
+		keyB       = "sk-model-b"
+		keyDead    = "sk-model-b-dead"
+	)
+	for key, models := range map[string][]string{
+		keyA:    {"model-a"},
+		keyB:    {"model-b"},
+		keyDead: {"model-b"},
+	} {
+		uid := GenerateEndpointUID(channelUID, baseURL, KeyHashFromAPIKey(key))
+		health := HealthStateHealthy
+		if key == keyDead {
+			health = HealthStateDead
+		}
+		if err := store.Upsert(&KeyEndpointProfile{
+			ChannelUID:      channelUID,
+			ChannelKind:     "messages",
+			EndpointUID:     uid,
+			BaseURL:         baseURL,
+			KeyHash:         KeyHashFromAPIKey(key),
+			HealthState:     health,
+			AvailableModels: models,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	policy := BuildEndpointPolicy(
+		EndpointPolicyDeps{ProfileStore: store},
+		&RequestProfile{Model: "model-b", ChannelKind: "messages"},
+		RoutingModeAuto,
+	)
+	got := policy.FilterKeyBindings(channelUID, baseURL, []string{keyA, keyB, keyDead})
+	if len(got) != 1 || got[0] != keyB {
+		t.Fatalf("model-b binding 过滤结果 = %v，期望仅 %s", got, keyB)
+	}
+}
+
+func TestAutoPolicyBindingLookupIncludesChannelUID(t *testing.T) {
+	store := newTestProfileStore(t)
+	const (
+		baseURL = "https://api.example.com"
+		apiKey  = "sk-shared"
+	)
+	for channelUID, models := range map[string][]string{
+		"ch-a": {"model-a"},
+		"ch-b": {"model-b"},
+	} {
+		uid := GenerateEndpointUID(channelUID, baseURL, KeyHashFromAPIKey(apiKey))
+		if err := store.Upsert(&KeyEndpointProfile{
+			ChannelUID:      channelUID,
+			ChannelKind:     "messages",
+			EndpointUID:     uid,
+			BaseURL:         baseURL,
+			KeyHash:         KeyHashFromAPIKey(apiKey),
+			HealthState:     HealthStateHealthy,
+			AvailableModels: models,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	policy := BuildEndpointPolicy(
+		EndpointPolicyDeps{ProfileStore: store},
+		&RequestProfile{Model: "model-b", ChannelKind: "messages"},
+		RoutingModeAuto,
+	)
+	if got := policy.FilterKeyBindings("ch-a", baseURL, []string{apiKey}); len(got) != 0 {
+		t.Fatalf("ch-a 不应借用 ch-b 的模型画像: %v", got)
+	}
+	if got := policy.FilterKeyBindings("ch-b", baseURL, []string{apiKey}); len(got) != 1 {
+		t.Fatalf("ch-b 应保留自身 binding: %v", got)
+	}
+}
+
+func TestAutoPolicyDoesNotFilterWholeURLFromOneDeadBinding(t *testing.T) {
+	store := newTestProfileStore(t)
+	const baseURL = "https://shared.example.com"
+	if err := store.Upsert(&KeyEndpointProfile{
+		ChannelUID:  "ch-dead",
+		EndpointUID: GenerateEndpointUID("ch-dead", baseURL, KeyHashFromAPIKey("sk-dead")),
+		BaseURL:     baseURL,
+		HealthState: HealthStateDead,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	policy := BuildEndpointPolicy(
+		EndpointPolicyDeps{ProfileStore: store},
+		&RequestProfile{Model: "model-b", ChannelKind: "messages"},
+		RoutingModeAuto,
+	)
+	got := policy.FilterURLs([]string{baseURL})
+	if len(got) != 1 || got[0] != baseURL {
+		t.Fatalf("URL 不能因其中一个 dead binding 被整体删除: %v", got)
 	}
 }
 

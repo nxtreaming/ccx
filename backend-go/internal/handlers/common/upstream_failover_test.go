@@ -846,6 +846,57 @@ func TestTryUpstreamWithAllKeys_ShadowPolicy_PreservesOrder(t *testing.T) {
 	}
 }
 
+func TestSelectAttemptAPIKeyFilteredUsesBindingIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	upstream := &config.UpstreamConfig{
+		Name:       "binding-test",
+		ChannelUID: "ch-binding",
+		BaseURL:    "https://default.example.com",
+		APIKeys:    []string{"sk-a", "sk-b"},
+		APIKeyConfigs: []config.APIKeyConfig{
+			{Key: "sk-a"},
+			{Key: "sk-b"},
+		},
+	}
+	const currentBaseURL = "https://current.example.com"
+	var gotChannelUID, gotBaseURL string
+	policy := &autopilot.EndpointAttemptPolicy{
+		FilterKeyBindings: func(channelUID, baseURL string, apiKeys []string) []string {
+			gotChannelUID, gotBaseURL = channelUID, baseURL
+			return []string{"sk-b"}
+		},
+		SortKeyBindings: func(channelUID, baseURL string, apiKeys []string) ([]string, []autopilot.EndpointCandidate) {
+			return apiKeys, nil
+		},
+	}
+
+	_, key, err := selectAttemptAPIKeyFiltered(
+		nil,
+		scheduler.ChannelKindMessages,
+		0,
+		upstream,
+		currentBaseURL,
+		map[string]bool{},
+		map[string]bool{},
+		"model-b",
+		func(_ *config.UpstreamConfig, _ map[string]bool) (string, error) { return "sk-a", nil },
+		policy,
+		"Messages",
+		c,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "sk-b" {
+		t.Fatalf("选择了 %q，期望 binding 过滤后的 sk-b", key)
+	}
+	if gotChannelUID != upstream.ChannelUID || gotBaseURL != currentBaseURL {
+		t.Fatalf("binding 身份 = (%q, %q)，期望 (%q, %q)", gotChannelUID, gotBaseURL, upstream.ChannelUID, currentBaseURL)
+	}
+}
+
 // TestTryUpstreamWithAllKeys_PanicPolicy_DoesNotBreakRequest 验证 policy 函数 panic 时
 // TryUpstreamWithAllKeys 不中断请求，正常完成（fail-open）。
 func TestTryUpstreamWithAllKeys_PanicPolicy_DoesNotBreakRequest(t *testing.T) {

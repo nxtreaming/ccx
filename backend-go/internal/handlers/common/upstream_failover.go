@@ -350,7 +350,7 @@ func TryUpstreamWithAllKeys(
 				// 步骤 5+6: EndpointAttemptPolicy FilterKeys + SortKeys
 				// selectAttemptAPIKeyFiltered 在 keypool.CandidatesForModel 之后应用 policy 过滤/排序。
 				// nil policy 时回退到 selectAttemptAPIKey（行为不变）。
-				selection, apiKey, err = selectAttemptAPIKeyFiltered(channelScheduler, kind, channelIndex, upstream, failedKeys, failedQuotaGroups, redirectedModel, nextAPIKey, endpointPolicy, apiType, c)
+				selection, apiKey, err = selectAttemptAPIKeyFiltered(channelScheduler, kind, channelIndex, upstream, currentBaseURL, failedKeys, failedQuotaGroups, redirectedModel, nextAPIKey, endpointPolicy, apiType, c)
 				if err != nil {
 					lastError = err
 					break // 当前 BaseURL 没有可用 Key，尝试下一个 BaseURL
@@ -951,6 +951,7 @@ func selectAttemptAPIKeyFiltered(
 	kind scheduler.ChannelKind,
 	channelIndex int,
 	upstream *config.UpstreamConfig,
+	baseURL string,
 	failedKeys map[string]bool,
 	failedQuotaGroups map[string]bool,
 	model string,
@@ -962,6 +963,9 @@ func selectAttemptAPIKeyFiltered(
 	if policy == nil {
 		return selectAttemptAPIKey(channelScheduler, kind, channelIndex, upstream, failedKeys, failedQuotaGroups, model, fallback)
 	}
+	if baseURL == "" {
+		baseURL = upstream.BaseURL
+	}
 
 	if !keypool.HasEffectiveConfig(upstream) {
 		// 无 keypool 配置时：对 raw APIKeys 应用 policy filter/sort
@@ -970,24 +974,31 @@ func selectAttemptAPIKeyFiltered(
 			return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
 		}
 
-		filtered := callPolicyFilterKeys(policy, upstream.BaseURL, apiKeys, apiType, c)
+		filtered := callPolicyFilterKeyBindings(policy, upstream.ChannelUID, baseURL, apiKeys, apiType, c)
+		if len(filtered) == 0 {
+			return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有支持模型 %s 的 endpoint binding", upstream.Name, model)
+		}
+		sorted, _ := callPolicySortKeyBindings(policy, upstream.ChannelUID, baseURL, filtered, apiType, c)
 		if fallback != nil {
 			key, err := fallback(upstream, failedKeys)
 			if err != nil {
-				return keypool.Selection{}, "", err
+				key = ""
 			}
 			// 验证 key 在过滤后的列表中
-			filteredSet := make(map[string]bool, len(filtered))
-			for _, k := range filtered {
+			filteredSet := make(map[string]bool, len(sorted))
+			for _, k := range sorted {
 				filteredSet[k] = true
 			}
-			if filteredSet[key] {
+			if key != "" && filteredSet[key] && !failedKeys[key] {
 				return keypool.Selection{APIKey: key}, key, nil
 			}
-			// policy 过滤掉了所有 key → fail-open：使用第一个未失败的原始 key
 		}
-		// 无 fallback 时回退到未过滤
-		return selectAttemptAPIKey(channelScheduler, kind, channelIndex, upstream, failedKeys, failedQuotaGroups, model, fallback)
+		for _, key := range sorted {
+			if key != "" && !failedKeys[key] {
+				return keypool.Selection{APIKey: key}, key, nil
+			}
+		}
+		return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的 endpoint binding", upstream.Name)
 	}
 
 	// keypool 路径：获取候选 → FilterKeys → SortKeys → 选择
@@ -1001,10 +1012,13 @@ func selectAttemptAPIKeyFiltered(
 	for i, cand := range candidates {
 		candidateKeys[i] = cand.APIKey
 	}
-	filteredKeys := callPolicyFilterKeys(policy, upstream.BaseURL, candidateKeys, apiType, c)
+	filteredKeys := callPolicyFilterKeyBindings(policy, upstream.ChannelUID, baseURL, candidateKeys, apiType, c)
+	if len(filteredKeys) == 0 {
+		return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有支持模型 %s 的 endpoint binding", upstream.Name, model)
+	}
 
 	// 步骤 6: SortKeys
-	sortedKeys, _ := callPolicySortKeys(policy, upstream.BaseURL, filteredKeys, apiType, c)
+	sortedKeys, _ := callPolicySortKeyBindings(policy, upstream.ChannelUID, baseURL, filteredKeys, apiType, c)
 
 	// 构建 candidate 查找表
 	candidateMap := make(map[string]keypool.Candidate, len(candidates))
@@ -1050,6 +1064,45 @@ func selectAttemptAPIKeyFiltered(
 	}
 
 	return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
+}
+
+func callPolicyFilterKeyBindings(policy *autopilot.EndpointAttemptPolicy, channelUID, baseURL string, keys []string, apiType string, c *gin.Context) []string {
+	if policy == nil || policy.FilterKeyBindings == nil {
+		return callPolicyFilterKeys(policy, baseURL, keys, apiType, c)
+	}
+	result := keys
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				RequestLogf(c, "[%s-Autopilot-EndpointPolicy] FilterKeyBindings panic: %v，回退原列表", apiType, r)
+				result = keys
+			}
+		}()
+		result = policy.FilterKeyBindings(channelUID, baseURL, keys)
+	}()
+	return result
+}
+
+func callPolicySortKeyBindings(policy *autopilot.EndpointAttemptPolicy, channelUID, baseURL string, keys []string, apiType string, c *gin.Context) ([]string, []autopilot.EndpointCandidate) {
+	if policy == nil || policy.SortKeyBindings == nil {
+		return callPolicySortKeys(policy, baseURL, keys, apiType, c)
+	}
+	result := keys
+	var candidates []autopilot.EndpointCandidate
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				RequestLogf(c, "[%s-Autopilot-EndpointPolicy] SortKeyBindings panic: %v，回退原列表", apiType, r)
+				result = keys
+				candidates = nil
+			}
+		}()
+		result, candidates = policy.SortKeyBindings(channelUID, baseURL, keys)
+	}()
+	if len(result) == 0 {
+		return keys, nil
+	}
+	return result, candidates
 }
 
 // callPolicyFilterKeys 安全调用 policy.FilterKeys，panic 时回退原列表。
