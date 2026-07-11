@@ -169,6 +169,7 @@ func validateChannelPresets(preset *ChannelPresetsPreset) error {
 func validateBuiltinModelsManifestPreset(preset *BuiltinModelsManifestPreset) error {
 	seenServiceTypes := map[string]bool{
 		"messages":  true,
+		"openai":    true,
 		"responses": true,
 		"chat":      true,
 		"gemini":    true,

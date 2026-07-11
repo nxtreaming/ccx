@@ -69,6 +69,23 @@ func TestValidateAcceptsOlderSchema(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsBuiltinManifestOpenAIServiceType(t *testing.T) {
+	b := validBundle()
+	b.BuiltinModelsManifests = &BuiltinModelsManifestPreset{
+		SchemaVersion: 1,
+		Manifests: []BuiltinModelsManifestEntryPreset{
+			{
+				BaseURLPattern: "api.example.com/v1",
+				ServiceType:    "openai",
+				ModelIDs:       []string{"model-a"},
+			},
+		},
+	}
+	if err := Validate(b); err != nil {
+		t.Fatalf("openai serviceType 应可用于 builtin manifest: %v", err)
+	}
+}
+
 func TestTierForAndCanonicalize(t *testing.T) {
 	sub := validBundle().Subscription
 	if got := sub.TierFor("relay"); got != "second" {

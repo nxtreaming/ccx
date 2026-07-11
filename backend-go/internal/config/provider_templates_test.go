@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,45 @@ func TestCandidatesForKeyPrefix(t *testing.T) {
 	unknownCands := tmpl.CandidatesForKey("xx-none")
 	if len(unknownCands) != len(tmpl.Candidates) {
 		t.Errorf("未匹配前缀应返回全部候选 %d，实际 %d", len(tmpl.Candidates), len(unknownCands))
+	}
+}
+
+func TestProviderTemplateMiMoRoutes(t *testing.T) {
+	tmpl, ok := GetProviderTemplate("mimo")
+	if !ok {
+		t.Fatal("未找到 mimo 模板")
+	}
+	routes := tmpl.AutoAddRoutes()
+	if len(routes) != 3 {
+		t.Fatalf("mimo 应创建 3 条 route，实际 %d: %+v", len(routes), routes)
+	}
+
+	want := map[string]struct {
+		serviceType string
+		baseSuffix  string
+	}{
+		"messages":  {serviceType: "claude", baseSuffix: "/anthropic"},
+		"chat":      {serviceType: "openai", baseSuffix: "/v1"},
+		"responses": {serviceType: "openai", baseSuffix: "/v1"},
+	}
+	for _, route := range routes {
+		expect, ok := want[route.ChannelKind]
+		if !ok {
+			t.Fatalf("未知 route kind: %+v", route)
+		}
+		if route.ServiceType != expect.serviceType {
+			t.Fatalf("route %s serviceType=%s, want %s", route.ChannelKind, route.ServiceType, expect.serviceType)
+		}
+		candidates := tmpl.CandidatesForRouteKey(route, "tp-test")
+		if len(candidates) == 0 {
+			t.Fatalf("route %s 没有候选", route.ChannelKind)
+		}
+		if !strings.HasSuffix(candidates[0].BaseURL, expect.baseSuffix) {
+			t.Fatalf("route %s 首选 baseURL=%s, want suffix %s", route.ChannelKind, candidates[0].BaseURL, expect.baseSuffix)
+		}
+	}
+	if !tmpl.SupportsChannelKind("messages") || !tmpl.SupportsChannelKind("chat") || !tmpl.SupportsChannelKind("responses") {
+		t.Fatalf("mimo 应支持 messages/chat/responses routes: %+v", routes)
 	}
 }
 

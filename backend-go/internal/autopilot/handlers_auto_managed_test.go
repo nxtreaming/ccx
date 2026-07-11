@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BenedictKing/ccx/internal/config"
 	"github.com/gin-gonic/gin"
 )
 
@@ -205,6 +206,36 @@ func TestKindToDefaultServiceType(t *testing.T) {
 				t.Fatalf("kind=%s, 期望=%s, 实际=%s", tt.kind, tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestProviderRouteNameAndPrimaryResult(t *testing.T) {
+	base := "mimo-test"
+	tests := []struct {
+		route config.ProviderRoute
+		want  string
+	}{
+		{route: config.ProviderRoute{ChannelKind: "messages"}, want: "mimo-test-claude"},
+		{route: config.ProviderRoute{ChannelKind: "chat"}, want: "mimo-test-chat"},
+		{route: config.ProviderRoute{ChannelKind: "responses"}, want: "mimo-test-codex"},
+	}
+	for _, tt := range tests {
+		if got := providerRouteName(base, tt.route, true); got != tt.want {
+			t.Fatalf("providerRouteName(%s)=%q, want %q", tt.route.ChannelKind, got, tt.want)
+		}
+	}
+	if got := providerRouteName(base, config.ProviderRoute{ChannelKind: "messages"}, false); got != base {
+		t.Fatalf("single route name=%q, want %q", got, base)
+	}
+
+	results := []AutoAddChannelResult{
+		{ChannelKind: "messages", ChannelUID: "ch_messages", Index: 1},
+		{ChannelKind: "chat", ChannelUID: "ch_chat", Index: 2},
+		{ChannelKind: "responses", ChannelUID: "ch_responses", Index: 3},
+	}
+	primary := primaryAutoAddResult(results, "chat")
+	if primary.ChannelUID != "ch_chat" || primary.Index != 2 {
+		t.Fatalf("primary=%+v, want chat result", primary)
 	}
 }
 

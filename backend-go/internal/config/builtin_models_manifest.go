@@ -15,7 +15,7 @@ type BuiltinModelsManifest struct {
 	// 如 "api.anthropic.com" 或 "api.anthropic.com/v1"。
 	BaseURLPattern string `json:"baseUrlPattern"`
 
-	// ServiceType 渠道协议类型：messages/responses/chat/gemini/images/vectors。
+	// ServiceType 运行时上游服务类型；claude 会归一为 messages，OpenAI Chat 兼容入口用 openai。
 	ServiceType string `json:"serviceType"`
 
 	// PlanHint 订阅类型提示，仅用于文档和日志，不影响匹配逻辑。
@@ -91,6 +91,40 @@ var builtinModelsManifests = []BuiltinModelsManifest{
 		ModelIDs:             mimoModelIDs(),
 		ExcludeModelPatterns: mimoExcludeModelPatterns(),
 		DisableProbe:         true,
+	},
+	// 小米 MiMo OpenAI Chat 兼容入口（来源：provider_templates.go 与 docs/providers/mimo.md）。
+	// /v1/models 可用于发现；返回 ASR/TTS 等非文本模型时通过 ExcludeModelPatterns 过滤。
+	{
+		BaseURLPattern:       "api.xiaomimimo.com/v1",
+		ServiceType:          "openai",
+		PlanHint:             "mimo_payg_openai",
+		ModelIDs:             mimoModelIDs(),
+		ExcludeModelPatterns: mimoExcludeModelPatterns(),
+		DisableProbe:         false,
+	},
+	{
+		BaseURLPattern:       "token-plan-cn.xiaomimimo.com/v1",
+		ServiceType:          "openai",
+		PlanHint:             "mimo_token_plan_cn_openai",
+		ModelIDs:             mimoModelIDs(),
+		ExcludeModelPatterns: mimoExcludeModelPatterns(),
+		DisableProbe:         false,
+	},
+	{
+		BaseURLPattern:       "token-plan-sgp.xiaomimimo.com/v1",
+		ServiceType:          "openai",
+		PlanHint:             "mimo_token_plan_sgp_openai",
+		ModelIDs:             mimoModelIDs(),
+		ExcludeModelPatterns: mimoExcludeModelPatterns(),
+		DisableProbe:         false,
+	},
+	{
+		BaseURLPattern:       "token-plan-ams.xiaomimimo.com/v1",
+		ServiceType:          "openai",
+		PlanHint:             "mimo_token_plan_ams_openai",
+		ModelIDs:             mimoModelIDs(),
+		ExcludeModelPatterns: mimoExcludeModelPatterns(),
+		DisableProbe:         false,
 	},
 }
 

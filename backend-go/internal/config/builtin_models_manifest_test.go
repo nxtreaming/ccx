@@ -201,6 +201,31 @@ func TestLookupBuiltinManifest_MiMoAnthropicTokenPlan(t *testing.T) {
 	}
 }
 
+func TestLookupBuiltinManifest_MiMoOpenAIChatTokenPlan(t *testing.T) {
+	manifest, found := LookupBuiltinManifest("https://token-plan-cn.xiaomimimo.com/v1", "openai")
+	if !found {
+		t.Fatal("MiMo token plan OpenAI Chat 清单应存在")
+	}
+	if manifest.DisableProbe {
+		t.Fatal("MiMo OpenAI Chat 清单应允许 /models 探测并过滤非文本模型")
+	}
+	if manifest.PlanHint != "mimo_token_plan_cn_openai" {
+		t.Fatalf("planHint = %q, want mimo_token_plan_cn_openai", manifest.PlanHint)
+	}
+	expected := []string{"mimo-v2.5-pro", "mimo-v2.5"}
+	if len(manifest.ModelIDs) != len(expected) {
+		t.Fatalf("ModelIDs len = %d, want %d", len(manifest.ModelIDs), len(expected))
+	}
+	for i, modelID := range expected {
+		if manifest.ModelIDs[i] != modelID {
+			t.Fatalf("ModelIDs[%d] = %q, want %q", i, manifest.ModelIDs[i], modelID)
+		}
+	}
+	if len(manifest.ExcludeModelPatterns) != 1 || manifest.ExcludeModelPatterns[0] != `^mimo-v2\.5-(?:asr|tts(?:-.+)?)$` {
+		t.Fatalf("ExcludeModelPatterns = %v", manifest.ExcludeModelPatterns)
+	}
+}
+
 func TestMatchManifestPattern(t *testing.T) {
 	tests := []struct {
 		name    string

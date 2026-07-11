@@ -30,6 +30,26 @@ func TestBuildClaudeProbeURL(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIChatProbeURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"无版本后缀补 /v1/chat/completions", "https://api.xiaomimimo.com", "https://api.xiaomimimo.com/v1/chat/completions"},
+		{"已含 /v1 直接拼 /chat/completions", "https://api.xiaomimimo.com/v1", "https://api.xiaomimimo.com/v1/chat/completions"},
+		{"尾部斜杠归一化", "https://token-plan-cn.xiaomimimo.com/v1/", "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"},
+		{"# 结尾跳过版本前缀", "https://custom.example.com/relay#", "https://custom.example.com/relay/chat/completions"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := buildOpenAIChatProbeURL(tc.baseURL); got != tc.want {
+				t.Errorf("buildOpenAIChatProbeURL(%q) = %q, want %q", tc.baseURL, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestVerifyClaudeEndpoint(t *testing.T) {
 	cases := []struct {
 		name           string
@@ -56,6 +76,41 @@ func TestVerifyClaudeEndpoint(t *testing.T) {
 			defer srv.Close()
 
 			res := VerifyClaudeEndpoint(context.Background(), srv.URL, "sk-test", "")
+			if res.OK != tc.wantOK {
+				t.Errorf("OK = %v, want %v (status %d)", res.OK, tc.wantOK, tc.statusCode)
+			}
+			if res.AuthFailed != tc.wantAuthFailed {
+				t.Errorf("AuthFailed = %v, want %v (status %d)", res.AuthFailed, tc.wantAuthFailed, tc.statusCode)
+			}
+		})
+	}
+}
+
+func TestVerifyOpenAIChatEndpoint(t *testing.T) {
+	cases := []struct {
+		name           string
+		statusCode     int
+		wantOK         bool
+		wantAuthFailed bool
+	}{
+		{"200 鉴权通过", http.StatusOK, true, false},
+		{"400 服务可达鉴权通过", http.StatusBadRequest, true, false},
+		{"422 服务可达鉴权通过", http.StatusUnprocessableEntity, true, false},
+		{"401 鉴权失败", http.StatusUnauthorized, false, true},
+		{"403 鉴权失败", http.StatusForbidden, false, true},
+		{"404 端点不可用", http.StatusNotFound, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/v1/chat/completions") {
+					t.Errorf("探测路径应以 /v1/chat/completions 结尾，实际 %q", r.URL.Path)
+				}
+				w.WriteHeader(tc.statusCode)
+			}))
+			defer srv.Close()
+
+			res := VerifyOpenAIChatEndpoint(context.Background(), srv.URL, "sk-test", "")
 			if res.OK != tc.wantOK {
 				t.Errorf("OK = %v, want %v (status %d)", res.OK, tc.wantOK, tc.statusCode)
 			}
@@ -138,10 +193,37 @@ func TestVerifyProviderKeys(t *testing.T) {
 		}
 	})
 
-	t.Run("非 claude serviceType 拒绝", func(t *testing.T) {
-		tmpl := &config.ProviderTemplate{ProviderID: "x", ServiceType: "openai"}
-		if _, _, err := verifyProviderKeys(context.Background(), tmpl, []string{"sk-a"}); err == nil {
-			t.Fatal("非 claude serviceType 应返回错误")
+	t.Run("openai route 使用 chat completions 探测", func(t *testing.T) {
+		var gotPath string
+		chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer chatSrv.Close()
+
+		tmpl := &config.ProviderTemplate{ProviderID: "x"}
+		route := config.ProviderRoute{
+			ChannelKind: "chat",
+			ServiceType: "openai",
+			Candidates:  []config.ProviderCandidate{{BaseURL: chatSrv.URL + "/v1", Priority: 0}},
+		}
+		keyConfigs, baseURLs, err := verifyProviderRouteKeys(context.Background(), tmpl, route, []string{"sk-a"})
+		if err != nil {
+			t.Fatalf("openai route 应支持模板化验证: %v", err)
+		}
+		if gotPath != "/v1/chat/completions" {
+			t.Fatalf("openai route 探测路径=%q, want /v1/chat/completions", gotPath)
+		}
+		if len(keyConfigs) != 1 || len(baseURLs) != 1 || baseURLs[0] != chatSrv.URL+"/v1" {
+			t.Fatalf("验证结果不符合预期: keyConfigs=%+v baseURLs=%v", keyConfigs, baseURLs)
+		}
+	})
+
+	t.Run("不支持的 serviceType 拒绝", func(t *testing.T) {
+		tmpl := &config.ProviderTemplate{ProviderID: "x"}
+		route := config.ProviderRoute{ChannelKind: "gemini", ServiceType: "gemini"}
+		if _, _, err := verifyProviderRouteKeys(context.Background(), tmpl, route, []string{"sk-a"}); err == nil {
+			t.Fatal("不支持的 serviceType 应返回错误")
 		}
 	})
 }

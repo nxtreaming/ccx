@@ -70,6 +70,58 @@
         "^mimo-v2\\.5-(?:asr|tts(?:-.+)?)$"
       ],
       "disableProbe": true
+    },
+    {
+      "baseUrlPattern": "api.xiaomimimo.com/v1",
+      "serviceType": "openai",
+      "planHint": "mimo_payg_openai",
+      "modelIds": [
+        "mimo-v2.5-pro",
+        "mimo-v2.5"
+      ],
+      "excludeModelPatterns": [
+        "^mimo-v2\\.5-(?:asr|tts(?:-.+)?)$"
+      ],
+      "disableProbe": false
+    },
+    {
+      "baseUrlPattern": "token-plan-cn.xiaomimimo.com/v1",
+      "serviceType": "openai",
+      "planHint": "mimo_token_plan_cn_openai",
+      "modelIds": [
+        "mimo-v2.5-pro",
+        "mimo-v2.5"
+      ],
+      "excludeModelPatterns": [
+        "^mimo-v2\\.5-(?:asr|tts(?:-.+)?)$"
+      ],
+      "disableProbe": false
+    },
+    {
+      "baseUrlPattern": "token-plan-sgp.xiaomimimo.com/v1",
+      "serviceType": "openai",
+      "planHint": "mimo_token_plan_sgp_openai",
+      "modelIds": [
+        "mimo-v2.5-pro",
+        "mimo-v2.5"
+      ],
+      "excludeModelPatterns": [
+        "^mimo-v2\\.5-(?:asr|tts(?:-.+)?)$"
+      ],
+      "disableProbe": false
+    },
+    {
+      "baseUrlPattern": "token-plan-ams.xiaomimimo.com/v1",
+      "serviceType": "openai",
+      "planHint": "mimo_token_plan_ams_openai",
+      "modelIds": [
+        "mimo-v2.5-pro",
+        "mimo-v2.5"
+      ],
+      "excludeModelPatterns": [
+        "^mimo-v2\\.5-(?:asr|tts(?:-.+)?)$"
+      ],
+      "disableProbe": false
     }
   ]
 }

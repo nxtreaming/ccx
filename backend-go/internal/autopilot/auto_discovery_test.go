@@ -109,6 +109,42 @@ func TestParseModelsResponse(t *testing.T) {
 	}
 }
 
+func TestBuildModelsProbeURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{
+			name:    "无版本后缀补 v1",
+			baseURL: "https://api.example.com",
+			want:    "https://api.example.com/v1/models",
+		},
+		{
+			name:    "已有 v1 不重复补",
+			baseURL: "https://api.xiaomimimo.com/v1",
+			want:    "https://api.xiaomimimo.com/v1/models",
+		},
+		{
+			name:    "已有 v1 且尾部斜杠",
+			baseURL: "https://token-plan-cn.xiaomimimo.com/v1/",
+			want:    "https://token-plan-cn.xiaomimimo.com/v1/models",
+		},
+		{
+			name:    "井号跳过版本前缀",
+			baseURL: "https://relay.example.com/custom#",
+			want:    "https://relay.example.com/custom/models",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := buildModelsProbeURL(tt.baseURL); got != tt.want {
+				t.Fatalf("buildModelsProbeURL(%q) = %q, want %q", tt.baseURL, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDiscoveryStatus_Constants(t *testing.T) {
 	// 确保状态常量符合预期字符串
 	if DiscoveryStatusIdle != "idle" {

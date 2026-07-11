@@ -23,6 +23,10 @@ const verifyEndpointTimeout = 12 * time.Second
 // 若上游因模型无效返回 4xx（非 401/403），仍说明服务可达且鉴权通过。
 var minimalClaudeProbeBody = []byte(`{"model":"probe","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}`)
 
+// minimalOpenAIChatProbeBody 最小 OpenAI Chat Completions 探测请求体。
+// 与 Claude 探测相同，400/422 通常表示占位模型或参数无效，但鉴权已通过。
+var minimalOpenAIChatProbeBody = []byte(`{"model":"probe","messages":[{"role":"user","content":"ping"}],"max_tokens":1}`)
+
 var verifyVersionPattern = regexp.MustCompile(`/v\d+[a-z]*$`)
 
 // EndpointVerifyResult 端点验证结果。
@@ -46,16 +50,29 @@ type EndpointVerifyResult struct {
 // 本函数按 claude provider 的拼接规则补 /v1/messages。
 func VerifyClaudeEndpoint(ctx context.Context, baseURL, apiKey, authHeader string) EndpointVerifyResult {
 	url := buildClaudeProbeURL(baseURL)
+	return verifyJSONPostEndpoint(ctx, url, apiKey, authHeader, func(req *http.Request) {
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}, minimalClaudeProbeBody)
+}
 
+// VerifyOpenAIChatEndpoint 对一个 (baseURL, apiKey) 发最小 Chat Completions 请求验证可用性。
+func VerifyOpenAIChatEndpoint(ctx context.Context, baseURL, apiKey, authHeader string) EndpointVerifyResult {
+	url := buildOpenAIChatProbeURL(baseURL)
+	return verifyJSONPostEndpoint(ctx, url, apiKey, authHeader, nil, minimalOpenAIChatProbeBody)
+}
+
+func verifyJSONPostEndpoint(ctx context.Context, url, apiKey, authHeader string, prepare func(*http.Request), body []byte) EndpointVerifyResult {
 	reqCtx, cancel := context.WithTimeout(ctx, verifyEndpointTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(minimalClaudeProbeBody))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return EndpointVerifyResult{Err: err, Message: "构建请求失败"}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
+	if prepare != nil {
+		prepare(req)
+	}
 	utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, authHeader)
 
 	client := httpclient.GetManager().GetStandardClient(verifyEndpointTimeout, false)
@@ -86,15 +103,23 @@ func VerifyClaudeEndpoint(ctx context.Context, baseURL, apiKey, authHeader strin
 //   - baseURL 已含 /vN 后缀 → 直接拼 /messages
 //   - 否则补 /v1/messages
 func buildClaudeProbeURL(baseURL string) string {
+	return buildVersionedProbeURL(baseURL, "/messages")
+}
+
+func buildOpenAIChatProbeURL(baseURL string) string {
+	return buildVersionedProbeURL(baseURL, "/chat/completions")
+}
+
+func buildVersionedProbeURL(baseURL, endpoint string) string {
 	skipVersionPrefix := strings.HasSuffix(baseURL, "#")
 	if skipVersionPrefix {
 		baseURL = strings.TrimSuffix(baseURL, "#")
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	if verifyVersionPattern.MatchString(baseURL) || skipVersionPrefix {
-		return baseURL + "/messages"
+		return baseURL + endpoint
 	}
-	return baseURL + "/v1/messages"
+	return baseURL + "/v1" + endpoint
 }
 
 // verifyProviderKeys 对一批 API Key 按 provider 模板的候选 baseURL 逐个探测验证，
@@ -111,27 +136,36 @@ func buildClaudeProbeURL(baseURL string) string {
 //   - keyConfigs：与 apiKeys 一一对应、且 BaseURL 已绑定的 APIKeyConfig 列表
 //   - baseURLs：去重后的所有命中端点（渠道级 BaseURLs，保持首次命中顺序）
 //   - err：任一 key 验证失败时返回聚合错误（渠道不创建）
-//
-// 仅支持 Anthropic 兼容 provider（ServiceType=claude）；其余类型返回错误。
 func verifyProviderKeys(ctx context.Context, tmpl *config.ProviderTemplate, apiKeys []string) ([]config.APIKeyConfig, []string, error) {
 	if tmpl == nil {
 		return nil, nil, fmt.Errorf("provider 模板为空")
 	}
-	if tmpl.ServiceType != "claude" {
-		return nil, nil, fmt.Errorf("provider %s 暂不支持模板化验证（serviceType=%s）", tmpl.ProviderID, tmpl.ServiceType)
+	return verifyProviderRouteKeys(ctx, tmpl, config.ProviderRoute{
+		ChannelKind: tmpl.ChannelKind,
+		ServiceType: tmpl.ServiceType,
+		Candidates:  tmpl.Candidates,
+	}, apiKeys)
+}
+
+func verifyProviderRouteKeys(ctx context.Context, tmpl *config.ProviderTemplate, route config.ProviderRoute, apiKeys []string) ([]config.APIKeyConfig, []string, error) {
+	if tmpl == nil {
+		return nil, nil, fmt.Errorf("provider 模板为空")
+	}
+	if route.ServiceType != "claude" && route.ServiceType != "openai" {
+		return nil, nil, fmt.Errorf("provider %s 暂不支持模板化验证（serviceType=%s）", tmpl.ProviderID, route.ServiceType)
 	}
 	if len(apiKeys) == 0 {
 		return nil, nil, fmt.Errorf("apiKeys 不能为空")
 	}
 
 	keyConfigs := make([]config.APIKeyConfig, 0, len(apiKeys))
-	baseURLs := make([]string, 0, len(tmpl.Candidates))
+	baseURLs := make([]string, 0, len(route.Candidates))
 	seenBaseURL := make(map[string]bool)
 
 	for _, apiKey := range apiKeys {
-		candidates := tmpl.CandidatesForKey(apiKey)
+		candidates := tmpl.CandidatesForRouteKey(route, apiKey)
 		if len(candidates) == 0 {
-			return nil, nil, fmt.Errorf("provider %s 无可用候选端点", tmpl.ProviderID)
+			return nil, nil, fmt.Errorf("provider %s 无可用候选端点（kind=%s serviceType=%s）", tmpl.ProviderID, route.ChannelKind, route.ServiceType)
 		}
 
 		var (
@@ -140,7 +174,7 @@ func verifyProviderKeys(ctx context.Context, tmpl *config.ProviderTemplate, apiK
 			lastMsg    string
 		)
 		for _, cand := range candidates {
-			res := VerifyClaudeEndpoint(ctx, cand.BaseURL, apiKey, "")
+			res := verifyProviderCandidateEndpoint(ctx, route, cand.BaseURL, apiKey)
 			if res.OK {
 				boundURL = cand.BaseURL
 				break
@@ -174,4 +208,15 @@ func verifyProviderKeys(ctx context.Context, tmpl *config.ProviderTemplate, apiK
 	}
 
 	return keyConfigs, baseURLs, nil
+}
+
+func verifyProviderCandidateEndpoint(ctx context.Context, route config.ProviderRoute, baseURL, apiKey string) EndpointVerifyResult {
+	switch route.ServiceType {
+	case "claude":
+		return VerifyClaudeEndpoint(ctx, baseURL, apiKey, "")
+	case "openai":
+		return VerifyOpenAIChatEndpoint(ctx, baseURL, apiKey, "")
+	default:
+		return EndpointVerifyResult{Message: fmt.Sprintf("不支持的 serviceType: %s", route.ServiceType)}
+	}
 }

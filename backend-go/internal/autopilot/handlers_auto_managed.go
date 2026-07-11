@@ -28,8 +28,19 @@ type AutoAddRequest struct {
 
 // AutoAddResponse POST /:kind/channels/auto-add 响应体。
 type AutoAddResponse struct {
+	ChannelUID       string                 `json:"channelUid"`
+	Index            int                    `json:"index"`
+	DiscoveryStarted bool                   `json:"discoveryStarted"`
+	Channels         []AutoAddChannelResult `json:"channels,omitempty"`
+}
+
+// AutoAddChannelResult 描述 provider 快速添加一次创建出的单条渠道。
+type AutoAddChannelResult struct {
+	ChannelKind      string `json:"channelKind"`
 	ChannelUID       string `json:"channelUid"`
 	Index            int    `json:"index"`
+	Name             string `json:"name"`
+	ServiceType      string `json:"serviceType"`
 	DiscoveryStarted bool   `json:"discoveryStarted"`
 }
 
@@ -131,6 +142,11 @@ func handleAutoAdd(deps *AutoManagedDeps) gin.HandlerFunc {
 			return
 		}
 
+		if req.ProviderID != "" {
+			handleProviderAutoAdd(c, deps, kind, req)
+			return
+		}
+
 		// 推导 serviceType
 		serviceType := kindToDefaultServiceType(kind)
 		name := req.Name
@@ -149,56 +165,13 @@ func handleAutoAdd(deps *AutoManagedDeps) gin.HandlerFunc {
 			AutoManagedAt: &now,
 		}
 
-		// provider 模板模式：按 key 前缀探测验证候选 baseURL，per-key 绑定成功端点
-		if req.ProviderID != "" {
-			tmpl, ok := config.GetProviderTemplate(req.ProviderID)
-			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("未知的 provider: %s", req.ProviderID)})
-				return
-			}
-			if tmpl.ChannelKind != "" && tmpl.ChannelKind != kind {
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("provider %s 应添加到 %s 渠道，而非 %s", req.ProviderID, tmpl.ChannelKind, kind)})
-				return
-			}
-
-			keyConfigs, baseURLs, verr := verifyProviderKeys(c.Request.Context(), tmpl, req.APIKeys)
-			if verr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
-				return
-			}
-
-			upstream.ProviderID = tmpl.ProviderID
-			upstream.ServiceType = tmpl.ServiceType
-			upstream.OriginType = tmpl.OriginType
-			upstream.OriginTier = tmpl.OriginTier
-			upstream.BaseURLs = baseURLs
-			upstream.BaseURL = baseURLs[0]
-			upstream.APIKeys = req.APIKeys
-			upstream.APIKeyConfigs = keyConfigs
-		} else {
-			// 自定义模式：保持原有行为
-			upstream.BaseURL = req.BaseURLs[0]
-			upstream.BaseURLs = req.BaseURLs
-			upstream.APIKeys = req.APIKeys
-		}
+		// 自定义模式：保持原有行为
+		upstream.BaseURL = req.BaseURLs[0]
+		upstream.BaseURLs = req.BaseURLs
+		upstream.APIKeys = req.APIKeys
 
 		// 调用对应类型的 Add 方法
-		var err error
-		switch kind {
-		case "messages":
-			err = deps.CfgManager.AddUpstream(upstream)
-		case "chat":
-			err = deps.CfgManager.AddChatUpstream(upstream)
-		case "responses":
-			err = deps.CfgManager.AddResponsesUpstream(upstream)
-		case "gemini":
-			err = deps.CfgManager.AddGeminiUpstream(upstream)
-		case "images":
-			err = deps.CfgManager.AddImagesUpstream(upstream)
-		case "vectors":
-			err = deps.CfgManager.AddVectorsUpstream(upstream)
-		}
-		if err != nil {
+		if err := addUpstreamByKind(deps.CfgManager, kind, upstream); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建渠道失败: %v", err)})
 			return
 		}
@@ -206,27 +179,11 @@ func handleAutoAdd(deps *AutoManagedDeps) gin.HandlerFunc {
 		// 获取创建后的 channelUid 和 index
 		cfg := deps.CfgManager.GetConfig()
 		channels := getChannelSlice(cfg, kind)
-		channelUID := ""
-		index := 0
-		for i, ch := range channels {
-			if ch.Name == name {
-				channelUID = ch.ChannelUID
-				index = i
-				break
-			}
-		}
+		index := findChannelIndexByUID(channels, upstream.ChannelUID)
+		channelUID := upstream.ChannelUID
 
 		// 异步触发发现（best-effort，不影响返回）
-		discoveryStarted := false
-		if deps.Runner != nil && channelUID != "" {
-			// 重新获取最新的 channel 引用
-			cfg = deps.CfgManager.GetConfig()
-			channels = getChannelSlice(cfg, kind)
-			if index < len(channels) {
-				ch := channels[index]
-				discoveryStarted = deps.Runner.TriggerDiscovery(channelUID, &ch, deps.CfgManager)
-			}
-		}
+		discoveryStarted := triggerDiscoveryForChannel(deps, kind, channelUID)
 
 		log.Printf("[AutoManaged-Add] 创建自动托管渠道: kind=%s name=%s uid=%s", kind, name, channelUID)
 
@@ -236,6 +193,181 @@ func handleAutoAdd(deps *AutoManagedDeps) gin.HandlerFunc {
 			DiscoveryStarted: discoveryStarted,
 		})
 	}
+}
+
+func handleProviderAutoAdd(c *gin.Context, deps *AutoManagedDeps, requestKind string, req AutoAddRequest) {
+	tmpl, ok := config.GetProviderTemplate(req.ProviderID)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("未知的 provider: %s", req.ProviderID)})
+		return
+	}
+	routes := tmpl.AutoAddRoutes()
+	if len(routes) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("provider %s 未配置可添加的渠道 route", req.ProviderID)})
+		return
+	}
+	if !tmpl.SupportsChannelKind(requestKind) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("provider %s 不支持添加到 %s 渠道", req.ProviderID, requestKind)})
+		return
+	}
+
+	baseName := req.Name
+	if baseName == "" {
+		baseName = fmt.Sprintf("%s-%d", tmpl.ProviderID, time.Now().UnixMilli()%100000)
+	}
+
+	cfg := deps.CfgManager.GetConfig()
+	for _, route := range routes {
+		name := providerRouteName(baseName, route, len(routes) > 1)
+		if channelNameExists(getChannelSlice(cfg, route.ChannelKind), name) {
+			c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("渠道名称 '%s' 已存在", name)})
+			return
+		}
+	}
+
+	type plannedRoute struct {
+		route      config.ProviderRoute
+		name       string
+		keyConfigs []config.APIKeyConfig
+		baseURLs   []string
+	}
+	planned := make([]plannedRoute, 0, len(routes))
+	for _, route := range routes {
+		keyConfigs, baseURLs, verr := verifyProviderRouteKeys(c.Request.Context(), tmpl, route, req.APIKeys)
+		if verr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
+			return
+		}
+		planned = append(planned, plannedRoute{
+			route:      route,
+			name:       providerRouteName(baseName, route, len(routes) > 1),
+			keyConfigs: keyConfigs,
+			baseURLs:   baseURLs,
+		})
+	}
+
+	now := time.Now()
+	results := make([]AutoAddChannelResult, 0, len(planned))
+	for _, item := range planned {
+		upstream := config.UpstreamConfig{
+			Name:          item.name,
+			ChannelUID:    config.GenerateChannelUID(),
+			ServiceType:   item.route.ServiceType,
+			Status:        "active",
+			AutoManaged:   true,
+			AutoManagedAt: &now,
+			ProviderID:    tmpl.ProviderID,
+			OriginType:    tmpl.OriginType,
+			OriginTier:    tmpl.OriginTier,
+			BaseURL:       item.baseURLs[0],
+			BaseURLs:      item.baseURLs,
+			APIKeys:       append([]string(nil), req.APIKeys...),
+			APIKeyConfigs: item.keyConfigs,
+		}
+		if err := addUpstreamByKind(deps.CfgManager, item.route.ChannelKind, upstream); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建渠道失败: %v", err)})
+			return
+		}
+		index := findChannelIndexByUID(getChannelSlice(deps.CfgManager.GetConfig(), item.route.ChannelKind), upstream.ChannelUID)
+		discoveryStarted := triggerDiscoveryForChannel(deps, item.route.ChannelKind, upstream.ChannelUID)
+		results = append(results, AutoAddChannelResult{
+			ChannelKind:      item.route.ChannelKind,
+			ChannelUID:       upstream.ChannelUID,
+			Index:            index,
+			Name:             upstream.Name,
+			ServiceType:      upstream.ServiceType,
+			DiscoveryStarted: discoveryStarted,
+		})
+		log.Printf("[AutoManaged-Add] 创建自动托管 provider 渠道: provider=%s kind=%s serviceType=%s name=%s uid=%s",
+			tmpl.ProviderID, item.route.ChannelKind, item.route.ServiceType, upstream.Name, upstream.ChannelUID)
+	}
+
+	primary := primaryAutoAddResult(results, requestKind)
+	c.JSON(http.StatusCreated, AutoAddResponse{
+		ChannelUID:       primary.ChannelUID,
+		Index:            primary.Index,
+		DiscoveryStarted: primary.DiscoveryStarted,
+		Channels:         results,
+	})
+}
+
+func addUpstreamByKind(cfgManager *config.ConfigManager, kind string, upstream config.UpstreamConfig) error {
+	switch kind {
+	case "messages":
+		return cfgManager.AddUpstream(upstream)
+	case "chat":
+		return cfgManager.AddChatUpstream(upstream)
+	case "responses":
+		return cfgManager.AddResponsesUpstream(upstream)
+	case "gemini":
+		return cfgManager.AddGeminiUpstream(upstream)
+	case "images":
+		return cfgManager.AddImagesUpstream(upstream)
+	case "vectors":
+		return cfgManager.AddVectorsUpstream(upstream)
+	default:
+		return fmt.Errorf("不支持的渠道类型: %s", kind)
+	}
+}
+
+func providerRouteName(baseName string, route config.ProviderRoute, multiRoute bool) string {
+	if !multiRoute {
+		return baseName
+	}
+	switch route.ChannelKind {
+	case "messages":
+		return baseName + "-claude"
+	case "chat":
+		return baseName + "-chat"
+	case "responses":
+		return baseName + "-codex"
+	default:
+		return baseName + "-" + route.ChannelKind
+	}
+}
+
+func channelNameExists(channels []config.UpstreamConfig, name string) bool {
+	for _, ch := range channels {
+		if ch.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func findChannelIndexByUID(channels []config.UpstreamConfig, channelUID string) int {
+	for i, ch := range channels {
+		if ch.ChannelUID == channelUID {
+			return i
+		}
+	}
+	return -1
+}
+
+func triggerDiscoveryForChannel(deps *AutoManagedDeps, kind string, channelUID string) bool {
+	if deps == nil || deps.Runner == nil || deps.CfgManager == nil || channelUID == "" {
+		return false
+	}
+	cfg := deps.CfgManager.GetConfig()
+	channels := getChannelSlice(cfg, kind)
+	index := findChannelIndexByUID(channels, channelUID)
+	if index < 0 || index >= len(channels) {
+		return false
+	}
+	ch := channels[index]
+	return deps.Runner.TriggerDiscovery(channelUID, &ch, deps.CfgManager)
+}
+
+func primaryAutoAddResult(results []AutoAddChannelResult, requestKind string) AutoAddChannelResult {
+	for _, result := range results {
+		if result.ChannelKind == requestKind {
+			return result
+		}
+	}
+	if len(results) > 0 {
+		return results[0]
+	}
+	return AutoAddChannelResult{}
 }
 
 // handleAutoDiscover POST /{kind}/channels/:id/auto-discover

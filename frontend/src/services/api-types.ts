@@ -1256,6 +1256,14 @@ export interface ProviderCandidate {
   priority?: number
 }
 
+// Provider 在某个 CCX 协议渠道下的原生上游入口
+export interface ProviderRoute {
+  channelKind: string
+  serviceType: string
+  description?: string
+  candidates?: ProviderCandidate[]
+}
+
 // 官方 provider 模板（模板化添加：选 provider + 输 key，系统自动判别 plan/baseURL）
 export interface ProviderTemplate {
   providerId: string
@@ -1267,6 +1275,7 @@ export interface ProviderTemplate {
   originTier?: string
   keyPrefixRules?: ProviderKeyPrefixRule[]
   candidates?: ProviderCandidate[]
+  routes?: ProviderRoute[]
 }
 
 // GET /channels/provider-templates 响应
@@ -1278,6 +1287,16 @@ export interface ProviderTemplatesResponse {
 export interface AutoAddChannelResponse {
   channelUid: string
   index: number
+  discoveryStarted: boolean
+  channels?: AutoAddChannelResult[]
+}
+
+export interface AutoAddChannelResult {
+  channelKind: string
+  channelUid: string
+  index: number
+  name: string
+  serviceType: string
   discoveryStarted: boolean
 }
 

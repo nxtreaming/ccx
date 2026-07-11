@@ -7,20 +7,29 @@ import "strings"
 // 设计目标：用户只需选择 provider + 输入 API Key，系统按 key 前缀选候选 baseURL，
 // 探测验证可用性后自动创建渠道，无需手填 baseURL / 选协议 / 配兼容开关。
 //
-// baseURL 按上游原生协议区分端点，调用时走该 baseURL 的原生协议路径，零协议转换。
+// baseURL 按上游原生协议区分端点：Claude 请求优先走原生 Claude 入口；
+// Chat / Codex Responses 请求走 OpenAI Chat 兼容入口，由后端做协议转换。
 // ProviderTemplate 只描述来源和端点，不再承载 channel-presets 兼容开关；
 // autoManaged 渠道的模型与能力差异由后端智能调度/ModelResolver 处理。
-// 首批 provider 均使用 Anthropic 兼容入口（ServiceType=claude / ChannelKind=messages）。
 type ProviderTemplate struct {
 	ProviderID     string              `json:"providerId"`     // "mimo" / "deepseek" / ...
 	DisplayName    string              `json:"displayName"`    // "小米 MiMo"
 	Description    string              `json:"description"`    // key 前缀说明等
-	ChannelKind    string              `json:"channelKind"`    // "messages" / "chat"
-	ServiceType    string              `json:"serviceType"`    // "claude" / "openai"
+	ChannelKind    string              `json:"channelKind"`    // 默认 route 的渠道类型，兼容旧前端
+	ServiceType    string              `json:"serviceType"`    // 默认 route 的服务类型，兼容旧前端
 	OriginType     string              `json:"originType"`     // "official_api"
 	OriginTier     string              `json:"originTier"`     // "first"
 	KeyPrefixRules []KeyPrefixRule     `json:"keyPrefixRules"` // key 前缀 → plan 判别
-	Candidates     []ProviderCandidate `json:"candidates"`     // 候选 baseURL（含 plan 标签）
+	Candidates     []ProviderCandidate `json:"candidates"`     // 默认 route 的候选 baseURL
+	Routes         []ProviderRoute     `json:"routes,omitempty"`
+}
+
+// ProviderRoute 描述同一 provider 在某个 CCX 渠道协议下使用的原生上游入口。
+type ProviderRoute struct {
+	ChannelKind string              `json:"channelKind"`           // "messages" / "chat" / "responses"
+	ServiceType string              `json:"serviceType"`           // "claude" / "openai" / "responses"
+	Description string              `json:"description,omitempty"` // route 说明，仅展示/诊断
+	Candidates  []ProviderCandidate `json:"candidates"`            // 该 route 的候选 baseURL
 }
 
 // KeyPrefixRule 按 API Key 前缀判别 plan 类型。
@@ -45,12 +54,13 @@ type ProviderCandidate struct {
 //   - Kimi:     https://api.moonshot.ai/anthropic（全球）/ https://api.moonshot.cn/anthropic（中国）
 //   - GLM:      https://open.bigmodel.cn/api/anthropic
 //
-// baseURL 一律填 Anthropic 兼容入口且不带 /v1（claude provider 会自动补 /v1/messages）。
+// Claude route 的 baseURL 使用 Anthropic 兼容入口且不带 /v1（claude provider 会自动补 /v1/messages）。
+// Chat/Responses route 使用 OpenAI Chat 兼容入口 /v1（provider 自动拼 /chat/completions）。
 var builtinProviderTemplates = []ProviderTemplate{
 	{
 		ProviderID:  "mimo",
 		DisplayName: "小米 MiMo",
-		Description: "sk- 按量付费 / tp- Token Plan 订阅（自动判别区域集群）",
+		Description: "sk- 按量付费 / tp- Token Plan 订阅（Claude 走 /anthropic，Chat/Codex 走 /v1）",
 		ChannelKind: "messages",
 		ServiceType: "claude",
 		OriginType:  "official_api",
@@ -59,11 +69,26 @@ var builtinProviderTemplates = []ProviderTemplate{
 			{Prefix: "sk-", PlanTag: "payg"},
 			{Prefix: "tp-", PlanTag: "token_plan"},
 		},
-		Candidates: []ProviderCandidate{
-			{BaseURL: "https://api.xiaomimimo.com/anthropic", PlanTag: "payg", Region: "global", Priority: 0},
-			{BaseURL: "https://token-plan-cn.xiaomimimo.com/anthropic", PlanTag: "token_plan", Region: "cn", Priority: 0},
-			{BaseURL: "https://token-plan-sgp.xiaomimimo.com/anthropic", PlanTag: "token_plan", Region: "sgp", Priority: 1},
-			{BaseURL: "https://token-plan-ams.xiaomimimo.com/anthropic", PlanTag: "token_plan", Region: "ams", Priority: 2},
+		Candidates: mimoClaudeCandidates(),
+		Routes: []ProviderRoute{
+			{
+				ChannelKind: "messages",
+				ServiceType: "claude",
+				Description: "Claude Messages 原生 Anthropic 兼容入口",
+				Candidates:  mimoClaudeCandidates(),
+			},
+			{
+				ChannelKind: "chat",
+				ServiceType: "openai",
+				Description: "OpenAI Chat Completions 兼容入口",
+				Candidates:  mimoChatCandidates(),
+			},
+			{
+				ChannelKind: "responses",
+				ServiceType: "openai",
+				Description: "Codex/Responses 请求转换到 OpenAI Chat Completions",
+				Candidates:  mimoChatCandidates(),
+			},
 		},
 	},
 	{
@@ -122,7 +147,37 @@ func GetProviderTemplate(providerID string) (*ProviderTemplate, bool) {
 	return nil, false
 }
 
-// CandidatesForKey 按 API Key 前缀返回该 key 应优先探测的候选 baseURL 顺序。
+// AutoAddRoutes 返回 provider 快速添加时需要创建的渠道 route。
+func (t *ProviderTemplate) AutoAddRoutes() []ProviderRoute {
+	if t == nil {
+		return nil
+	}
+	if len(t.Routes) > 0 {
+		out := make([]ProviderRoute, len(t.Routes))
+		copy(out, t.Routes)
+		return out
+	}
+	if t.ChannelKind == "" || t.ServiceType == "" {
+		return nil
+	}
+	return []ProviderRoute{{
+		ChannelKind: t.ChannelKind,
+		ServiceType: t.ServiceType,
+		Candidates:  append([]ProviderCandidate(nil), t.Candidates...),
+	}}
+}
+
+// SupportsChannelKind 判断 provider 是否可从指定渠道页发起快速添加。
+func (t *ProviderTemplate) SupportsChannelKind(kind string) bool {
+	for _, route := range t.AutoAddRoutes() {
+		if route.ChannelKind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// CandidatesForKey 按 API Key 前缀返回默认 route 的候选 baseURL 顺序。
 //
 // 规则（对应用户决策）：
 //  1. key 前缀命中某 PlanTag → 该 plan 的候选优先（按 Priority 升序），其余候选追加在后作为回退
@@ -130,6 +185,17 @@ func GetProviderTemplate(providerID string) (*ProviderTemplate, bool) {
 //
 // 返回的候选已按探测顺序排列，调用方依次探测，命中即用。
 func (t *ProviderTemplate) CandidatesForKey(apiKey string) []ProviderCandidate {
+	if t == nil {
+		return nil
+	}
+	return t.CandidatesForRouteKey(ProviderRoute{Candidates: t.Candidates}, apiKey)
+}
+
+// CandidatesForRouteKey 按 API Key 前缀返回指定 route 的候选 baseURL 顺序。
+func (t *ProviderTemplate) CandidatesForRouteKey(route ProviderRoute, apiKey string) []ProviderCandidate {
+	if t == nil {
+		return nil
+	}
 	matchedPlan := ""
 	for _, rule := range t.KeyPrefixRules {
 		if rule.Prefix != "" && strings.HasPrefix(apiKey, rule.Prefix) {
@@ -151,12 +217,12 @@ func (t *ProviderTemplate) CandidatesForKey(apiKey string) []ProviderCandidate {
 	}
 
 	if matchedPlan == "" {
-		return sortByPriority(t.Candidates)
+		return sortByPriority(route.Candidates)
 	}
 
-	preferred := make([]ProviderCandidate, 0, len(t.Candidates))
-	fallback := make([]ProviderCandidate, 0, len(t.Candidates))
-	for _, cand := range t.Candidates {
+	preferred := make([]ProviderCandidate, 0, len(route.Candidates))
+	fallback := make([]ProviderCandidate, 0, len(route.Candidates))
+	for _, cand := range route.Candidates {
 		if cand.PlanTag == matchedPlan {
 			preferred = append(preferred, cand)
 		} else {
@@ -164,4 +230,22 @@ func (t *ProviderTemplate) CandidatesForKey(apiKey string) []ProviderCandidate {
 		}
 	}
 	return append(sortByPriority(preferred), sortByPriority(fallback)...)
+}
+
+func mimoClaudeCandidates() []ProviderCandidate {
+	return []ProviderCandidate{
+		{BaseURL: "https://api.xiaomimimo.com/anthropic", PlanTag: "payg", Region: "global", Priority: 0},
+		{BaseURL: "https://token-plan-cn.xiaomimimo.com/anthropic", PlanTag: "token_plan", Region: "cn", Priority: 0},
+		{BaseURL: "https://token-plan-sgp.xiaomimimo.com/anthropic", PlanTag: "token_plan", Region: "sgp", Priority: 1},
+		{BaseURL: "https://token-plan-ams.xiaomimimo.com/anthropic", PlanTag: "token_plan", Region: "ams", Priority: 2},
+	}
+}
+
+func mimoChatCandidates() []ProviderCandidate {
+	return []ProviderCandidate{
+		{BaseURL: "https://api.xiaomimimo.com/v1", PlanTag: "payg", Region: "global", Priority: 0},
+		{BaseURL: "https://token-plan-cn.xiaomimimo.com/v1", PlanTag: "token_plan", Region: "cn", Priority: 0},
+		{BaseURL: "https://token-plan-sgp.xiaomimimo.com/v1", PlanTag: "token_plan", Region: "sgp", Priority: 1},
+		{BaseURL: "https://token-plan-ams.xiaomimimo.com/v1", PlanTag: "token_plan", Region: "ams", Priority: 2},
+	}
 }

@@ -27,6 +27,14 @@ export interface ProviderCandidate {
   priority?: number
 }
 
+/** Provider 在某个 CCX 协议渠道下的原生上游入口 */
+export interface ProviderRoute {
+  channelKind: string
+  serviceType: string
+  description?: string
+  candidates?: ProviderCandidate[]
+}
+
 /** 官方 provider 模板 */
 export interface ProviderTemplate {
   providerId: string
@@ -38,6 +46,17 @@ export interface ProviderTemplate {
   originTier?: string
   keyPrefixRules?: ProviderKeyPrefixRule[]
   candidates?: ProviderCandidate[]
+  routes?: ProviderRoute[]
+}
+
+/** 自动添加创建出的单条渠道 */
+export interface AutoAddChannelResult {
+  channelKind: string
+  channelUid: string
+  index: number
+  name: string
+  serviceType: string
+  discoveryStarted: boolean
 }
 
 /** 自动添加渠道响应 */
@@ -45,6 +64,7 @@ export interface AutoAddChannelResponse {
   channelUid: string
   index: number
   discoveryStarted: boolean
+  channels?: AutoAddChannelResult[]
 }
 
 /** Endpoint 发现信息 */

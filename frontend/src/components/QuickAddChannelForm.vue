@@ -340,11 +340,9 @@ const serviceTypeColor = computed(() => {
 const isCopilot = computed(() => serviceType.value === 'copilot')
 
 // ---- Provider 模板计算属性 ----
-// 仅展示与当前渠道类型匹配的 provider（channelKind 为空视为通用）
+// 仅展示与当前渠道类型匹配的 provider；多 route provider 只要包含当前 tab 即可显示。
 const availableProviders = computed(() =>
-  providerTemplates.value.filter(
-    p => !p.channelKind || p.channelKind === props.channelType,
-  ),
+  providerTemplates.value.filter(p => providerSupportsChannel(p, props.channelType)),
 )
 
 // 选择项：首项为「自定义」（value=''），其余为官方 provider
@@ -378,6 +376,23 @@ const statusText = computed(() => {
 })
 
 // ---- 方法 ----
+function providerRouteForChannel(provider: ProviderTemplate | undefined, channelType: ChannelType) {
+  if (!provider) return undefined
+  const route = provider.routes?.find(item => item.channelKind === channelType)
+  if (route) return route
+  if (!provider.channelKind || provider.channelKind === channelType) {
+    return {
+      channelKind: provider.channelKind,
+      serviceType: provider.serviceType,
+    }
+  }
+  return undefined
+}
+
+function providerSupportsChannel(provider: ProviderTemplate, channelType: ChannelType): boolean {
+  return providerRouteForChannel(provider, channelType) !== undefined
+}
+
 function getDefaultServiceType(): ServiceType {
   if (props.channelType === 'chat') return 'openai'
   if (props.channelType === 'gemini') return 'gemini'
@@ -395,9 +410,9 @@ function onServiceTypeChange() {
 // 切换 provider：选中官方 provider 时锁定其 serviceType（baseURL 由后端判定）
 function onProviderChange() {
   submitError.value = ''
-  const tmpl = selectedProvider.value
-  if (tmpl) {
-    serviceType.value = tmpl.serviceType as ServiceType
+  const route = providerRouteForChannel(selectedProvider.value, props.channelType)
+  if (route?.serviceType) {
+    serviceType.value = route.serviceType as ServiceType
   }
 }
 
@@ -538,12 +553,16 @@ async function handleSubmit() {
           },
     )
 
-    if (result.discoveryStarted) {
-      startPolling(props.channelType, result.index)
+    const currentChannel = result.channels?.find(ch => ch.channelKind === props.channelType)
+    const currentIndex = currentChannel?.index ?? result.index
+    const discoveryStarted = currentChannel?.discoveryStarted ?? result.discoveryStarted
+
+    if (discoveryStarted) {
+      startPolling(props.channelType, currentIndex)
     } else {
       autoStatus.status = ''
       submitting.value = false
-      emit('added', result.index)
+      emit('added', currentIndex)
     }
   } catch (err) {
     stopPolling()

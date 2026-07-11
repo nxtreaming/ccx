@@ -255,15 +255,14 @@ func (r *AutoDiscoveryRunner) probeEndpoint(ctx context.Context, client *http.Cl
 		return result
 	}
 
-	// 构建 models URL
-	modelsURL := strings.TrimRight(baseURL, "/")
+	// 构建 models URL。baseURL 可能已包含 /v1，避免拼出 /v1/v1/models。
+	modelsURL := buildModelsProbeURL(baseURL)
 	if channel.ServiceType == "gemini" {
 		// Gemini 不支持 /v1/models，跳过
 		result.ProtocolOk = false
 		result.ErrorMessage = "Gemini 暂不支持 models 探测"
 		return result
 	}
-	modelsURL += "/v1/models"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
@@ -311,6 +310,18 @@ func (r *AutoDiscoveryRunner) probeEndpoint(ctx context.Context, client *http.Cl
 	result.ProtocolOk = true
 
 	return result
+}
+
+func buildModelsProbeURL(baseURL string) string {
+	skipVersionPrefix := strings.HasSuffix(baseURL, "#")
+	if skipVersionPrefix {
+		baseURL = strings.TrimSuffix(baseURL, "#")
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	if verifyVersionPattern.MatchString(baseURL) || skipVersionPrefix {
+		return baseURL + "/models"
+	}
+	return baseURL + "/v1/models"
 }
 
 func lookupDiscoveryBuiltinManifest(channel *config.UpstreamConfig, baseURL string) (config.BuiltinModelsManifest, bool) {
