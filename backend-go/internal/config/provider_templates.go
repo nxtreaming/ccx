@@ -8,19 +8,19 @@ import "strings"
 // 探测验证可用性后自动创建渠道，无需手填 baseURL / 选协议 / 配兼容开关。
 //
 // baseURL 按上游原生协议区分端点，调用时走该 baseURL 的原生协议路径，零协议转换。
+// ProviderTemplate 只描述来源和端点，不再承载 channel-presets 兼容开关；
+// autoManaged 渠道的模型与能力差异由后端智能调度/ModelResolver 处理。
 // 首批 provider 均使用 Anthropic 兼容入口（ServiceType=claude / ChannelKind=messages）。
 type ProviderTemplate struct {
-	ProviderID       string              `json:"providerId"`       // "mimo" / "deepseek" / ...
-	DisplayName      string              `json:"displayName"`      // "小米 MiMo"
-	Description      string              `json:"description"`      // key 前缀说明等
-	ChannelKind      string              `json:"channelKind"`      // "messages" / "chat"
-	ServiceType      string              `json:"serviceType"`      // "claude" / "openai"
-	OriginType       string              `json:"originType"`       // "official_api"
-	OriginTier       string              `json:"originTier"`       // "first"
-	KeyPrefixRules   []KeyPrefixRule     `json:"keyPrefixRules"`   // key 前缀 → plan 判别
-	Candidates       []ProviderCandidate `json:"candidates"`       // 候选 baseURL（含 plan 标签）
-	PresetRef        string              `json:"presetRef"`        // channel-presets.json 的 provider key（用于后端 apply 预设）
-	PresetCollection string              `json:"presetCollection"` // 预设集合名（如 "claudeMessages"）
+	ProviderID     string              `json:"providerId"`     // "mimo" / "deepseek" / ...
+	DisplayName    string              `json:"displayName"`    // "小米 MiMo"
+	Description    string              `json:"description"`    // key 前缀说明等
+	ChannelKind    string              `json:"channelKind"`    // "messages" / "chat"
+	ServiceType    string              `json:"serviceType"`    // "claude" / "openai"
+	OriginType     string              `json:"originType"`     // "official_api"
+	OriginTier     string              `json:"originTier"`     // "first"
+	KeyPrefixRules []KeyPrefixRule     `json:"keyPrefixRules"` // key 前缀 → plan 判别
+	Candidates     []ProviderCandidate `json:"candidates"`     // 候选 baseURL（含 plan 标签）
 }
 
 // KeyPrefixRule 按 API Key 前缀判别 plan 类型。
@@ -48,15 +48,13 @@ type ProviderCandidate struct {
 // baseURL 一律填 Anthropic 兼容入口且不带 /v1（claude provider 会自动补 /v1/messages）。
 var builtinProviderTemplates = []ProviderTemplate{
 	{
-		ProviderID:       "mimo",
-		DisplayName:      "小米 MiMo",
-		Description:      "sk- 按量付费 / tp- Token Plan 订阅（自动判别区域集群）",
-		ChannelKind:      "messages",
-		ServiceType:      "claude",
-		OriginType:       "official_api",
-		OriginTier:       "first",
-		PresetRef:        "mimo",
-		PresetCollection: "claudeMessages",
+		ProviderID:  "mimo",
+		DisplayName: "小米 MiMo",
+		Description: "sk- 按量付费 / tp- Token Plan 订阅（自动判别区域集群）",
+		ChannelKind: "messages",
+		ServiceType: "claude",
+		OriginType:  "official_api",
+		OriginTier:  "first",
 		KeyPrefixRules: []KeyPrefixRule{
 			{Prefix: "sk-", PlanTag: "payg"},
 			{Prefix: "tp-", PlanTag: "token_plan"},
@@ -69,44 +67,38 @@ var builtinProviderTemplates = []ProviderTemplate{
 		},
 	},
 	{
-		ProviderID:       "deepseek",
-		DisplayName:      "DeepSeek",
-		Description:      "DeepSeek 官方 API（Anthropic 兼容协议）",
-		ChannelKind:      "messages",
-		ServiceType:      "claude",
-		OriginType:       "official_api",
-		OriginTier:       "first",
-		PresetRef:        "deepseek",
-		PresetCollection: "claudeMessages",
+		ProviderID:  "deepseek",
+		DisplayName: "DeepSeek",
+		Description: "DeepSeek 官方 API（Anthropic 兼容协议）",
+		ChannelKind: "messages",
+		ServiceType: "claude",
+		OriginType:  "official_api",
+		OriginTier:  "first",
 		Candidates: []ProviderCandidate{
 			{BaseURL: "https://api.deepseek.com/anthropic", PlanTag: "", Region: "", Priority: 0},
 		},
 	},
 	{
-		ProviderID:       "kimi",
-		DisplayName:      "Kimi (Moonshot)",
-		Description:      "Moonshot Kimi 官方 API（Anthropic 兼容，自动判别全球/中国节点）",
-		ChannelKind:      "messages",
-		ServiceType:      "claude",
-		OriginType:       "official_api",
-		OriginTier:       "first",
-		PresetRef:        "kimi",
-		PresetCollection: "claudeMessages",
+		ProviderID:  "kimi",
+		DisplayName: "Kimi (Moonshot)",
+		Description: "Moonshot Kimi 官方 API（Anthropic 兼容，自动判别全球/中国节点）",
+		ChannelKind: "messages",
+		ServiceType: "claude",
+		OriginType:  "official_api",
+		OriginTier:  "first",
 		Candidates: []ProviderCandidate{
 			{BaseURL: "https://api.moonshot.cn/anthropic", PlanTag: "", Region: "cn", Priority: 0},
 			{BaseURL: "https://api.moonshot.ai/anthropic", PlanTag: "", Region: "global", Priority: 1},
 		},
 	},
 	{
-		ProviderID:       "glm",
-		DisplayName:      "智谱 GLM",
-		Description:      "智谱 GLM 官方 API（Anthropic 兼容协议）",
-		ChannelKind:      "messages",
-		ServiceType:      "claude",
-		OriginType:       "official_api",
-		OriginTier:       "first",
-		PresetRef:        "glm",
-		PresetCollection: "claudeMessages",
+		ProviderID:  "glm",
+		DisplayName: "智谱 GLM",
+		Description: "智谱 GLM 官方 API（Anthropic 兼容协议）",
+		ChannelKind: "messages",
+		ServiceType: "claude",
+		OriginType:  "official_api",
+		OriginTier:  "first",
 		Candidates: []ProviderCandidate{
 			{BaseURL: "https://open.bigmodel.cn/api/anthropic", PlanTag: "", Region: "", Priority: 0},
 		},

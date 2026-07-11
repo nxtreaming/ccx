@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
-	"github.com/BenedictKing/ccx/internal/presetstore"
 	"github.com/gin-gonic/gin"
 )
 
@@ -62,9 +61,8 @@ type EndpointDiscoveryInfo struct {
 
 // AutoManagedDeps 自动托管路由的依赖注入。
 type AutoManagedDeps struct {
-	CfgManager  *config.ConfigManager
-	Runner      *AutoDiscoveryRunner
-	PresetStore *presetstore.PresetStore // 用于 provider 模板化添加时后端 apply 预设（可为 nil）
+	CfgManager *config.ConfigManager
+	Runner     *AutoDiscoveryRunner
 }
 
 // RegisterAutoManagedRoutes 注册自动托管 API 路由。
@@ -177,13 +175,6 @@ func handleAutoAdd(deps *AutoManagedDeps) gin.HandlerFunc {
 			upstream.BaseURL = baseURLs[0]
 			upstream.APIKeys = req.APIKeys
 			upstream.APIKeyConfigs = keyConfigs
-
-			// 后端 apply 预设（modelMapping / 兼容开关 / 视觉回退 / RPM 等）
-			if deps.PresetStore != nil {
-				if err := applyProviderPreset(deps.PresetStore.Get(), tmpl.PresetCollection, tmpl.PresetRef, &upstream); err != nil {
-					log.Printf("[AutoManaged-Add] 应用 provider 预设失败（继续创建）: %v", err)
-				}
-			}
 		} else {
 			// 自定义模式：保持原有行为
 			upstream.BaseURL = req.BaseURLs[0]

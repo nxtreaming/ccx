@@ -78,7 +78,7 @@ func (r *ModelResolver) ResolveModel(
 	// 手动配置视为已知正确，不经过能力下界检查（设计 doc 安全边界）。
 	if r.cfgManager != nil {
 		upstream := r.findUpstream(channelUID, channelKind)
-		if upstream != nil {
+		if upstream != nil && !upstream.AutoManaged {
 			redirected, matched := config.RedirectModelWithMatch(requestModel, upstream)
 			if matched && redirected != requestModel {
 				return redirected, true, "manual_redirect"
@@ -129,29 +129,56 @@ func (r *ModelResolver) ResolveModel(
 		requestModel, best.ModelID, best.ModelFamily, best.QualityTier)
 }
 
-// ResolveModelAnyEndpoint 在渠道的所有 endpoint 中查找 requestModel 的可用模型。
+// ResolveModelAnyEndpoint 在渠道的所有 endpoint 中判断 requestModel 是否可由自动映射支持。
 // 不限定 metricsKey，适用于调度器候选筛选阶段（此时无具体 API Key）。
-// 仅用于判断"渠道是否可能支持该模型"，不做映射。
-// 有映射需求时应使用 ResolveModel（需具体 metricsKey）。
+// 精确命中已发现模型时直接返回该模型；未命中时从该渠道所有已探测成功模型中选一个
+// request-scoped 候选，避免 autoManaged 渠道在进入 EndpointAttemptPolicy 前被 active_model_filter 误剔除。
+// 真正发送请求前仍会用带 metricsKey 和完整 CapabilityFloor 的 ResolveModel 再做一次 endpoint 级决策。
 func (r *ModelResolver) ResolveModelAnyEndpoint(
 	requestModel string,
 	channelUID string,
 	channelKind string,
-) (found bool, reason string) {
+) (mappedModel string, found bool, reason string) {
 	if r.profileStore == nil {
-		return false, "model_profile_store_unavailable"
+		return requestModel, false, "model_profile_store_unavailable"
 	}
 
+	candidates := make([]ModelProfile, 0)
 	all := r.profileStore.ListByChannel(channelUID)
 	for _, p := range all {
 		if p.ChannelKind != channelKind {
 			continue
 		}
-		if strings.EqualFold(p.ModelID, requestModel) && p.ProbeSuccess {
-			return true, fmt.Sprintf("found_model_in_profile (endpoint=%s)", p.MetricsKey)
+		if !p.ProbeSuccess {
+			continue
+		}
+		candidates = append(candidates, p)
+	}
+	if len(candidates) == 0 {
+		return requestModel, false, "no_probed_model_profiles"
+	}
+
+	for _, p := range candidates {
+		if strings.EqualFold(p.ModelID, requestModel) {
+			return p.ModelID, true, fmt.Sprintf("found_model_in_profile (endpoint=%s)", p.MetricsKey)
 		}
 	}
-	return false, "no_matching_model_in_any_endpoint"
+
+	floor := CapabilityFloor{}
+	if r.cfgManager != nil {
+		routingCfg := r.cfgManager.GetAutopilotRouting()
+		if routingCfg.ModelMapping.CapabilityFloorEnabled {
+			candidates = filterByCapabilityFloor(candidates, floor)
+		}
+	} else {
+		candidates = filterByCapabilityFloor(candidates, floor)
+	}
+	if len(candidates) == 0 {
+		return requestModel, false, "no_capable_model"
+	}
+
+	best := rankBySimilarity(candidates, requestModel, floor)
+	return best.ModelID, true, fmt.Sprintf("mapped_any_endpoint %s->%s", requestModel, best.ModelID)
 }
 
 // ── 过滤与排序 ──

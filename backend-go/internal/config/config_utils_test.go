@@ -64,6 +64,78 @@ func TestExplainModelSupport(t *testing.T) {
 	}
 }
 
+func TestRuntimeUpstreamForAutoManagedProviderStripsLegacyCompat(t *testing.T) {
+	trueValue := true
+	upstream := &UpstreamConfig{
+		ProviderID:                    "mimo",
+		AutoManaged:                   true,
+		ServiceType:                   "claude",
+		BaseURL:                       "https://token-plan-cn.xiaomimimo.com/anthropic",
+		APIKeys:                       []string{"sk-test"},
+		SupportedModels:               []string{"mimo-v2.5-pro", "mimo-v2.5"},
+		RateLimitRPM:                  80,
+		ModelMapping:                  map[string]string{"sonnet": "legacy-target"},
+		ReasoningMapping:              map[string]string{"sonnet": "max"},
+		ReasoningParamStyle:           "thinking",
+		NormalizeMetadataUserID:       &trueValue,
+		StripBillingHeader:            &trueValue,
+		StripEmptyTextBlocks:          true,
+		NormalizeSystemRoleToTopLevel: true,
+		PassbackReasoningContent:      true,
+		PassbackThinkingBlocks:        true,
+		NoVision:                      true,
+		NoVisionModels:                []string{"mimo-v2.5-pro"},
+		VisionFallbackModel:           "mimo-v2.5",
+		StripImageGenerationTool:      true,
+		NormalizeNonstandardChatRoles: true,
+		CodexNativeToolPassthrough:    true,
+		CodexToolCompat:               &trueValue,
+		StripCodexClientTools:         true,
+		ConvertImageURLToB64JSON:      true,
+		InjectDummyThoughtSignature:   true,
+		StripThoughtSignature:         true,
+		HistoricalImageTurnLimit:      4,
+		CompactModel:                  "legacy-compact",
+	}
+
+	runtime := RuntimeUpstreamForAutoManagedProvider(upstream)
+	if runtime == upstream {
+		t.Fatal("autoManaged provider should return a sanitized clone")
+	}
+	if len(runtime.ModelMapping) != 0 || len(runtime.ReasoningMapping) != 0 || runtime.ReasoningParamStyle != "" {
+		t.Fatalf("legacy model/reasoning fields not stripped: %#v", runtime)
+	}
+	if runtime.PassbackReasoningContent || runtime.PassbackThinkingBlocks || runtime.StripEmptyTextBlocks || runtime.NormalizeSystemRoleToTopLevel {
+		t.Fatalf("legacy Claude compat fields not stripped: %#v", runtime)
+	}
+	if runtime.NoVision || len(runtime.NoVisionModels) != 0 || runtime.VisionFallbackModel != "" {
+		t.Fatalf("legacy vision compat fields not stripped: %#v", runtime)
+	}
+	if len(runtime.SupportedModels) != 2 || runtime.RateLimitRPM != 80 || runtime.ProviderID != "mimo" {
+		t.Fatalf("runtime scheduling fields should be preserved: %#v", runtime)
+	}
+	if len(upstream.ModelMapping) == 0 || upstream.PassbackReasoningContent == false {
+		t.Fatal("original upstream must not be mutated")
+	}
+}
+
+func TestRuntimeUpstreamForAutoManagedProviderLeavesManualChannelUntouched(t *testing.T) {
+	upstream := &UpstreamConfig{
+		ProviderID:   "",
+		AutoManaged:  false,
+		ModelMapping: map[string]string{"sonnet": "manual-target"},
+		NoVision:     true,
+	}
+
+	runtime := RuntimeUpstreamForAutoManagedProvider(upstream)
+	if runtime != upstream {
+		t.Fatal("manual channel should not be cloned or sanitized")
+	}
+	if runtime.ModelMapping["sonnet"] != "manual-target" || !runtime.NoVision {
+		t.Fatalf("manual channel fields changed: %#v", runtime)
+	}
+}
+
 func TestIsValidSupportedModelPattern(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -204,6 +204,7 @@ func TryUpstreamWithAllKeys(
 	if len(urlResults) == 0 {
 		return false, "", 0, nil, nil, nil
 	}
+	upstream = config.RuntimeUpstreamForAutoManagedProvider(upstream)
 
 	tryOpts := tryUpstreamOptions{}
 	for _, opt := range opts {

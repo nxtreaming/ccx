@@ -435,6 +435,43 @@ func (u *UpstreamConfig) Clone() *UpstreamConfig {
 	return &cloned
 }
 
+// RuntimeUpstreamForAutoManagedProvider 返回自动托管 provider 渠道的运行时视图。
+//
+// 官方 provider 的自动托管渠道不再使用编辑渠道页里的手工兼容开关；
+// 模型选择和能力差异由 Autopilot 的 ModelResolver/EndpointAttemptPolicy 做 request-scoped 决策。
+// 因此这里屏蔽历史版本可能写入配置的旧兼容字段，避免存量配置继续影响执行。
+func RuntimeUpstreamForAutoManagedProvider(upstream *UpstreamConfig) *UpstreamConfig {
+	if upstream == nil || !upstream.AutoManaged || strings.TrimSpace(upstream.ProviderID) == "" {
+		return upstream
+	}
+
+	runtime := upstream.Clone()
+	runtime.ModelMapping = nil
+	runtime.ReasoningMapping = nil
+	runtime.ReasoningParamStyle = ""
+	runtime.FastMode = false
+	runtime.NormalizeNonstandardChatRoles = false
+	runtime.CodexNativeToolPassthrough = false
+	runtime.CodexToolCompat = nil
+	runtime.StripCodexClientTools = false
+	runtime.StripImageGenerationTool = false
+	runtime.ConvertImageURLToB64JSON = false
+	runtime.NormalizeMetadataUserID = nil
+	runtime.StripBillingHeader = nil
+	runtime.StripEmptyTextBlocks = false
+	runtime.NormalizeSystemRoleToTopLevel = false
+	runtime.InjectDummyThoughtSignature = false
+	runtime.StripThoughtSignature = false
+	runtime.PassbackReasoningContent = false
+	runtime.PassbackThinkingBlocks = false
+	runtime.NoVision = false
+	runtime.NoVisionModels = nil
+	runtime.VisionFallbackModel = ""
+	runtime.HistoricalImageTurnLimit = 0
+	runtime.CompactModel = ""
+	return runtime
+}
+
 func applyModelCapabilityUpdates(upstream *UpstreamConfig, updates UpstreamUpdate) {
 	if upstream == nil {
 		return

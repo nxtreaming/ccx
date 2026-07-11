@@ -670,15 +670,15 @@ func (m *Manager) ResolveModelSupport(kind string, upstream *config.UpstreamConf
 		return false, "", "explain", rsn
 	}
 
-	// 使用 ResolveModelAnyEndpoint 查找渠道所有 endpoint 中是否存在该模型。
-	// 不做映射（映射在 resolveMappedModel 中用完整 metricsKey 完成）。
-	found, resolverReason := m.modelResolver.ResolveModelAnyEndpoint(
+	// 使用 ResolveModelAnyEndpoint 判断渠道所有 endpoint 是否能通过自动映射承接该模型。
+	// 真正请求发送前，resolveMappedModel 会用完整 metricsKey 和 CapabilityFloor 再做 endpoint 级映射。
+	mapped, found, resolverReason := m.modelResolver.ResolveModelAnyEndpoint(
 		model,
 		upstream.ChannelUID,
 		kind,
 	)
 	if found {
-		return true, "", "auto_resolve", resolverReason
+		return true, mapped, "auto_resolve", resolverReason
 	}
 
 	// Resolver 也未命中 → 回退到 ExplainModelSupport（fail-open）

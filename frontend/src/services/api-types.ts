@@ -1267,8 +1267,6 @@ export interface ProviderTemplate {
   originTier?: string
   keyPrefixRules?: ProviderKeyPrefixRule[]
   candidates?: ProviderCandidate[]
-  presetRef?: string
-  presetCollection?: string
 }
 
 // GET /channels/provider-templates 响应

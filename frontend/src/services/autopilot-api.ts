@@ -38,8 +38,6 @@ export interface ProviderTemplate {
   originTier?: string
   keyPrefixRules?: ProviderKeyPrefixRule[]
   candidates?: ProviderCandidate[]
-  presetRef?: string
-  presetCollection?: string
 }
 
 /** 自动添加渠道响应 */

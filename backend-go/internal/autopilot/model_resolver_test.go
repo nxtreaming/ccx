@@ -287,6 +287,61 @@ func TestResolveModel_FindsBestMatch(t *testing.T) {
 	}
 }
 
+func TestResolveModelAnyEndpoint_MapsWithoutExactModelMatch(t *testing.T) {
+	profiles := []ModelProfile{
+		makeModelProfile("mimo-v2.5-pro", ModelFamilyMiMo, QualityTierHigh, 1000000,
+			true, false, true, true, 80),
+		makeModelProfile("mimo-v2.5", ModelFamilyMiMo, QualityTierNormal, 1000000,
+			true, true, true, true, 90),
+	}
+	resolver := newTestResolver(t, profiles)
+
+	mapped, found, reason := resolver.ResolveModelAnyEndpoint("claude-sonnet-5", "ch_test", "messages")
+	if !found {
+		t.Fatalf("expected found=true, reason=%s", reason)
+	}
+	if mapped == "" || mapped == "claude-sonnet-5" {
+		t.Fatalf("expected request model to be mapped to discovered model, got %q", mapped)
+	}
+}
+
+func TestResolveModel_IgnoresLegacyManualRedirectForAutoManagedProvider(t *testing.T) {
+	upstream := config.UpstreamConfig{
+		ChannelUID:   "ch_test",
+		AutoManaged:  true,
+		ProviderID:   "mimo",
+		ModelMapping: map[string]string{"claude-sonnet-5": "legacy-target"},
+	}
+	cfg := config.Config{
+		Upstream: []config.UpstreamConfig{upstream},
+	}
+	cfgManager, cleanup := createTestConfigManagerForResolver(t, cfg)
+	defer cleanup()
+
+	store := &ModelProfileStore{
+		cache:     make(map[string]*ModelProfile),
+		dirtyKeys: make(map[string]struct{}),
+	}
+	profile := makeModelProfile("mimo-v2.5-pro", ModelFamilyMiMo, QualityTierHigh, 1000000,
+		true, false, true, true, 80)
+	if err := store.Upsert(&profile); err != nil {
+		t.Fatalf("写入模型画像失败: %v", err)
+	}
+	resolver := NewModelResolver(store, cfgManager)
+
+	mapped, resolved, reason := resolver.ResolveModel(
+		"claude-sonnet-5", "ch_test", "messages", "metrics_test", CapabilityFloor{})
+	if !resolved {
+		t.Fatalf("expected resolved=true, reason=%s", reason)
+	}
+	if mapped == "legacy-target" {
+		t.Fatalf("autoManaged provider should ignore legacy modelMapping, got %q", mapped)
+	}
+	if mapped != "mimo-v2.5-pro" {
+		t.Fatalf("mapped = %q, want mimo-v2.5-pro", mapped)
+	}
+}
+
 func TestResolveModel_ManualRedirect_ShortCircuits(t *testing.T) {
 	upstream := config.UpstreamConfig{
 		ChannelUID:   "ch_manual",

@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+)
 
 func TestCandidatesForKeyPrefix(t *testing.T) {
 	tmpl, ok := GetProviderTemplate("mimo")
@@ -55,5 +59,17 @@ func TestListAndGetProviderTemplate(t *testing.T) {
 	}
 	if _, ok := GetProviderTemplate("nonexistent"); ok {
 		t.Error("不存在的 providerId 应返回 false")
+	}
+}
+
+func TestProviderTemplatesDoNotExposeChannelPresetRefs(t *testing.T) {
+	data, err := json.Marshal(ListProviderTemplates())
+	if err != nil {
+		t.Fatalf("序列化 provider templates 失败: %v", err)
+	}
+	for _, field := range [][]byte{[]byte("presetRef"), []byte("presetCollection")} {
+		if bytes.Contains(data, field) {
+			t.Fatalf("provider template 不应暴露 channel preset 字段 %q: %s", field, data)
+		}
 	}
 }
