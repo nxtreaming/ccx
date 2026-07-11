@@ -423,6 +423,7 @@ func TestWriteProfilesSetsEndpointUID(t *testing.T) {
 	baseURL := "https://api.example.com"
 	apiKey := "sk-test-key"
 	channel := &config.UpstreamConfig{
+		AccountUID:  "acct-profile",
 		ChannelUID:  channelUID,
 		ServiceType: "claude",
 		BaseURL:     baseURL,
@@ -443,6 +444,17 @@ func TestWriteProfilesSetsEndpointUID(t *testing.T) {
 	}
 	if profile.EndpointUID != endpointUID {
 		t.Fatalf("EndpointUID = %q, want %q", profile.EndpointUID, endpointUID)
+	}
+	var persistedCount int
+	if err := store.db.QueryRow(`
+SELECT COUNT(*) FROM autopilot_endpoint_profiles
+WHERE endpoint_uid = ? AND account_uid = ? AND service_type = ?
+  AND json_array_length(json_extract(profile_json, '$.availableModels')) = 1
+`, endpointUID, "acct-profile", "claude").Scan(&persistedCount); err != nil {
+		t.Fatalf("查询持久化画像失败: %v", err)
+	}
+	if persistedCount != 1 {
+		t.Fatal("自动发现返回前应持久化账号、协议和模型列表")
 	}
 }
 

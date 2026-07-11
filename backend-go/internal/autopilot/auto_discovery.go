@@ -469,6 +469,7 @@ func (r *AutoDiscoveryRunner) writeProfiles(channelUID string, channel *config.U
 		profile.EndpointUID = endpointUID
 		profile.AccountUID = channel.AccountUID
 		profile.ChannelUID = channelUID
+		profile.ServiceType = channel.ServiceType
 		profile.BaseURL = ep.BaseURL
 		profile.KeyMask = ep.KeyMask
 		profile.KeyHash = KeyHashFromAPIKey(apiKey)
@@ -528,6 +529,16 @@ func (r *AutoDiscoveryRunner) writeProfiles(channelUID string, channel *config.U
 						channelUID, modelID, err)
 				}
 			}
+		}
+	}
+
+	// 自动发现完成即持久化，避免等待下一轮 L1 画像刷新期间进程退出而丢失结果。
+	if err := r.store.Flush(); err != nil {
+		log.Printf("[AutoDiscovery-Profile] 画像落盘失败 channel=%s: %v", channelUID, err)
+	}
+	if r.ModelProfileStore != nil {
+		if err := r.ModelProfileStore.Flush(); err != nil {
+			log.Printf("[AutoDiscovery-ModelProfile] 模型画像落盘失败 channel=%s: %v", channelUID, err)
 		}
 	}
 }
