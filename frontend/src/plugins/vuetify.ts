@@ -234,6 +234,11 @@ import {
   mdiConnection,
   mdiDomain,
   mdiCheckDecagram,
+  mdiCheckDecagramOutline,
+  mdiCookieCogOutline,
+  mdiContentSaveOutline,
+  mdiDeleteOutline,
+  mdiShieldKeyOutline,
 } from '@mdi/js'
 
 // 图标名称到 SVG path 的映射 (使用 kebab-case)
@@ -337,6 +342,11 @@ const iconMap: Record<string, string> = {
   'key-chain': mdiKeyChain,
   'domain': mdiDomain,
   'check-decagram': mdiCheckDecagram,
+  'check-decagram-outline': mdiCheckDecagramOutline,
+  'cookie-cog-outline': mdiCookieCogOutline,
+  'content-save-outline': mdiContentSaveOutline,
+  'delete-outline': mdiDeleteOutline,
+  'shield-key-outline': mdiShieldKeyOutline,
   'speedometer': mdiSpeedometer,
   'speedometer-slow': mdiSpeedometerSlow,
   'rocket-launch': mdiRocketLaunch,
