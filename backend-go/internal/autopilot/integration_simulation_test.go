@@ -52,7 +52,7 @@ func TestAutopilotSimulation_EndToEnd(t *testing.T) {
 			EstTokens: 50000,
 		}
 		body, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest(http.MethodPost, "/route-dryrun", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/smart-routing/diagnose", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 

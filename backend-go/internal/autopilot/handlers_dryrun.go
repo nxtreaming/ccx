@@ -11,10 +11,11 @@ import (
 
 // RegisterDryRunRoutes 注册 SmartRouter dry-run API 到给定路由组。
 func RegisterDryRunRoutes(router gin.IRouter, smartRouter *SmartRouter) {
-	group := router.Group("/route-dryrun")
-	{
-		group.POST("", handleDryRunRoute(smartRouter))
-	}
+	handler := handleDryRunRoute(smartRouter)
+	// 设计文档标准路径；挂载到 /api group 后为 /api/smart-routing/diagnose。
+	router.POST("/smart-routing/diagnose", handler)
+	// 兼容早期内部路径，避免已有调用方立即失效。
+	router.POST("/route-dryrun", handler)
 }
 
 // DryRunRequest dry-run 请求体。
@@ -43,7 +44,7 @@ type DryRunRequest struct {
 	ToolUseNeed bool `json:"toolUseNeed"`
 	// ReasoningNeed 是否需要推理。
 	ReasoningNeed bool `json:"reasoningNeed"`
-	// ContextNeed 最小上下文窗口。
+	// ContextNeed 估算输入 token 数；输出上限由真实 scheduler 独立校验。
 	ContextNeed int `json:"contextNeed"`
 }
 
@@ -57,7 +58,7 @@ type DryRunResponse struct {
 	Message string `json:"message,omitempty"`
 }
 
-// handleDryRunRoute POST /api/autopilot/route-dryrun
+// handleDryRunRoute POST /api/smart-routing/diagnose（兼容 /api/route-dryrun）。
 // 根据请求特征计算路由计划，返回候选分数明细，不发真实请求。
 func handleDryRunRoute(smartRouter *SmartRouter) gin.HandlerFunc {
 	return func(c *gin.Context) {

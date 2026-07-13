@@ -13,13 +13,23 @@ import (
 
 // ── SmartRouter（设计 §4.6 + §4.6.3 + §4.6.5 + P0.4 + P0.5）──
 
+// RoutingPlanCandidate 是 dry-run 候选，保留评分明细并附加自动路由约束结果。
+// 匿名嵌入保持既有 channelUid/score 等 JSON 字段不变。
+type RoutingPlanCandidate struct {
+	ScoredCandidate
+	Selected      bool     `json:"selected"`
+	FilterReasons []string `json:"filterReasons,omitempty"`
+}
+
 // RoutingPlan 一次请求的路由计划（§4.6.1）。
 type RoutingPlan struct {
-	RequestProfile *RequestProfile   `json:"requestProfile"`
-	Candidates     []ScoredCandidate `json:"candidates"`
-	SortReasons    []string          `json:"sortReasons,omitempty"`
-	Mode           RoutingMode       `json:"mode"`
-	Weights        ScoringWeights    `json:"weights"`
+	RequestProfile     *RequestProfile        `json:"requestProfile"`
+	Candidates         []RoutingPlanCandidate `json:"candidates"`
+	SelectedChannelUID string                 `json:"selectedChannelUid,omitempty"`
+	FallbackUsed       bool                   `json:"fallbackUsed"`
+	SortReasons        []string               `json:"sortReasons,omitempty"`
+	Mode               RoutingMode            `json:"mode"`
+	Weights            ScoringWeights         `json:"weights"`
 }
 
 // SmartRouter 根据请求画像 + 渠道画像生成路由计划。
@@ -182,33 +192,57 @@ func (r *SmartRouter) BuildPlan(profile *RequestProfile) *RoutingPlan {
 		Weights:     weights,
 	}
 
-	candidates := make([]ScoredCandidate, 0, len(entries))
+	scoredEntries := make([]scoredChannelEntry, 0, len(entries))
 	for _, e := range entries {
 		e.ScoringCandidate.SavingsScore = savingsMap[e.ChannelUID]
 		scored := ScoreCandidate(e.ScoringCandidate, ctx)
-		candidates = append(candidates, scored)
+		scoredEntries = append(scoredEntries, scoredChannelEntry{entry: e, scored: scored})
+	}
+	sortScoredChannelEntries(scoredEntries)
+
+	selectedCandidates := make([]RoutingPlanCandidate, 0, len(scoredEntries))
+	filteredCandidates := make([]RoutingPlanCandidate, 0, len(scoredEntries))
+	for _, se := range scoredEntries {
+		reasons := routingHardConstraintReasons(profile, &se.entry)
+		candidate := RoutingPlanCandidate{
+			ScoredCandidate: se.scored,
+			Selected:        len(reasons) == 0,
+			FilterReasons:   reasons,
+		}
+		if candidate.Selected {
+			selectedCandidates = append(selectedCandidates, candidate)
+		} else {
+			filteredCandidates = append(filteredCandidates, candidate)
+		}
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Score > candidates[j].Score
-	})
-
-	// OriginTier tie-breaker：与 executeFilter（真实路由路径）保持一致，
-	// 否则 dry-run 预览结果会和实际调度在同分情况下产生不同的候选顺序。
-	if len(candidates) > 1 {
-		originTiers := make(map[string]ChannelOriginTier, len(entries))
-		for _, e := range entries {
-			originTiers[e.ChannelUID] = e.OriginTier
+	fallbackUsed := len(selectedCandidates) == 0 && len(filteredCandidates) > 0
+	candidates := make([]RoutingPlanCandidate, 0, len(scoredEntries))
+	selectedChannelUID := ""
+	sortReasons := []string{"smart_routing_dryrun"}
+	if fallbackUsed {
+		// 与 auto 一致：全部候选不满足硬约束时，不返回空计划，而是回退到原评分顺序。
+		candidates = append(candidates, filteredCandidates...)
+		selectedChannelUID = candidates[0].ChannelUID
+		sortReasons = append(sortReasons, "dryrun_auto_failopen_simulation")
+	} else {
+		// 通过硬约束的候选排在前面；过滤候选保留在尾部供诊断。
+		candidates = append(candidates, selectedCandidates...)
+		candidates = append(candidates, filteredCandidates...)
+		if len(selectedCandidates) > 0 {
+			selectedChannelUID = selectedCandidates[0].ChannelUID
 		}
-		candidates = BreakTieByOriginTier(candidates, originTiers)
+		sortReasons = append(sortReasons, "dryrun_auto_filter_simulation")
 	}
 
 	return &RoutingPlan{
-		RequestProfile: profile,
-		Candidates:     candidates,
-		SortReasons:    []string{"smart_routing_dryrun"},
-		Mode:           RoutingModeDryRun,
-		Weights:        weights,
+		RequestProfile:     profile,
+		Candidates:         candidates,
+		SelectedChannelUID: selectedChannelUID,
+		FallbackUsed:       fallbackUsed,
+		SortReasons:        sortReasons,
+		Mode:               RoutingModeDryRun,
+		Weights:            weights,
 	}
 }
 
@@ -406,34 +440,12 @@ func (r *SmartRouter) executeFilter(
 	}
 	savingsMap := NormalizeSavingsScore(costMap)
 
-	// 评分 + 按总分降序排序
-	type scoredEntry struct {
-		entry  channelScoreEntry
-		scored ScoredCandidate
-	}
-	scoredEntries := make([]scoredEntry, 0, len(entries))
+	// 评分；advisor 可能追加本地候选，因此统一在其后排序。
+	scoredEntries := make([]scoredChannelEntry, 0, len(entries))
 	for _, e := range entries {
 		e.ScoringCandidate.SavingsScore = savingsMap[e.ChannelUID]
 		scored := ScoreCandidate(e.ScoringCandidate, scoringCtx)
-		scoredEntries = append(scoredEntries, scoredEntry{entry: e, scored: scored})
-	}
-	sort.Slice(scoredEntries, func(i, j int) bool {
-		return scoredEntries[i].scored.Score > scoredEntries[j].scored.Score
-	})
-
-	// ── OriginTier tie-breaker（同分时按 OriginTier rank 降序）──
-	// 单轮 sort.SliceStable：Score 降序主序 + 同分时 OriginTier 降序次序
-	// 稳定排序保证同分同 rank 的候选保持输入相对顺序不变
-	if len(scoredEntries) > 1 {
-		sort.SliceStable(scoredEntries, func(i, j int) bool {
-			ci, cj := scoredEntries[i], scoredEntries[j]
-			// 主序：Score 降序
-			if ci.scored.Score != cj.scored.Score {
-				return ci.scored.Score > cj.scored.Score
-			}
-			// 同分 tie-breaker：OriginTier rank 降序
-			return originTierRank(ci.entry.OriginTier) > originTierRank(cj.entry.OriginTier)
-		})
+		scoredEntries = append(scoredEntries, scoredChannelEntry{entry: e, scored: scored})
 	}
 
 	// ── Phase 2: Advisor hint + 本地候选 ──
@@ -530,7 +542,7 @@ func (r *SmartRouter) executeFilter(
 						// 本地候选纳入评分流程
 						localEntry.ScoringCandidate.SavingsScore = savingsMap[le.RuntimeUID]
 						localScored := ScoreCandidate(localEntry.ScoringCandidate, scoringCtx)
-						scoredEntries = append(scoredEntries, scoredEntry{entry: localEntry, scored: localScored})
+						scoredEntries = append(scoredEntries, scoredChannelEntry{entry: localEntry, scored: localScored})
 						// 本地候选成本为0，可能影响 savingsMap 归一化；
 						// 但不影响排序结果（savings 只是其中一个维度）
 					}
@@ -541,6 +553,7 @@ func (r *SmartRouter) executeFilter(
 			}
 		}()
 	}
+	sortScoredChannelEntries(scoredEntries)
 
 	// ── 人工意图匹配（设计 §4.6.4）──
 	// 在评分排序后、构建结果前执行；shadow 模式只标注不影响输出。
@@ -863,6 +876,22 @@ type channelScoreEntry struct {
 	ScoringCandidate    ScoringCandidate
 }
 
+type scoredChannelEntry struct {
+	entry  channelScoreEntry
+	scored ScoredCandidate
+}
+
+// sortScoredChannelEntries 统一真实路径与 dry-run 的排序语义。
+// Score 为主序，OriginTier 只在同分时作为次序；稳定排序保留完全同分候选的输入顺序。
+func sortScoredChannelEntries(entries []scoredChannelEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].scored.Score != entries[j].scored.Score {
+			return entries[i].scored.Score > entries[j].scored.Score
+		}
+		return originTierRank(entries[i].entry.OriginTier) > originTierRank(entries[j].entry.OriginTier)
+	})
+}
+
 // buildChannelEntry 从 ChannelInfo + UpstreamConfig 构建评分输入。
 // 无画像时使用中性默认值（不惩罚）。
 func (r *SmartRouter) buildChannelEntry(
@@ -1041,7 +1070,9 @@ func (r *SmartRouter) collectChannelEntries(channelKind, model string) []channel
 		if status == "" {
 			status = "active"
 		}
-		if status == "disabled" {
+		// 与真实 CandidateFilter 的配置层候选条件一致；运行时 cooldown/熔断
+		// 由 scheduler 诊断接口负责，BuildPlan 不持有对应运行态。
+		if status != "active" || len(upstream.APIKeys) == 0 {
 			continue
 		}
 		// 模型过滤
