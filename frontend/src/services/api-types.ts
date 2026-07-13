@@ -1379,17 +1379,18 @@ export interface ManagedAccountCredential {
   mimoTokenPlan?: MiMoTokenPlanSnapshot
 }
 
-/** 火山套餐单个时间窗口用量。Agent Plan 含 quota（可算余量），Coding Plan 仅 used。 */
+/** 火山套餐单个时间窗口用量。Agent Plan 含 quota/used，Coding Plan 含 usedPercent。 */
 export interface VolcenginePlanUsageWindow {
   quota?: number
   used: number
+  usedPercent?: number
   resetTime?: number
 }
 
 /**
  * 火山套餐用量快照。
  * Agent Plan 填充 fiveHour/daily/weekly/monthly（含 quota）；
- * Coding Plan 填充 fiveHour/weekly/monthly（仅 used）。
+ * Coding Plan 填充 fiveHour/weekly/monthly（仅 usedPercent）。
  */
 export interface VolcenginePlanUsage {
   fiveHour?: VolcenginePlanUsageWindow

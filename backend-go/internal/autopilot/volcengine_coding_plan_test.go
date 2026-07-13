@@ -100,6 +100,15 @@ func TestVolcenginePlanClientUsesBaseURLHintWhenBothPlansExist(t *testing.T) {
 	}
 }
 
+func TestVolcenginePlanClientUsageEndpoint(t *testing.T) {
+	client := &volcenginePlanClient{}
+	for _, action := range []string{"GetAFPUsage", "GetCodingPlanUsage"} {
+		if got := client.endpointFor(action, "ark"); got != "https://open.volcengineapi.com/" {
+			t.Fatalf("%s endpoint=%q", action, got)
+		}
+	}
+}
+
 func TestVolcenginePlanClientFetchUsage(t *testing.T) {
 	t.Run("Agent Plan 返回 AFP 四窗口含额度", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,17 +135,21 @@ func TestVolcenginePlanClientFetchUsage(t *testing.T) {
 		}
 	})
 
-	t.Run("Coding Plan 仅返回已用量", func(t *testing.T) {
+	t.Run("Coding Plan 返回三个窗口的已用百分比", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if action := r.URL.Query().Get("Action"); action != "GetSeatInfoUsage" {
+			if action := r.URL.Query().Get("Action"); action != "GetCodingPlanUsage" {
 				t.Errorf("action=%s", action)
 			}
-			var body struct{ ProjectName string }
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			if body.ProjectName != "default" {
-				t.Errorf("ProjectName=%s", body.ProjectName)
+			if r.ContentLength != 0 {
+				t.Errorf("contentLength=%d, want 0", r.ContentLength)
 			}
-			_, _ = w.Write([]byte(`{"Result":{"SeatInfoUsage":{"ShortTermUsage":567.06,"WeeklyUsage":158.8,"MonthlyUsage":460.45}}}`))
+			if auth := r.Header.Get("Authorization"); !strings.Contains(auth, "/cn-beijing/ark/request") {
+				t.Errorf("签名 scope 错误: %s", auth)
+			}
+			_, _ = w.Write([]byte(`{"Result":{"Status":"Running","QuotaUsage":[
+				{"Level":"session","Percent":12.5,"ResetTimestamp":1782226478},
+				{"Level":"weekly","Percent":24,"ResetTimestamp":1782662400},
+				{"Level":"monthly","Percent":7.5,"ResetTimestamp":-1}]}}`))
 		}))
 		defer server.Close()
 		client := &volcenginePlanClient{Endpoint: server.URL, HTTPClient: server.Client()}
@@ -144,11 +157,14 @@ func TestVolcenginePlanClientFetchUsage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if usage.FiveHour == nil || usage.FiveHour.Used != 567.06 || usage.FiveHour.Quota != 0 {
+		if usage.FiveHour == nil || usage.FiveHour.UsedPercent == nil || *usage.FiveHour.UsedPercent != 12.5 || usage.FiveHour.ResetTime != 1782226478000 {
 			t.Fatalf("fiveHour=%+v", usage.FiveHour)
 		}
-		if usage.Weekly == nil || usage.Weekly.Used != 158.8 || usage.Monthly == nil || usage.Monthly.Used != 460.45 {
+		if usage.Weekly == nil || usage.Weekly.UsedPercent == nil || *usage.Weekly.UsedPercent != 24 || usage.Monthly == nil || usage.Monthly.UsedPercent == nil || *usage.Monthly.UsedPercent != 7.5 {
 			t.Fatalf("weekly=%+v monthly=%+v", usage.Weekly, usage.Monthly)
+		}
+		if usage.Monthly.ResetTime != 0 {
+			t.Fatalf("monthly resetTime=%d, want 0", usage.Monthly.ResetTime)
 		}
 		if usage.Daily != nil {
 			t.Fatalf("Coding Plan 不应有 daily 窗口: %+v", usage.Daily)
@@ -158,7 +174,7 @@ func TestVolcenginePlanClientFetchUsage(t *testing.T) {
 	t.Run("接口 4xx 返回错误", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"ResponseMetadata":{"Error":{"Code":"MissingParameter.ProjectName","Message":"missing"}}}`))
+			_, _ = w.Write([]byte(`{"ResponseMetadata":{"Error":{"Code":"AccessDenied","Message":"missing ark:GetCodingPlanUsage permission"}}}`))
 		}))
 		defer server.Close()
 		client := &volcenginePlanClient{Endpoint: server.URL, HTTPClient: server.Client()}

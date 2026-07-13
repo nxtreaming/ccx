@@ -903,16 +903,25 @@ const hasVolcengineUsageData = (usage?: VolcenginePlanUsage) => {
   return !!(usage.fiveHour || usage.daily || usage.weekly || usage.monthly)
 }
 
-// 根据剩余百分比着色（仅 Agent Plan 有额度）：低于 20% 红，低于 50% 橙。
+// 根据剩余百分比着色：低于 20% 红，低于 50% 橙。
 const volcengineUsageColor = (remainingPercent: number): string => {
   if (remainingPercent < 20) return 'text-error'
   if (remainingPercent < 50) return 'text-warning'
   return ''
 }
 
-// 单窗口展示：Agent Plan 有 quota 时显示 "剩余% · 已用/额度"，Coding Plan 仅显示已用量。
+// 单窗口展示：Agent Plan 显示剩余%与已用/额度，Coding Plan 显示剩余%与已用%。
 const volcengineWindowCell = (labelKey: string, win?: VolcenginePlanUsageWindow): VolcengineUsageCell | null => {
   if (!win) return null
+  if (typeof win.usedPercent === 'number' && Number.isFinite(win.usedPercent)) {
+    const usedPercent = Math.max(0, Math.min(100, win.usedPercent))
+    const remainingPercent = 100 - usedPercent
+    return {
+      labelKey,
+      text: `${t('volcengineAccessKey.remaining')} ${remainingPercent.toFixed(1)}% · ${t('volcengineAccessKey.used')} ${usedPercent.toFixed(1)}%`,
+      colorClass: volcengineUsageColor(remainingPercent),
+    }
+  }
   if (win.quota && win.quota > 0) {
     const remaining = Math.max(0, win.quota - win.used)
     const remainingPercent = Math.max(0, Math.min(100, (remaining / win.quota) * 100))

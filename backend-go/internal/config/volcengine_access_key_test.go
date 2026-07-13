@@ -27,6 +27,12 @@ func TestVolcengineAccessKeySurvivesAccountSyncAndReload(t *testing.T) {
 	if err := manager.SetManagedAccountVolcenginePlan("acct_volc", "cred_volc", "agent_plan", "Large", "Running"); err != nil {
 		t.Fatal(err)
 	}
+	usedPercent := 12.5
+	if err := manager.SetManagedAccountVolcenginePlanUsage("acct_volc", "cred_volc", &VolcenginePlanUsage{
+		FiveHour: &VolcenginePlanUsageWindow{UsedPercent: &usedPercent},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := manager.RenameManagedAccount("acct_volc", "volc-renamed"); err != nil {
 		t.Fatal(err)
 	}
@@ -43,5 +49,9 @@ func TestVolcengineAccessKeySurvivesAccountSyncAndReload(t *testing.T) {
 	}
 	if pair := credential.VolcengineAccessKey; pair.AccessKeyID != "AKID" || pair.SecretAccessKey != "SECRET" || pair.Plan != "agent_plan" || pair.PlanTier != "Large" {
 		t.Fatalf("持久化内容不匹配: %+v", pair)
+	}
+	usage := credential.VolcengineAccessKey.Usage
+	if usage == nil || usage.FiveHour == nil || usage.FiveHour.UsedPercent == nil || *usage.FiveHour.UsedPercent != usedPercent {
+		t.Fatalf("用量百分比未持久化: %+v", usage)
 	}
 }

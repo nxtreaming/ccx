@@ -478,6 +478,7 @@ func handleRefreshVolcenginePlanUsage(deps *AutoManagedDeps) gin.HandlerFunc {
 		usage, err := planClient.FetchUsage(c.Request.Context(), pair, accessKey.Plan)
 		if err != nil {
 			usage = &config.VolcenginePlanUsage{FetchedAt: time.Now(), Error: err.Error()}
+			log.Printf("[Volcengine-Usage] 查询套餐用量失败: account=%s credential=%s err=%v", accountUID, credentialUID, err)
 		}
 		if saveErr := deps.CfgManager.SetManagedAccountVolcenginePlanUsage(accountUID, credentialUID, usage); saveErr != nil {
 			log.Printf("[Volcengine-Usage] 保存套餐用量失败: %v", saveErr)

@@ -168,16 +168,17 @@ type VolcengineAccessKeyPair struct {
 }
 
 // VolcenginePlanUsageWindow 描述火山套餐单个时间窗口的用量。
-// Agent Plan 返回 Quota+Used（可算余量）；Coding Plan 仅返回 Used（无额度）。
+// Agent Plan 返回 Quota+Used（可算余量）；Coding Plan 仅返回 UsedPercent。
 type VolcenginePlanUsageWindow struct {
-	Quota     float64 `json:"quota,omitempty"`
-	Used      float64 `json:"used"`
-	ResetTime int64   `json:"resetTime,omitempty"`
+	Quota       float64  `json:"quota,omitempty"`
+	Used        float64  `json:"used"`
+	UsedPercent *float64 `json:"usedPercent,omitempty"`
+	ResetTime   int64    `json:"resetTime,omitempty"`
 }
 
 // VolcenginePlanUsage 是火山套餐用量快照。
 // Agent Plan 填充 FiveHour/Daily/Weekly/Monthly（含 Quota）；
-// Coding Plan 填充 FiveHour(=ShortTerm)/Weekly/Monthly（仅 Used）。
+// Coding Plan 填充 FiveHour(=session)/Weekly/Monthly（仅 UsedPercent）。
 type VolcenginePlanUsage struct {
 	FiveHour  *VolcenginePlanUsageWindow `json:"fiveHour,omitempty"`
 	Daily     *VolcenginePlanUsageWindow `json:"daily,omitempty"`

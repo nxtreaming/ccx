@@ -21,6 +21,7 @@ import (
 const (
 	volcengineManagementHost = "ark.cn-beijing.volcengineapi.com"
 	volcenginePlanModelsHost = "ark.cn-beijing.volces.com"
+	volcengineOpenAPIHost    = "open.volcengineapi.com"
 	volcengineRegion         = "cn-beijing"
 	volcengineAPIVersion     = "2024-01-01"
 	volcengineContentType    = "application/json; charset=UTF-8"
@@ -58,8 +59,8 @@ type volcengineResponse struct {
 		AFPDaily    *volcengineAFPWindow `json:"AFPDaily,omitempty"`
 		AFPWeekly   *volcengineAFPWindow `json:"AFPWeekly,omitempty"`
 		AFPMonthly  *volcengineAFPWindow `json:"AFPMonthly,omitempty"`
-		// Coding Plan GetSeatInfoUsage 用量。
-		SeatInfoUsage *volcengineSeatInfoUsage `json:"SeatInfoUsage,omitempty"`
+		// Coding Plan GetCodingPlanUsage 用量窗口。
+		QuotaUsage []volcengineCodingPlanQuota `json:"QuotaUsage,omitempty"`
 	} `json:"Result"`
 }
 
@@ -70,11 +71,11 @@ type volcengineAFPWindow struct {
 	ResetTime int64   `json:"ResetTime"`
 }
 
-// volcengineSeatInfoUsage 是 Coding Plan 个人席位用量（仅已用量，无额度）。
-type volcengineSeatInfoUsage struct {
-	ShortTermUsage float64 `json:"ShortTermUsage"`
-	WeeklyUsage    float64 `json:"WeeklyUsage"`
-	MonthlyUsage   float64 `json:"MonthlyUsage"`
+// volcengineCodingPlanQuota 是 Coding Plan 单个用量窗口（仅返回已用百分比）。
+type volcengineCodingPlanQuota struct {
+	Level          string  `json:"Level"`
+	Percent        float64 `json:"Percent"`
+	ResetTimestamp int64   `json:"ResetTimestamp"`
 }
 
 type volcengineAPIError struct {
@@ -178,15 +179,15 @@ func (c *volcenginePlanClient) FetchModels(ctx context.Context, pair *config.Vol
 }
 
 // FetchUsage 查询火山套餐用量快照。
-// Agent Plan 走 GetAFPUsage(service ark)，返回含额度的四窗口；
-// Coding Plan 走 GetSeatInfoUsage(service ark_stg, ProjectName=default)，仅返回已用量。
+// Agent Plan 走 GetAFPUsage，返回含额度的四窗口；
+// Coding Plan 走 GetCodingPlanUsage，返回 session/weekly/monthly 已用百分比。
 func (c *volcenginePlanClient) FetchUsage(ctx context.Context, pair *config.VolcengineAccessKeyPair, plan string) (*config.VolcenginePlanUsage, error) {
 	plan = normalizeVolcenginePlan(plan)
 	usage := &config.VolcenginePlanUsage{FetchedAt: c.now()}
 	switch plan {
 	case volcenginePlanAgent:
 		var decoded volcengineResponse
-		if err := c.doAction(ctx, pair, "GetAFPUsage", "ark", struct{}{}, &decoded); err != nil {
+		if err := c.doAction(ctx, pair, "GetAFPUsage", "ark", nil, &decoded); err != nil {
 			return nil, err
 		}
 		usage.FiveHour = afpWindow(decoded.Result.AFPFiveHour)
@@ -196,16 +197,30 @@ func (c *volcenginePlanClient) FetchUsage(ctx context.Context, pair *config.Volc
 		return usage, nil
 	case volcenginePlanCoding:
 		var decoded volcengineResponse
-		if err := c.doAction(ctx, pair, "GetSeatInfoUsage", "ark_stg", map[string]string{"ProjectName": "default"}, &decoded); err != nil {
+		if err := c.doAction(ctx, pair, "GetCodingPlanUsage", "ark", nil, &decoded); err != nil {
 			return nil, err
 		}
-		seat := decoded.Result.SeatInfoUsage
-		if seat == nil {
-			return nil, fmt.Errorf("火山 Coding Plan 未返回席位用量")
+		for _, quota := range decoded.Result.QuotaUsage {
+			resetTime := quota.ResetTimestamp
+			if resetTime <= 0 {
+				resetTime = 0
+			} else if resetTime < 1_000_000_000_000 {
+				resetTime *= 1000
+			}
+			usedPercent := quota.Percent
+			window := &config.VolcenginePlanUsageWindow{UsedPercent: &usedPercent, ResetTime: resetTime}
+			switch strings.ToLower(strings.TrimSpace(quota.Level)) {
+			case "session", "5h", "5-hour", "fivehour", "five_hour", "rolling_5h":
+				usage.FiveHour = window
+			case "weekly", "week", "7d":
+				usage.Weekly = window
+			case "monthly", "month":
+				usage.Monthly = window
+			}
 		}
-		usage.FiveHour = &config.VolcenginePlanUsageWindow{Used: seat.ShortTermUsage}
-		usage.Weekly = &config.VolcenginePlanUsageWindow{Used: seat.WeeklyUsage}
-		usage.Monthly = &config.VolcenginePlanUsageWindow{Used: seat.MonthlyUsage}
+		if usage.FiveHour == nil && usage.Weekly == nil && usage.Monthly == nil {
+			return nil, fmt.Errorf("火山 Coding Plan 未返回套餐用量")
+		}
 		return usage, nil
 	default:
 		return nil, fmt.Errorf("未知的火山套餐类型: %s", plan)
@@ -230,20 +245,17 @@ func (c *volcenginePlanClient) now() time.Time {
 
 func (c *volcenginePlanClient) doAction(ctx context.Context, pair *config.VolcengineAccessKeyPair, action, service string, payload any, target *volcengineResponse) error {
 	if pair == nil || strings.TrimSpace(pair.AccessKeyID) == "" || strings.TrimSpace(pair.SecretAccessKey) == "" {
-		return fmt.Errorf("火山套餐识别和模型发现需要绑定 Access Key ID 与 Secret Access Key")
+		return fmt.Errorf("火山套餐识别、模型发现和用量查询需要绑定 Access Key ID 与 Secret Access Key")
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("编码火山管控面请求失败: %w", err)
-	}
-	endpoint := strings.TrimSpace(c.Endpoint)
-	if endpoint == "" {
-		host := volcengineManagementHost
-		if service == "ark_stg" {
-			host = volcenginePlanModelsHost
+	var body []byte
+	if payload != nil {
+		var err error
+		body, err = json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("编码火山管控面请求失败: %w", err)
 		}
-		endpoint = "https://" + host + "/"
 	}
+	endpoint := c.endpointFor(action, service)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("构造火山管控面请求失败: %w", err)
@@ -286,6 +298,20 @@ func (c *volcenginePlanClient) doAction(ctx context.Context, pair *config.Volcen
 	}
 	*target = decoded
 	return nil
+}
+
+func (c *volcenginePlanClient) endpointFor(action, service string) string {
+	if endpoint := strings.TrimSpace(c.Endpoint); endpoint != "" {
+		return endpoint
+	}
+	if action == "GetAFPUsage" || action == "GetCodingPlanUsage" {
+		return "https://" + volcengineOpenAPIHost + "/"
+	}
+	host := volcengineManagementHost
+	if service == "ark_stg" {
+		host = volcenginePlanModelsHost
+	}
+	return "https://" + host + "/"
 }
 
 func applyVolcengineSignature(req *http.Request, body []byte, accessKeyID, secretAccessKey, service string, now time.Time) {
