@@ -12,6 +12,7 @@ func TestMessagesEntry_ResponseMatrix_AllFourUpstreams(t *testing.T) {
 		name         string
 		provider     Provider
 		body         string
+		model        string
 		expectText   bool
 		expectTool   bool
 		stopReason   string
@@ -21,7 +22,8 @@ func TestMessagesEntry_ResponseMatrix_AllFourUpstreams(t *testing.T) {
 		{
 			name:         "messages_from_claude",
 			provider:     &ClaudeProvider{},
-			body:         `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":11,"output_tokens":7}}`,
+			body:         `{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":11,"output_tokens":7}}`,
+			model:        "claude-test",
 			expectText:   true,
 			stopReason:   "end_turn",
 			inputTokens:  11,
@@ -30,7 +32,8 @@ func TestMessagesEntry_ResponseMatrix_AllFourUpstreams(t *testing.T) {
 		{
 			name:         "messages_from_openai",
 			provider:     &OpenAIProvider{},
-			body:         `{"id":"chatcmpl_1","choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":13,"completion_tokens":5,"total_tokens":18}}`,
+			body:         `{"id":"chatcmpl_1","model":"openai-test","choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":13,"completion_tokens":5,"total_tokens":18}}`,
+			model:        "openai-test",
 			expectText:   true,
 			stopReason:   "end_turn",
 			inputTokens:  13,
@@ -39,7 +42,8 @@ func TestMessagesEntry_ResponseMatrix_AllFourUpstreams(t *testing.T) {
 		{
 			name:         "messages_from_gemini",
 			provider:     &GeminiProvider{},
-			body:         `{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":17,"candidatesTokenCount":3,"totalTokenCount":20}}`,
+			body:         `{"modelVersion":"gemini-test","candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":17,"candidatesTokenCount":3,"totalTokenCount":20}}`,
+			model:        "gemini-test",
 			expectText:   true,
 			stopReason:   "end_turn",
 			inputTokens:  17,
@@ -48,7 +52,8 @@ func TestMessagesEntry_ResponseMatrix_AllFourUpstreams(t *testing.T) {
 		{
 			name:         "messages_from_responses",
 			provider:     &ResponsesProvider{},
-			body:         `{"id":"resp_1","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}],"usage":{"input_tokens":19,"output_tokens":9,"total_tokens":28}}`,
+			body:         `{"id":"resp_1","model":"responses-test","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}],"usage":{"input_tokens":19,"output_tokens":9,"total_tokens":28}}`,
+			model:        "responses-test",
 			expectText:   true,
 			stopReason:   "end_turn",
 			inputTokens:  19,
@@ -70,6 +75,9 @@ func TestMessagesEntry_ResponseMatrix_AllFourUpstreams(t *testing.T) {
 			}
 			if claudeResp == nil {
 				t.Fatal("response is nil")
+			}
+			if claudeResp.Model != tt.model {
+				t.Fatalf("model = %q, want %q", claudeResp.Model, tt.model)
 			}
 			if len(claudeResp.Content) == 0 {
 				t.Fatalf("content is empty: %#v", claudeResp)

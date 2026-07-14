@@ -337,6 +337,7 @@ func (p *OpenAIProvider) ConvertToClaudeResponse(providerResp *types.ProviderRes
 		ID:      generateID(),
 		Type:    "message",
 		Role:    "assistant",
+		Model:   openaiResp.Model,
 		Content: []types.ClaudeContent{},
 	}
 

@@ -690,6 +690,69 @@ func TestInvariant_AssistMode_RecordsTrace(t *testing.T) {
 	}
 }
 
+// TestInvariant_AssistMode_PreservesUnscoredCandidates 验证 assist 只重排，
+// 基础可用性检查未通过的候选仍保留在末尾供原调度 failover。
+func TestInvariant_AssistMode_PreservesUnscoredCandidates(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AutopilotRouting = config.AutopilotRoutingConfig{RoutingMode: "assist"}
+
+	_, cfgManager, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	traceStore, err := NewTraceStoreWithDB(nil)
+	if err != nil {
+		t.Fatalf("创建 TraceStore 失败: %v", err)
+	}
+	router := &SmartRouter{configManager: cfgManager, traceStore: traceStore}
+	filter := router.CandidateFilterFor(testProfile())
+	if filter == nil {
+		t.Fatal("assist 模式下 filter 不应为 nil")
+	}
+
+	channels := []scheduler.ChannelInfo{
+		{Index: 0, Name: "ch-premium", Priority: 1, Status: "active"},
+		{Index: 1, Name: "ch-standard", Priority: 2, Status: "active"},
+		{Index: 2, Name: "ch-economy", Priority: 3, Status: "active"},
+	}
+	upstreams := cfgManager.GetConfig().Upstream
+	upstreamFor := func(ch scheduler.ChannelInfo) *config.UpstreamConfig {
+		u := upstreams[ch.Index]
+		return &u
+	}
+	available := func(ch scheduler.ChannelInfo, _ *config.UpstreamConfig) bool {
+		return ch.Index != 1
+	}
+
+	result, err := filter(channels, upstreamFor, available)
+	if err != nil {
+		t.Fatalf("filter 执行失败: %v", err)
+	}
+	if len(result) != len(channels) {
+		t.Fatalf("assist 不得删除候选: before=%d after=%d result=%v", len(channels), len(result), result)
+	}
+	seen := make(map[int]bool, len(result))
+	for _, ch := range result {
+		seen[ch.Index] = true
+	}
+	for _, ch := range channels {
+		if !seen[ch.Index] {
+			t.Fatalf("assist 丢失候选 index=%d: result=%v", ch.Index, result)
+		}
+	}
+	if result[len(result)-1].Index != 1 {
+		t.Fatalf("未评分候选应保留在评分候选之后: result=%v", result)
+	}
+
+	traces := traceStore.ListRecent(1)
+	if len(traces) != 1 {
+		t.Fatalf("应记录 1 条 trace，实际: %d", len(traces))
+	}
+	trace := traces[0]
+	if trace.CandidatesBefore != len(channels) || trace.CandidatesAfter != len(channels) || len(trace.Candidates) != len(channels) {
+		t.Fatalf("assist trace 候选数不一致: before=%d after=%d candidates=%d", trace.CandidatesBefore, trace.CandidatesAfter, len(trace.Candidates))
+	}
+}
+
 // TestInvariant_AutoMode_VisionFilter 验证：
 // auto 模式下，vision 请求过滤掉不支持识图的渠道。
 func TestInvariant_AutoMode_VisionFilter(t *testing.T) {

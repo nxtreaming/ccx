@@ -531,6 +531,9 @@ func (p *ResponsesProvider) ConvertToClaudeResponse(providerResp *types.Provider
 		Role:    "assistant",
 		Content: []types.ClaudeContent{},
 	}
+	if model, ok := responsesResp["model"].(string); ok {
+		claudeResp.Model = model
+	}
 
 	if id, ok := responsesResp["id"].(string); ok && id != "" {
 		claudeResp.ID = id

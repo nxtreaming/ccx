@@ -62,6 +62,7 @@ type ClaudeResponse struct {
 	ID         string          `json:"id"`
 	Type       string          `json:"type"`
 	Role       string          `json:"role"`
+	Model      string          `json:"model,omitempty"`
 	Content    []ClaudeContent `json:"content"`
 	StopReason string          `json:"stop_reason,omitempty"`
 	Usage      *Usage          `json:"usage,omitempty"`
@@ -125,6 +126,7 @@ type OpenAIToolFunction struct {
 // OpenAIResponse OpenAI 响应
 type OpenAIResponse struct {
 	ID      string         `json:"id"`
+	Model   string         `json:"model"`
 	Choices []OpenAIChoice `json:"choices"`
 	Usage   *Usage         `json:"usage,omitempty"`
 }

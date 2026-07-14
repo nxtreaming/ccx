@@ -391,6 +391,9 @@ func (p *GeminiProvider) ConvertToClaudeResponse(providerResp *types.ProviderRes
 		Role:    "assistant",
 		Content: []types.ClaudeContent{},
 	}
+	if model, ok := geminiResp["modelVersion"].(string); ok {
+		claudeResp.Model = model
+	}
 
 	candidates, ok := geminiResp["candidates"].([]interface{})
 	if !ok || len(candidates) == 0 {

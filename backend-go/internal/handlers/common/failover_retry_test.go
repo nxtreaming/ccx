@@ -443,6 +443,20 @@ func TestShouldRetryWithNextKey_FuzzyMode_InvalidRequestShouldNotFailover(t *tes
 	}
 }
 
+func TestShouldRetryWithNextKey_ModelNameMismatchOverridesInvalidRequest(t *testing.T) {
+	body := []byte(`{"error":{"message":"The supported API model names are deepseek-v4-pro or deepseek-v4-flash, but you passed claude-sonnet-5.","type":"invalid_request_error","code":"invalid_request_error"}}`)
+
+	for _, fuzzyMode := range []bool{false, true} {
+		gotFailover, gotQuota := ShouldRetryWithNextKey(400, body, fuzzyMode, "Chat")
+		if !gotFailover {
+			t.Errorf("fuzzyMode=%v: 显式模型不支持错误应触发 failover", fuzzyMode)
+		}
+		if gotQuota {
+			t.Errorf("fuzzyMode=%v: 模型不支持错误不应标记为 quota", fuzzyMode)
+		}
+	}
+}
+
 func TestShouldRetryWithNextKey_InvalidRequest5xxShouldFailover(t *testing.T) {
 	tests := []struct {
 		name      string

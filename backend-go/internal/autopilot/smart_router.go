@@ -442,14 +442,26 @@ func (r *SmartRouter) executeFilter(
 	// 收集所有候选的估算成本用于归一化
 	costMap := make(map[string]float64, len(channels))
 	entries := make([]channelScoreEntry, 0, len(channels))
+	// assist 只重排，不得删除原调度仍可能使用的候选。基础可用性检查
+	// 未通过的渠道不参与评分，但保留在已评分候选之后供原调度 failover。
+	passthroughChannels := make([]scheduler.ChannelInfo, 0)
 	for _, ch := range channels {
 		upstream := upstreamFor(ch)
-		if upstream == nil || !candidateAvailable(ch, upstream) {
+		if upstream == nil {
+			if mode == RoutingModeAssist {
+				passthroughChannels = append(passthroughChannels, ch)
+			}
 			continue
 		}
 		// P1.5：按 channel 禁用——命中的渠道对 autopilot 不存在，走和
 		// "候选不可用" 完全相同的跳过路径，不影响其他非 autopilot 选路径。
 		if disabledChannelUIDs[upstream.ChannelUID] {
+			continue
+		}
+		if !candidateAvailable(ch, upstream) {
+			if mode == RoutingModeAssist {
+				passthroughChannels = append(passthroughChannels, ch)
+			}
 			continue
 		}
 		entry := r.buildChannelEntry(
@@ -702,6 +714,24 @@ func (r *SmartRouter) executeFilter(
 				result = append(result, ch)
 				break
 			}
+		}
+	}
+	if mode == RoutingModeAssist && len(passthroughChannels) > 0 {
+		for _, ch := range passthroughChannels {
+			channelUID := fmt.Sprintf("ch_%d", ch.Index)
+			if upstream := upstreamFor(ch); upstream != nil && upstream.ChannelUID != "" {
+				channelUID = upstream.ChannelUID
+			}
+			result = append(result, ch)
+			candidates = append(candidates, RoutingCandidate{
+				ChannelUID:  channelUID,
+				ChannelKind: profile.ChannelKind,
+				HealthState: string(HealthStateUnknown),
+				Selected:    true,
+			})
+		}
+		trace.GlobalFilterReasons["assist_passthrough"] = []string{
+			fmt.Sprintf("%d 个基础可用性未知的候选保留在评分候选之后", len(passthroughChannels)),
 		}
 	}
 
@@ -1178,8 +1208,8 @@ func (r *SmartRouter) loadFamilyPrefs(cfg config.ModelFamilyPreferenceConfig) []
 	return prefs
 }
 
-// UpdateActualChannel 供调度完成后按 TraceUID 回填真实渠道。
-// shadow trace 与实际一致时 Match=true，否则 Match=false。
+// UpdateActualChannel 供调度完成后按 TraceUID 回填真实尝试渠道。
+// shadow trace 同时计算推荐与实际是否一致。
 func (r *SmartRouter) UpdateActualChannel(traceUID, actualChannelUID string) {
 	if r.traceStore == nil || traceUID == "" || actualChannelUID == "" {
 		return

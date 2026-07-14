@@ -1463,7 +1463,14 @@ func (cm *ConfigManager) DisableKeyModel(apiType string, channelIndex int, apiKe
 	now := time.Now()
 	recoverAt := now.Add(time.Hour).Format(time.RFC3339)
 
-	// 去重：同 (key, model) 组合已存在则刷新时间戳与恢复时间
+	// 去重：限制仍生效时不刷新、不写盘，避免并发失败造成热路径磁盘抖动。
+	if upstream.IsKeyModelDisabledNow(apiKey, model, now) {
+		log.Printf("[%s-KeyModel] (Key %s, 模型 %s) 已处于限制期，跳过重复写入 (渠道: %s)",
+			apiType, utils.MaskAPIKey(apiKey), model, upstream.Name)
+		return nil
+	}
+
+	// 同 (key, model) 组合已过期则复用原记录并刷新恢复时间。
 	for i := range upstream.DisabledKeyModels {
 		dm := &upstream.DisabledKeyModels[i]
 		if dm.Key == apiKey && strings.EqualFold(strings.TrimSpace(dm.Model), model) {

@@ -10,11 +10,15 @@ func TestTraceStoreUpdateActualChannelTargetsTraceUID(t *testing.T) {
 
 	first := &RoutingDecisionTrace{
 		TraceUID: "rt_first", Mode: RoutingModeShadow,
-		ShadowChannelUID: "ch_shadow_first", Match: true,
+		SelectedChannelUID: "ch_shadow_first", ShadowChannelUID: "ch_shadow_first", Match: true,
 	}
 	second := &RoutingDecisionTrace{
 		TraceUID: "rt_second", Mode: RoutingModeShadow,
-		ShadowChannelUID: "ch_shadow_second", Match: true,
+		SelectedChannelUID: "ch_shadow_second", ShadowChannelUID: "ch_shadow_second", Match: true,
+	}
+	assist := &RoutingDecisionTrace{
+		TraceUID: "rt_assist", Mode: RoutingModeAssist,
+		SelectedChannelUID: "ch_assist",
 	}
 	endpoint := &RoutingDecisionTrace{
 		TraceUID: "rt_endpoint", Mode: RoutingModeShadow,
@@ -22,6 +26,7 @@ func TestTraceStoreUpdateActualChannelTargetsTraceUID(t *testing.T) {
 	}
 	store.Record(first)
 	store.Record(second)
+	store.Record(assist)
 	store.Record(endpoint)
 
 	if err := store.UpdateActualChannel(first.TraceUID, "ch_actual_first"); err != nil {
@@ -29,6 +34,9 @@ func TestTraceStoreUpdateActualChannelTargetsTraceUID(t *testing.T) {
 	}
 	if err := store.UpdateActualChannel(endpoint.TraceUID, "ch_endpoint"); err != nil {
 		t.Fatalf("UpdateActualChannel(endpoint) error = %v", err)
+	}
+	if err := store.UpdateActualChannel(assist.TraceUID, "ch_assist"); err != nil {
+		t.Fatalf("UpdateActualChannel(assist) error = %v", err)
 	}
 
 	if first.ActualChannelUID != "ch_actual_first" || first.Match {
@@ -39,6 +47,12 @@ func TestTraceStoreUpdateActualChannelTargetsTraceUID(t *testing.T) {
 	}
 	if endpoint.ActualChannelUID != "" {
 		t.Fatalf("endpoint trace should not be treated as channel comparison: %+v", endpoint)
+	}
+	if assist.ActualChannelUID != "ch_assist" {
+		t.Fatalf("assist trace should record actual channel: %+v", assist)
+	}
+	if assist.Match {
+		t.Fatalf("assist trace should not enter shadow match statistics: %+v", assist)
 	}
 }
 

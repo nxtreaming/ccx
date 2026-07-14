@@ -586,8 +586,8 @@ func TryUpstreamWithAllKeys(
 							RequestLogf(c, "[%s-Blacklist] 拉黑 Key 失败: %v", apiType, err)
 						}
 					}
-				} else if redirectedModel != "" && isModelRoutingError(respBodyBytes) {
-					// model_not_found / no available channel：该 Key 在此渠道缺少这个特定模型。
+				} else if redirectedModel != "" && isKeyModelRestrictionError(respBodyBytes) {
+					// 上游明确声明该模型不受支持：限制该 Key 对这个特定模型的路由。
 					// 仅限制 (Key, 模型) 组合（持久化+定时恢复），保留 failover 换渠道，不连累该 Key 其他模型。
 					summary := errorBodySummaryForLog(apiType, resp.StatusCode, respBodyBytes)
 					if err := cfgManager.DisableKeyModel(apiType, channelIndex, apiKey, redirectedModel, "model_not_found", summary); err != nil {
@@ -976,7 +976,13 @@ func selectAttemptAPIKeyFiltered(
 
 	if !keypool.HasEffectiveConfig(upstream) {
 		// 无 keypool 配置时：对 raw APIKeys 应用 policy filter/sort
-		apiKeys := upstream.APIKeys
+		effectiveFailedKeys := failedKeysWithModelRestrictions(upstream, failedKeys, model)
+		apiKeys := make([]string, 0, len(upstream.APIKeys))
+		for _, key := range upstream.APIKeys {
+			if key != "" && !effectiveFailedKeys[key] {
+				apiKeys = append(apiKeys, key)
+			}
+		}
 		if len(apiKeys) == 0 {
 			return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
 		}
@@ -987,7 +993,7 @@ func selectAttemptAPIKeyFiltered(
 		}
 		sorted, _ := callPolicySortKeyBindings(policy, upstream.ChannelUID, baseURL, filtered, apiType, c)
 		if fallback != nil {
-			key, err := fallback(upstream, failedKeys)
+			key, err := fallback(upstream, effectiveFailedKeys)
 			if err != nil {
 				key = ""
 			}
@@ -996,12 +1002,12 @@ func selectAttemptAPIKeyFiltered(
 			for _, k := range sorted {
 				filteredSet[k] = true
 			}
-			if key != "" && filteredSet[key] && !failedKeys[key] {
+			if key != "" && filteredSet[key] && !effectiveFailedKeys[key] {
 				return keypool.Selection{APIKey: key}, key, nil
 			}
 		}
 		for _, key := range sorted {
-			if key != "" && !failedKeys[key] {
+			if key != "" && !effectiveFailedKeys[key] {
 				return keypool.Selection{APIKey: key}, key, nil
 			}
 		}
@@ -1159,7 +1165,7 @@ func selectAttemptAPIKey(channelScheduler *scheduler.ChannelScheduler, kind sche
 		if fallback == nil {
 			return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
 		}
-		apiKey, err := fallback(upstream, failedKeys)
+		apiKey, err := fallback(upstream, failedKeysWithModelRestrictions(upstream, failedKeys, model))
 		if err != nil {
 			return keypool.Selection{}, "", err
 		}
@@ -1196,6 +1202,31 @@ func selectAttemptAPIKey(channelScheduler *scheduler.ChannelScheduler, kind sche
 	}
 
 	return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
+}
+
+func failedKeysWithModelRestrictions(upstream *config.UpstreamConfig, failedKeys map[string]bool, model string) map[string]bool {
+	if upstream == nil || model == "" || len(upstream.DisabledKeyModels) == 0 {
+		return failedKeys
+	}
+
+	var effective map[string]bool
+	now := time.Now()
+	for _, key := range upstream.APIKeys {
+		if !upstream.IsKeyModelDisabledNow(key, model, now) {
+			continue
+		}
+		if effective == nil {
+			effective = make(map[string]bool, len(failedKeys)+1)
+			for failedKey, failed := range failedKeys {
+				effective[failedKey] = failed
+			}
+		}
+		effective[key] = true
+	}
+	if effective == nil {
+		return failedKeys
+	}
+	return effective
 }
 
 func trackStreamingConversation(c *gin.Context, channelScheduler *scheduler.ChannelScheduler, kind scheduler.ChannelKind, model string, channelIndex int, channelName string) string {

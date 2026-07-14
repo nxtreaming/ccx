@@ -539,6 +539,7 @@ func classifyMessage(msg string) (bool, bool) {
 	capabilityKeywords := []string{
 		"multimodal", "vision",
 		"image", "unsupported", "not supported",
+		"supported api model names",
 		"cannot be processed", "无法处理", "不支持",
 	}
 	for _, keyword := range capabilityKeywords {
@@ -1178,6 +1179,34 @@ func isModelRoutingError(bodyBytes []byte) bool {
 		}
 	}
 	return false
+}
+
+// isKeyModelRestrictionError 只识别能归因到当前 Key/上游明确不支持模型的错误。
+// 中转站 "no available channel" 属于 relay 级临时耗尽，只允许 failover，不能禁用健康 Key。
+func isKeyModelRestrictionError(bodyBytes []byte) bool {
+	var errResp map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &errResp); err != nil {
+		return false
+	}
+	errObj, ok := errResp["error"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+
+	code := strings.ToLower(strings.TrimSpace(toStringField(errObj, "code")))
+	message := strings.ToLower(strings.TrimSpace(toStringField(errObj, "message")))
+	if strings.Contains(message, "no available channel for model") ||
+		strings.Contains(message, "under group") ||
+		strings.Contains(message, "(distributor)") {
+		return false
+	}
+	if code == "model_not_found" {
+		return true
+	}
+	return strings.Contains(message, "supported api model names") ||
+		strings.Contains(message, "unsupported model") ||
+		(strings.Contains(message, "model") && strings.Contains(message, "not supported")) ||
+		strings.Contains(message, "model not found")
 }
 
 // normalizeUpstreamErrorStatus 修正上游误报的客户端配置错误状态码

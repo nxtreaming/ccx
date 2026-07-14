@@ -384,8 +384,8 @@ func (s *TraceStore) Record(t *RoutingDecisionTrace) {
 	}
 }
 
-// UpdateActualChannel 按 TraceUID 回填 shadow 决策对应的真实渠道。
-// 仅 channel 级、具有 ShadowChannelUID 的 trace 可比较；endpoint trace 会被忽略。
+// UpdateActualChannel 按 TraceUID 回填 channel 级决策实际尝试的渠道。
+// shadow 额外计算推荐与实际是否一致；endpoint trace 没有 SelectedChannelUID，会被忽略。
 func (s *TraceStore) UpdateActualChannel(traceUID, actualChannelUID string) error {
 	if traceUID == "" || actualChannelUID == "" {
 		return nil
@@ -398,11 +398,13 @@ func (s *TraceStore) UpdateActualChannel(traceUID, actualChannelUID string) erro
 		if trace.TraceUID != traceUID {
 			continue
 		}
-		if trace.Mode != RoutingModeShadow || trace.ShadowChannelUID == "" {
+		if trace.SelectedChannelUID == "" {
 			break
 		}
 		trace.ActualChannelUID = actualChannelUID
-		trace.Match = trace.ShadowChannelUID == actualChannelUID
+		if trace.Mode == RoutingModeShadow && trace.ShadowChannelUID != "" {
+			trace.Match = trace.ShadowChannelUID == actualChannelUID
+		}
 		copy := *trace
 		updated = &copy
 		break
@@ -412,16 +414,20 @@ func (s *TraceStore) UpdateActualChannel(traceUID, actualChannelUID string) erro
 	if updated == nil || s.db == nil {
 		return nil
 	}
-	if !updated.Match {
+	if updated.Mode == RoutingModeShadow && updated.ShadowChannelUID != "" && !updated.Match {
 		return s.persistTrace(updated)
 	}
 
-	// 匹配样本保持 1/10 抽样：仅更新已抽样落盘的记录，不插入新行。
+	// 非 mismatch 样本保持 1/10 抽样：仅更新已抽样落盘的记录，不插入新行。
+	matchInt := 0
+	if updated.Match {
+		matchInt = 1
+	}
 	_, err := s.db.Exec(`
 UPDATE autopilot_routing_traces
-SET actual_uid = ?, match = 1
+SET actual_uid = ?, match = ?
 WHERE trace_uid = ?
-`, updated.ActualChannelUID, updated.TraceUID)
+`, updated.ActualChannelUID, matchInt, updated.TraceUID)
 	if err != nil {
 		return fmt.Errorf("[TraceStore-UpdateActual] 更新失败 uid=%s: %w", updated.TraceUID, err)
 	}

@@ -835,6 +835,22 @@ func TestDisableKeyModelAndIsKeyModelDisabled(t *testing.T) {
 	}
 }
 
+func TestDisableKeyModelDoesNotRewriteActiveRestriction(t *testing.T) {
+	cm := newKeyModelTestConfigManager(t)
+	if err := cm.DisableKeyModel("Messages", 0, "sk-a", "m1", "model_not_found", "first"); err != nil {
+		t.Fatalf("first DisableKeyModel() error = %v", err)
+	}
+	before := cm.GetConfig().Upstream[0].DisabledKeyModels[0]
+
+	if err := cm.DisableKeyModel("Messages", 0, "sk-a", "m1", "different_reason", "second"); err != nil {
+		t.Fatalf("second DisableKeyModel() error = %v", err)
+	}
+	after := cm.GetConfig().Upstream[0].DisabledKeyModels[0]
+	if after != before {
+		t.Fatalf("生效中的重复限制不应被刷新: before=%+v after=%+v", before, after)
+	}
+}
+
 func TestIsKeyModelDisabledNowRespectsRecoverAt(t *testing.T) {
 	now := time.Now()
 	upstream := &UpstreamConfig{
