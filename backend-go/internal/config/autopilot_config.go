@@ -23,12 +23,12 @@ type AutopilotRoutingConfig struct {
 	// routingMode 是智能路由运行模式。
 	// "off"    — 完全关闭，SmartRouter 不计算不记录。
 	// "shadow" — 只计算 + 记录 routing trace，不影响真实调度（默认）。
-	// "assist" — 候选重排但不改变最终选择（本批行为暂同 shadow，后续迭代）。
-	// "auto"   — 全自动，满足准入门槛后接管调度（本批行为暂同 shadow，后续迭代）。
+	// "assist" — 保留全部候选并按评分重排，影响真实调度优先级。
+	// "auto"   — 应用硬约束过滤并按评分重排；候选全被过滤时 fail-open。
 	RoutingMode string `json:"mode,omitempty"`
 
 	// killSwitch 全局急停开关。
-	// true 时无条件回退到 "off"，优先于 RoutingMode 和环境变量 AUTOPILOT_KILL_SWITCH。
+	// true 时无条件回退到 "off"；AUTOPILOT_KILL_SWITCH 可在运行态强制启用急停。
 	KillSwitch bool `json:"killSwitch,omitempty"`
 
 	// disabledTaskClasses 命中的 TaskClass 请求，SmartRouter 完全不介入（等同 off），
@@ -350,9 +350,9 @@ const (
 	AutopilotModeOff = "off"
 	// AutopilotModeShadow 影子模式：只计算+记录，不影响真实调度（默认）。
 	AutopilotModeShadow = "shadow"
-	// AutopilotModeAssist 辅助模式：候选重排但不改变最终选择（本批暂同 shadow）。
+	// AutopilotModeAssist 辅助模式：保留全部候选并按评分重排。
 	AutopilotModeAssist = "assist"
-	// AutopilotModeAuto 全自动模式（本批暂同 shadow，后续迭代启用真实影响）。
+	// AutopilotModeAuto 全自动模式：应用硬约束过滤并按评分重排，支持 fail-open。
 	AutopilotModeAuto = "auto"
 )
 
@@ -723,11 +723,13 @@ func removeEmptyStrings(ss []string) []string {
 
 // GetAutopilotRouting 获取智能路由配置（返回深拷贝）。
 // 如果配置文件中缺失 "autopilot" 块，返回 DefaultAutopilotRoutingConfig()。
-// KillSwitch 与环境变量 AUTOPILOT_KILL_SWITCH 的优先级已在 loadConfig 中处理。
+// 环境变量 AUTOPILOT_KILL_SWITCH 仅叠加到返回值，不污染可持久化配置。
 func (cm *ConfigManager) GetAutopilotRouting() AutopilotRoutingConfig {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	return cm.config.AutopilotRouting
+	cfg := cm.config.AutopilotRouting.deepCopy()
+	applyAutopilotEnvOverrides(&cfg)
+	return cfg
 }
 
 // SetAutopilotRoutingMode 更新智能路由运行模式并持久化。
@@ -777,11 +779,12 @@ func (cm *ConfigManager) SetABTestEnabled(enabled bool) error {
 
 // GetEffectiveRoutingMode 获取智能路由生效模式。
 // KillSwitch=true 时无条件返回 "off"。
-// assist/auto 在本批次暂等同 shadow（注释标注，后续迭代启用真实影响）。
 func (cm *ConfigManager) GetEffectiveRoutingMode() string {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	return cm.config.AutopilotRouting.EffectiveRoutingMode()
+	cfg := cm.config.AutopilotRouting
+	applyAutopilotEnvOverrides(&cfg)
+	return cfg.EffectiveRoutingMode()
 }
 
 // EffectiveRoutingMode 返回智能路由生效模式（无锁版本，供内部使用）。
@@ -790,24 +793,18 @@ func (c AutopilotRoutingConfig) EffectiveRoutingMode() string {
 	if c.KillSwitch {
 		return AutopilotModeOff
 	}
-	// 环境变量急停：在 loadConfig 中已同步到 KillSwitch，此处不再重复读取
 	return c.RoutingMode
 }
 
 // IsAutopilotActive 判断智能路由是否处于影响真实调度的模式。
-// Phase 2 第一批：所有模式（包括 assist/auto）均不影响真实调度，恒返回 false。
-// 后续批次启用 assist/auto 真实影响后，此处改为 mode == auto || mode == assist。
 func (c AutopilotRoutingConfig) IsAutopilotActive() bool {
-	// TODO(P2-后续): 当 assist/auto 真实影响启用后，改为:
-	//   mode := c.EffectiveRoutingMode()
-	//   return mode == AutopilotModeAuto || mode == AutopilotModeAssist
-	_ = c // 抑制 unused 警告
-	return false
+	mode := c.EffectiveRoutingMode()
+	return mode == AutopilotModeAuto || mode == AutopilotModeAssist
 }
 
 // applyAutopilotEnvOverrides 将环境变量覆盖应用到 AutopilotRoutingConfig。
 // 仅处理 AUTOPILOT_KILL_SWITCH（bool-like: true/1/yes/on）。
-// 返回 true 表示有覆盖，需要持久化标记（但环境变量覆盖不写入配置文件）。
+// 调用方必须传入运行态副本，环境变量覆盖不得写回持久配置。
 func applyAutopilotEnvOverrides(c *AutopilotRoutingConfig) {
 	if envVal := os.Getenv(autopilotKillSwitchEnv); isTruthyEnv(envVal) {
 		c.KillSwitch = true

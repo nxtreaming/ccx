@@ -76,6 +76,9 @@ func TestLoadConfigDoesNotPersistAutopilotEnvKillSwitch(t *testing.T) {
 	if !runtimeCfg.KillSwitch || runtimeCfg.EffectiveRoutingMode() != AutopilotModeOff {
 		t.Fatalf("运行态环境急停未生效: %+v", runtimeCfg)
 	}
+	if !cm.GetConfig().AutopilotRouting.KillSwitch {
+		t.Fatal("GetConfig() 应返回已叠加环境急停的运行态快照")
+	}
 
 	persisted := readPersistedAutopilotConfig(t, configPath)
 	if persisted.KillSwitch {
@@ -83,6 +86,71 @@ func TestLoadConfigDoesNotPersistAutopilotEnvKillSwitch(t *testing.T) {
 	}
 	if persisted.RoutingMode != AutopilotModeAuto {
 		t.Fatalf("持久化 mode = %q, want %q", persisted.RoutingMode, AutopilotModeAuto)
+	}
+
+	setters := []struct {
+		name string
+		set  func() error
+	}{
+		{name: "routing mode", set: func() error { return cm.SetAutopilotRoutingMode(AutopilotModeAssist) }},
+		{name: "cost preference", set: func() error {
+			return cm.SetCostPreference(CostPreferenceConfig{Mode: "quality_first"})
+		}},
+		{name: "A/B test", set: func() error { return cm.SetABTestEnabled(true) }},
+	}
+	for _, setter := range setters {
+		t.Run(setter.name, func(t *testing.T) {
+			if err := setter.set(); err != nil {
+				t.Fatalf("更新配置失败: %v", err)
+			}
+			if readPersistedAutopilotConfig(t, configPath).KillSwitch {
+				t.Fatal("Set API 不应将环境急停写入 config.json")
+			}
+			if !cm.GetAutopilotRouting().KillSwitch {
+				t.Fatal("Set API 后环境急停仍应在运行态生效")
+			}
+		})
+	}
+}
+
+func TestLoadConfigFallsBackWhenAutopilotDecodeFails(t *testing.T) {
+	configPath := writeAutopilotMigrationConfig(t, json.RawMessage(`{
+		"schemaVersion": 0,
+		"mode": {"invalid": true}
+	}`))
+
+	cm, err := NewConfigManager(configPath, "")
+	if err != nil {
+		t.Fatalf("NewConfigManager() 应回退 autopilot 配置，而不是失败: %v", err)
+	}
+	cm.CloseWatcher()
+
+	assertCurrentAutopilotDefaults(t, cm.GetAutopilotRouting())
+	assertCurrentAutopilotDefaults(t, readPersistedAutopilotConfig(t, configPath))
+}
+
+func TestOverlayJSONStructPreservesPointerStructDefaults(t *testing.T) {
+	type nestedConfig struct {
+		Enabled bool `json:"enabled"`
+		Limit   int  `json:"limit"`
+	}
+	type pointerConfig struct {
+		Nested *nestedConfig `json:"nested"`
+	}
+
+	cfg := pointerConfig{Nested: &nestedConfig{Enabled: true, Limit: 10}}
+	if err := overlayJSONStruct(&cfg, []byte(`{"nested":{"enabled":false}}`)); err != nil {
+		t.Fatalf("overlayJSONStruct() error = %v", err)
+	}
+	if cfg.Nested == nil || cfg.Nested.Enabled || cfg.Nested.Limit != 10 {
+		t.Fatalf("pointer-to-struct overlay 未保留默认字段: %+v", cfg.Nested)
+	}
+
+	if err := overlayJSONStruct(&cfg, []byte(`{"nested":null}`)); err != nil {
+		t.Fatalf("overlayJSONStruct(null) error = %v", err)
+	}
+	if cfg.Nested != nil {
+		t.Fatalf("显式 null 应清空指针字段: %+v", cfg.Nested)
 	}
 }
 

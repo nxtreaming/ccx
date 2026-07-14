@@ -810,6 +810,7 @@ func (cm *ConfigManager) GetConfig() Config {
 
 	// 深拷贝 AutopilotRouting（map 字段需要独立分配）
 	cloned.AutopilotRouting = cm.config.AutopilotRouting.deepCopy()
+	applyAutopilotEnvOverrides(&cloned.AutopilotRouting)
 
 	return cloned
 }
@@ -1273,6 +1274,7 @@ func (cm *ConfigManager) RegisterOnConfigChange(fn func(Config)) {
 // 调用方需已持有 cm.mu，本方法会在内部释放锁
 func (cm *ConfigManager) fireConfigChangeCallbacks() {
 	snapshot := cm.config.deepCopy()
+	applyAutopilotEnvOverrides(&snapshot.AutopilotRouting)
 	callbacks := cm.configChangeCallbacks
 	cm.mu.Unlock()
 	// 异步执行回调，避免回调中触发配置写操作导致重入死锁

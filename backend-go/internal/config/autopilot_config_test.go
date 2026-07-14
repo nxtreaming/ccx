@@ -81,8 +81,8 @@ func TestAutopilotRoutingConfig_KillSwitchOverridesMode(t *testing.T) {
 	}{
 		{"kill switch 关闭 + shadow", false, "shadow", "shadow", false},
 		{"kill switch 关闭 + off", false, "off", "off", false},
-		{"kill switch 关闭 + assist", false, "assist", "assist", false},
-		{"kill switch 关闭 + auto", false, "auto", "auto", false},
+		{"kill switch 关闭 + assist", false, "assist", "assist", true},
+		{"kill switch 关闭 + auto", false, "auto", "auto", true},
 		{"kill switch 开启 + shadow", true, "shadow", "off", false},
 		{"kill switch 开启 + auto", true, "auto", "off", false},
 		{"kill switch 开启 + off", true, "off", "off", false},
@@ -525,6 +525,26 @@ func TestAutopilotRoutingConfig_DeepCopy(t *testing.T) {
 	}
 	if _, exists := original.TaskDomainStrength.SeedMatrixOverrides["openai/gpt-5"]; exists {
 		t.Error("修改副本 SeedMatrixOverrides 不应影响原始")
+	}
+}
+
+func TestGetAutopilotRoutingReturnsDeepCopy(t *testing.T) {
+	t.Setenv(autopilotKillSwitchEnv, "false")
+	original := DefaultAutopilotRoutingConfig()
+	original.WeightOverrides = map[string]float64{"w_quality": 0.5}
+	original.ModelFamilyPreference.GlobalOrder = []string{"claude", "openai"}
+	cm := &ConfigManager{config: Config{AutopilotRouting: original}}
+
+	first := cm.GetAutopilotRouting()
+	first.WeightOverrides["w_quality"] = 1
+	first.ModelFamilyPreference.GlobalOrder[0] = "modified"
+
+	second := cm.GetAutopilotRouting()
+	if second.WeightOverrides["w_quality"] != 0.5 {
+		t.Fatal("修改 getter 返回的 map 不应污染 ConfigManager")
+	}
+	if second.ModelFamilyPreference.GlobalOrder[0] != "claude" {
+		t.Fatal("修改 getter 返回的 slice 不应污染 ConfigManager")
 	}
 }
 

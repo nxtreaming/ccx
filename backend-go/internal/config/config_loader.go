@@ -68,9 +68,6 @@ func (cm *ConfigManager) loadConfig() error {
 	// 如果配置文件不存在，创建默认配置
 	if _, err := os.Stat(cm.configFile); os.IsNotExist(err) {
 		err := cm.createDefaultConfig()
-		if err == nil {
-			applyAutopilotEnvOverrides(&cm.config.AutopilotRouting)
-		}
 		cm.mu.Unlock()
 		return err
 	}
@@ -82,17 +79,26 @@ func (cm *ConfigManager) loadConfig() error {
 		return err
 	}
 
-	if err := json.Unmarshal(data, &cm.config); err != nil {
-		cm.mu.Unlock()
-		return err
+	var loaded Config
+	autopilotDecodeFallback := false
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		fallback, fallbackErr := decodeConfigWithDefaultAutopilot(data)
+		if fallbackErr != nil {
+			cm.mu.Unlock()
+			return err
+		}
+		loaded = fallback
+		autopilotDecodeFallback = true
+		log.Printf("[Config-Migration] 警告: autopilot 配置无法解析，已回退到默认值: %v", err)
 	}
+	cm.config = loaded
 	cm.config.hydrateManagedAccountCredentials()
 
 	// 兼容旧配置：检查 FuzzyModeEnabled 字段是否存在
 	// 如果不存在，默认设为 true（新功能默认启用）
-	needSaveDefaults := cm.applyConfigDefaults(data)
+	needSaveDefaults := cm.applyConfigDefaults(data) || autopilotDecodeFallback
 	// Autopilot 智能路由配置：旧版本升级、缺失值补齐与校验归一化
-	if cm.applyAutopilotDefaults(data) {
+	if !autopilotDecodeFallback && cm.applyAutopilotDefaults(data) {
 		needSaveDefaults = true
 	}
 	if cm.applyServiceTypeDefaults() {
@@ -147,12 +153,33 @@ func (cm *ConfigManager) loadConfig() error {
 		}
 	}
 
-	// 环境变量只覆盖运行态，必须放在所有持久化迁移之后，避免把急停状态写回配置文件。
-	applyAutopilotEnvOverrides(&cm.config.AutopilotRouting)
-
 	// 成功加载后通知回调（在锁内构造快照，释放锁后通知）
 	cm.fireConfigChangeCallbacks()
 	return nil
+}
+
+// decodeConfigWithDefaultAutopilot 仅忽略无法强类型解析的 autopilot 块。
+// 若移除该块后仍解析失败，说明错误位于其他配置，调用方应保留原始错误。
+func decodeConfigWithDefaultAutopilot(rawJSON []byte) (Config, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(rawJSON, &root); err != nil {
+		return Config{}, err
+	}
+	if _, exists := root["autopilot"]; !exists {
+		return Config{}, fmt.Errorf("autopilot 配置块不存在")
+	}
+	root["autopilot"] = json.RawMessage("null")
+
+	sanitized, err := json.Marshal(root)
+	if err != nil {
+		return Config{}, err
+	}
+	var cfg Config
+	if err := json.Unmarshal(sanitized, &cfg); err != nil {
+		return Config{}, err
+	}
+	cfg.AutopilotRouting = DefaultAutopilotRoutingConfig()
+	return cfg, nil
 }
 
 // createDefaultConfig 创建默认配置
@@ -250,7 +277,9 @@ func (cm *ConfigManager) applyAutopilotDefaults(rawJSON []byte) bool {
 				metadata.SchemaVersion < currentAutopilotConfigSchemaVersion {
 				upgraded := DefaultAutopilotRoutingConfig()
 				if err := overlayJSONStruct(&upgraded, rawAutopilot); err != nil {
-					log.Printf("[Config-Migration] 警告: autopilot 旧配置升级失败: %v", err)
+					cm.config.AutopilotRouting = DefaultAutopilotRoutingConfig()
+					needSave = true
+					log.Printf("[Config-Migration] 警告: autopilot 旧配置升级失败，已回退到默认值: %v", err)
 				} else {
 					upgraded.SchemaVersion = currentAutopilotConfigSchemaVersion
 					cm.config.AutopilotRouting = upgraded
@@ -262,9 +291,10 @@ func (cm *ConfigManager) applyAutopilotDefaults(rawJSON []byte) bool {
 	}
 
 	// 校验与归一化的结果也必须持久化，保证一次升级后配置文件与运行态一致。
-	beforeValidation := cm.config.AutopilotRouting.deepCopy()
+	beforeValidation, beforeErr := json.Marshal(cm.config.AutopilotRouting)
 	cm.config.AutopilotRouting.Validate()
-	if !reflect.DeepEqual(beforeValidation, cm.config.AutopilotRouting) {
+	afterValidation, afterErr := json.Marshal(cm.config.AutopilotRouting)
+	if beforeErr != nil || afterErr != nil || !bytes.Equal(beforeValidation, afterValidation) {
 		needSave = true
 		log.Printf("[Config-Migration] autopilot 配置已归一化")
 	}
@@ -310,11 +340,24 @@ func overlayJSONStructValue(dst reflect.Value, rawJSON []byte) error {
 		}
 
 		trimmed := bytes.TrimSpace(rawField)
-		if field.Kind() == reflect.Struct && string(trimmed) != "null" && len(trimmed) > 0 && trimmed[0] == '{' {
-			if err := overlayJSONStructValue(field, rawField); err != nil {
-				return fmt.Errorf("字段 %s: %w", jsonName, err)
+		if len(trimmed) > 0 && trimmed[0] == '{' {
+			switch {
+			case field.Kind() == reflect.Struct:
+				if err := overlayJSONStructValue(field, rawField); err != nil {
+					return fmt.Errorf("字段 %s: %w", jsonName, err)
+				}
+				continue
+			case field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.Struct:
+				nested := reflect.New(field.Type().Elem())
+				if !field.IsNil() {
+					nested.Elem().Set(field.Elem())
+				}
+				if err := overlayJSONStructValue(nested.Elem(), rawField); err != nil {
+					return fmt.Errorf("字段 %s: %w", jsonName, err)
+				}
+				field.Set(nested)
+				continue
 			}
-			continue
 		}
 
 		replacement := reflect.New(field.Type())
