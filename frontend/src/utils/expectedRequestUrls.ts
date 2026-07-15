@@ -8,6 +8,32 @@ export interface ExpectedRequestUrlItem {
   expectedUrl: string
 }
 
+export type DiscoveryProtocol = 'messages' | 'chat' | 'responses' | 'gemini'
+
+export interface DiscoveryExpectedRequestUrlItem extends ExpectedRequestUrlItem {
+  protocol: DiscoveryProtocol
+}
+
+const discoveryProtocolTargets: Array<{
+  protocol: DiscoveryProtocol
+  channelType: DiscoveryProtocol
+  serviceType: ServiceType
+}> = [
+  { protocol: 'messages', channelType: 'messages', serviceType: 'claude' },
+  { protocol: 'chat', channelType: 'chat', serviceType: 'openai' },
+  { protocol: 'responses', channelType: 'responses', serviceType: 'responses' },
+  { protocol: 'gemini', channelType: 'gemini', serviceType: 'gemini' }
+]
+
+export function buildDiscoveryExpectedRequestUrls(baseUrl: string): DiscoveryExpectedRequestUrlItem[] {
+  return discoveryProtocolTargets.flatMap(target =>
+    buildExpectedRequestUrls(target.channelType, target.serviceType, baseUrl).map(item => ({
+      ...item,
+      protocol: target.protocol
+    }))
+  )
+}
+
 export function buildExpectedRequestUrls(
   channelType: ChannelType,
   serviceType: ServiceType,

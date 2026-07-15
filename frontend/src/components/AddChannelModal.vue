@@ -74,8 +74,18 @@
                     <div v-else class="d-flex flex-column ga-2 mt-1">
                       <div v-for="url in detectedBaseUrls" :key="url" class="base-url-item">
                         <div class="text-caption text-success">{{ url }}</div>
-                        <div class="text-caption text-medium-emphasis">
-                          {{ t('addChannel.expectedRequest') }} {{ getExpectedRequestUrl(url) }}
+                        <div class="text-caption text-medium-emphasis mt-1">
+                          {{ t('addChannel.expectedRequest') }}
+                        </div>
+                        <div class="expected-request-list mt-1">
+                          <div
+                            v-for="item in getExpectedRequestUrls(url)"
+                            :key="`${item.protocol}:${item.expectedUrl}`"
+                            class="expected-request-row"
+                          >
+                            <span class="text-caption font-weight-medium">{{ expectedProtocolLabel(item.protocol) }}</span>
+                            <span class="text-caption text-medium-emphasis expected-request-url">{{ item.expectedUrl }}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -174,7 +184,11 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import type { Channel } from '../services/api'
-import { buildExpectedRequestUrls } from '../utils/expectedRequestUrls'
+import {
+  buildDiscoveryExpectedRequestUrls,
+  buildExpectedRequestUrls,
+  type DiscoveryProtocol
+} from '../utils/expectedRequestUrls'
 import { parseQuickInput as parseQuickInputUtil } from '../utils/quickInputParser'
 import { buildQuickAddChannelName } from '../utils/quickAddChannel'
 import { useI18n } from '../i18n'
@@ -309,11 +323,33 @@ function parseQuickInput() {
   quickServiceType.value = detectedServiceType || fallbackServiceType
 }
 
-function getExpectedRequestUrl(inputBaseUrl: string): string {
-  if (!inputBaseUrl) return ''
+function getExpectedRequestUrls(inputBaseUrl: string) {
+  if (!inputBaseUrl) return []
+  if (
+    props.channelType !== 'images' &&
+    props.channelType !== 'vectors' &&
+    quickServiceType.value !== 'copilot'
+  ) {
+    return buildDiscoveryExpectedRequestUrls(inputBaseUrl)
+  }
   const serviceType =
     props.channelType === 'images' || props.channelType === 'vectors' ? 'openai' : quickServiceType.value
-  return buildExpectedRequestUrls(props.channelType, serviceType, inputBaseUrl)[0]?.expectedUrl || ''
+  return buildExpectedRequestUrls(props.channelType, serviceType, inputBaseUrl).map(item => ({
+    ...item,
+    protocol: props.channelType
+  }))
+}
+
+function expectedProtocolLabel(protocol: DiscoveryProtocol | ChannelType): string {
+  const labels: Record<DiscoveryProtocol | ChannelType, string> = {
+    messages: 'Messages',
+    chat: 'Chat',
+    responses: 'Responses',
+    gemini: 'Gemini',
+    images: 'Images',
+    vectors: 'Vectors'
+  }
+  return labels[protocol]
 }
 
 function resetQuickState() {
@@ -473,6 +509,23 @@ onUnmounted(() => {
 
 .base-url-item {
   padding: 2px 0;
+}
+
+.expected-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expected-request-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.expected-request-url {
+  overflow-wrap: anywhere;
 }
 
 .apikeys-card {

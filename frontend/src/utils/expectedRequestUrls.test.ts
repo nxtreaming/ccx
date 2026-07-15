@@ -1,7 +1,32 @@
 import { describe, it, expect } from 'vitest'
-import { buildExpectedRequestUrls } from './expectedRequestUrls'
+import { buildDiscoveryExpectedRequestUrls, buildExpectedRequestUrls } from './expectedRequestUrls'
 
 describe('buildExpectedRequestUrls', () => {
+  it('应为自动发现列出四种协议的预期请求地址', () => {
+    expect(buildDiscoveryExpectedRequestUrls('https://www.fastaitoken.com')).toEqual([
+      {
+        protocol: 'messages',
+        baseUrl: 'https://www.fastaitoken.com',
+        expectedUrl: 'https://www.fastaitoken.com/v1/messages'
+      },
+      {
+        protocol: 'chat',
+        baseUrl: 'https://www.fastaitoken.com',
+        expectedUrl: 'https://www.fastaitoken.com/v1/chat/completions'
+      },
+      {
+        protocol: 'responses',
+        baseUrl: 'https://www.fastaitoken.com',
+        expectedUrl: 'https://www.fastaitoken.com/v1/responses'
+      },
+      {
+        protocol: 'gemini',
+        baseUrl: 'https://www.fastaitoken.com',
+        expectedUrl: 'https://www.fastaitoken.com/v1beta/models/{model}:generateContent'
+      }
+    ])
+  })
+
   it('应为 responses 渠道上的 gemini 上游生成正确预览 URL', () => {
     const result = buildExpectedRequestUrls('responses', 'gemini', 'https://generativelanguage.googleapis.com')
 
