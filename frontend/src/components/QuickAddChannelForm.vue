@@ -157,8 +157,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from '../i18n'
+import api from '../services/api'
 import { autoAddChannel, getProviderTemplates } from '../services/autopilot-api'
 import type { ProviderTemplate } from '../services/autopilot-api'
+import {
+  buildQuickAddChannelName,
+  defaultQuickAddServiceType,
+  normalizeDiscoveredChannelKind,
+  supportsQuickAddProtocolDiscovery
+} from '../utils/quickAddChannel'
 
 type ChannelType = 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors'
 
@@ -286,13 +293,23 @@ function generateRandomSuffix(length = 6): string {
 
 function getGeneratedName(): string {
   const filtered = getFilteredBaseUrls()
-  const first = filtered[0] || ''
-  try {
-    const host = new URL(first).hostname.replace(/\./g, '-')
-    return `${host}-${generateRandomSuffix()}`
-  } catch {
-    return `channel-${generateRandomSuffix()}`
+  return buildQuickAddChannelName(filtered[0] || '', generateRandomSuffix())
+}
+
+async function discoverCustomChannelKind(baseUrls: string[], apiKeys: string[]): Promise<ChannelType> {
+  if (!supportsQuickAddProtocolDiscovery(props.channelType)) return props.channelType
+
+  // 不传 channelKind，让真实探测结果决定落入哪个协议渠道，而不是沿用当前页签。
+  const discovery = await api.discoverChannelConfig({
+    serviceType: defaultQuickAddServiceType(props.channelType),
+    baseUrls,
+    apiKey: apiKeys[0]
+  })
+  const discoveredKind = normalizeDiscoveredChannelKind(discovery.recommendation.channelKind)
+  if (!discoveredKind) {
+    throw new Error(t('autopilot.quickAdd.discoveryFailed'))
   }
+  return discoveredKind
 }
 
 async function handleSubmit() {
@@ -302,21 +319,26 @@ async function handleSubmit() {
   submitError.value = ''
 
   try {
+    const filteredBaseUrls = getFilteredBaseUrls()
+    const filteredApiKeys = getFilteredApiKeys()
+    const targetChannelType = isProviderMode.value
+      ? props.channelType
+      : await discoverCustomChannelKind(filteredBaseUrls, filteredApiKeys)
     const result = await autoAddChannel(
-      props.channelType,
+      targetChannelType,
       isProviderMode.value
         ? {
             providerId: providerId.value,
-            apiKeys: getFilteredApiKeys()
+            apiKeys: filteredApiKeys
           }
         : {
             name: channelName.value.trim() || getGeneratedName(),
-            baseUrls: getFilteredBaseUrls(),
-            apiKeys: getFilteredApiKeys()
+            baseUrls: filteredBaseUrls,
+            apiKeys: filteredApiKeys
           }
     )
 
-    const currentChannel = result.channels?.find(ch => ch.channelKind === props.channelType)
+    const currentChannel = result.channels?.find(ch => ch.channelKind === targetChannelType)
     const currentIndex = currentChannel?.index ?? result.index
     submitting.value = false
     emit('added', currentIndex)

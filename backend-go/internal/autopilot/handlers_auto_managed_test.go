@@ -274,6 +274,50 @@ func TestKindToDefaultServiceType(t *testing.T) {
 	}
 }
 
+func TestCustomAutoAddResponseIncludesActualRoute(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	data := `{
+  "upstream": [], "chatUpstream": [], "responsesUpstream": [],
+  "geminiUpstream": [], "imagesUpstream": [], "vectorsUpstream": []
+}`
+	if err := os.WriteFile(configPath, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := config.NewConfigManager(configPath, filepath.Join(dir, "backups"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+
+	router := setupAutoManagedRouter(&AutoManagedDeps{CfgManager: manager})
+	req := httptest.NewRequest(http.MethodPost, "/api/responses/channels/auto-add", bytes.NewBufferString(
+		`{"name":"fastaitoken-com-test","baseUrls":["https://example.com"],"apiKeys":["sk-test"]}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	var response AutoAddResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Channels) != 1 {
+		t.Fatalf("channels=%+v, want one actual route", response.Channels)
+	}
+	route := response.Channels[0]
+	if route.ChannelKind != "responses" || route.ServiceType != "responses" || route.ChannelUID != response.ChannelUID {
+		t.Fatalf("route=%+v response=%+v", route, response)
+	}
+	cfg := manager.GetConfig()
+	if len(cfg.ResponsesUpstream) != 1 || len(cfg.Upstream) != 0 {
+		t.Fatalf("custom route persisted in wrong channel: responses=%d messages=%d", len(cfg.ResponsesUpstream), len(cfg.Upstream))
+	}
+}
+
 func TestProviderRouteNameAndPrimaryResult(t *testing.T) {
 	base := "mimo-test"
 	tests := []struct {

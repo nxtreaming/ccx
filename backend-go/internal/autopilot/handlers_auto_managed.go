@@ -1037,6 +1037,15 @@ func handleAutoAdd(deps *AutoManagedDeps) gin.HandlerFunc {
 			ChannelUID:       channelUID,
 			Index:            index,
 			DiscoveryStarted: discoveryStarted,
+			Channels: []AutoAddChannelResult{{
+				AccountUID:       upstream.AccountUID,
+				ChannelKind:      kind,
+				ChannelUID:       channelUID,
+				Index:            index,
+				Name:             upstream.Name,
+				ServiceType:      upstream.ServiceType,
+				DiscoveryStarted: discoveryStarted,
+			}},
 		})
 	}
 }
