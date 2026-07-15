@@ -527,7 +527,7 @@ onUnmounted(() => {
 
 .expected-request-row {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 92px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
 }
