@@ -337,8 +337,11 @@ func (r *AutoDiscoveryRunner) probeEndpoint(ctx context.Context, client *http.Cl
 		return result
 	}
 
-	// 构建 models URL。baseURL 可能已包含 /v1，避免拼出 /v1/v1/models。
+	// 构建 models URL。个别 provider 的协议入口与模型列表入口不同，优先使用清单覆盖值。
 	modelsURL := buildModelsProbeURL(baseURL)
+	if manifestURL, ok := config.ResolveBuiltinModelsURL(baseURL, discoveryManifestServiceType(channel.ServiceType)); ok {
+		modelsURL = manifestURL
+	}
 	if channel.ServiceType == "gemini" {
 		// Gemini 不支持 /v1/models，跳过
 		result.ProtocolOk = false

@@ -99,6 +99,7 @@ type BuiltinModelsManifestEntryPreset struct {
 	BaseURLPattern       string   `json:"baseUrlPattern"`
 	ServiceType          string   `json:"serviceType"`
 	PlanHint             string   `json:"planHint,omitempty"`
+	ModelsURL            string   `json:"modelsUrl,omitempty"`
 	ModelIDs             []string `json:"modelIds"`
 	ExcludeModelPatterns []string `json:"excludeModelPatterns,omitempty"`
 	DisableProbe         bool     `json:"disableProbe"`

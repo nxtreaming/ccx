@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/BenedictKing/ccx/internal/presetstore"
@@ -20,6 +21,10 @@ type BuiltinModelsManifest struct {
 
 	// PlanHint 订阅类型提示，仅用于文档和日志，不影响匹配逻辑。
 	PlanHint string `json:"planHint,omitempty"`
+
+	// ModelsURL 覆盖默认从 baseURL 拼接的模型列表地址。
+	// 用于协议入口与官方模型列表入口不在同一路径下的 provider。
+	ModelsURL string `json:"modelsUrl,omitempty"`
 
 	// ModelIDs 该入口实际可用的模型 ID 清单。
 	ModelIDs []string `json:"modelIds"`
@@ -57,6 +62,25 @@ var builtinModelsManifests = []BuiltinModelsManifest{
 			"claude-haiku-4-5",
 		},
 		DisableProbe: false,
+	},
+	// DeepSeek 官方兼容入口（来源：provider_templates.go 与 DeepSeek API 文档）。
+	// 两种协议统一通过官方 GET https://api.deepseek.com/models 获取模型清单；
+	// 请求入口仍分别使用 /anthropic 与 OpenAI 兼容根地址。
+	{
+		BaseURLPattern: "api.deepseek.com/anthropic",
+		ServiceType:    "messages",
+		PlanHint:       "deepseek_anthropic",
+		ModelsURL:      "https://api.deepseek.com/models",
+		ModelIDs:       deepseekModelIDs(),
+		DisableProbe:   false,
+	},
+	{
+		BaseURLPattern: "api.deepseek.com",
+		ServiceType:    "openai",
+		PlanHint:       "deepseek_openai",
+		ModelsURL:      "https://api.deepseek.com/models",
+		ModelIDs:       deepseekModelIDs(),
+		DisableProbe:   false,
 	},
 	// 小米 MiMo Anthropic 兼容入口（来源：provider_templates.go 与 docs/providers/mimo.md）。
 	// Anthropic 协议入口可用性通过 /v1/messages 验证；/v1/models 不作为能力判定依据。
@@ -167,6 +191,13 @@ func mimoModelIDs() []string {
 	}
 }
 
+func deepseekModelIDs() []string {
+	return []string{
+		"deepseek-v4-pro",
+		"deepseek-v4-flash",
+	}
+}
+
 // volcengineAgentPlanModelIDs 火山方舟 Agent Plan(/api/plan) 入口的兜底文本模型清单。
 // 当用户未绑定火山云 Access Key（无法调用管控面模型发现接口）时，
 // 用此清单让渠道立即可用；绑定 Access Key 后由 FetchModels 覆盖为真实清单。
@@ -229,6 +260,22 @@ func LookupBuiltinManifest(baseURL string, serviceType string) (BuiltinModelsMan
 	return lookupBuiltinManifestIn(builtinModelsManifests, normalized, serviceType)
 }
 
+// ResolveBuiltinModelsURL 返回清单声明的模型列表地址。
+// 为避免把 API Key 发送到第三方主机，覆盖地址必须使用 HTTPS 且与渠道 baseURL 同主机。
+func ResolveBuiltinModelsURL(baseURL string, serviceType string) (string, bool) {
+	manifest, ok := LookupBuiltinManifest(baseURL, strings.ToLower(strings.TrimSpace(serviceType)))
+	if !ok || strings.TrimSpace(manifest.ModelsURL) == "" {
+		return "", false
+	}
+	base, baseErr := url.Parse(strings.TrimSuffix(strings.TrimSpace(baseURL), "#"))
+	models, modelsErr := url.Parse(strings.TrimSpace(manifest.ModelsURL))
+	if baseErr != nil || modelsErr != nil || !strings.EqualFold(models.Scheme, "https") ||
+		base.Hostname() == "" || models.User != nil || models.Fragment != "" || !sameURLServer(base, models) {
+		return "", false
+	}
+	return models.String(), true
+}
+
 func runtimeBuiltinModelsManifests() []BuiltinModelsManifest {
 	bundle := presetstore.Default().Get()
 	if bundle == nil || bundle.BuiltinModelsManifests == nil || len(bundle.BuiltinModelsManifests.Manifests) == 0 {
@@ -240,6 +287,7 @@ func runtimeBuiltinModelsManifests() []BuiltinModelsManifest {
 			BaseURLPattern:       entry.BaseURLPattern,
 			ServiceType:          entry.ServiceType,
 			PlanHint:             entry.PlanHint,
+			ModelsURL:            entry.ModelsURL,
 			ModelIDs:             append([]string(nil), entry.ModelIDs...),
 			ExcludeModelPatterns: append([]string(nil), entry.ExcludeModelPatterns...),
 			DisableProbe:         entry.DisableProbe,

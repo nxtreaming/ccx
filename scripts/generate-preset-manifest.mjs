@@ -176,6 +176,11 @@ function validateBuiltinManifest(value, label) {
     if (typeof entry.serviceType !== 'string' || entry.serviceType.trim() === '') {
       throw new Error(`${label} manifests[${index}].serviceType must be a non-empty string`)
     }
+    if (entry.modelsUrl !== undefined) {
+      if (typeof entry.modelsUrl !== 'string' || !/^https:\/\//.test(entry.modelsUrl)) {
+        throw new Error(`${label} manifests[${index}].modelsUrl must be an https URL when present`)
+      }
+    }
     if (!Array.isArray(entry.modelIds) || entry.modelIds.length === 0 || entry.modelIds.some(model => typeof model !== 'string' || model.trim() === '')) {
       throw new Error(`${label} manifests[${index}].modelIds must be a non-empty string array`)
     }

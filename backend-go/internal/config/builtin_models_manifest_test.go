@@ -201,6 +201,33 @@ func TestLookupBuiltinManifest_MiMoAnthropicTokenPlan(t *testing.T) {
 	}
 }
 
+func TestResolveBuiltinModelsURL_DeepSeekUsesOfficialEndpoint(t *testing.T) {
+	tests := []struct {
+		baseURL     string
+		serviceType string
+	}{
+		{baseURL: "https://api.deepseek.com/anthropic", serviceType: "messages"},
+		{baseURL: "https://api.deepseek.com", serviceType: "openai"},
+	}
+	for _, tt := range tests {
+		modelsURL, ok := ResolveBuiltinModelsURL(tt.baseURL, tt.serviceType)
+		if !ok || modelsURL != "https://api.deepseek.com/models" {
+			t.Fatalf("ResolveBuiltinModelsURL(%q, %q) = %q, %v", tt.baseURL, tt.serviceType, modelsURL, ok)
+		}
+	}
+}
+
+func TestResolveBuiltinModelsURLRejectsDifferentServer(t *testing.T) {
+	manifests := builtinModelsManifests
+	t.Cleanup(func() { builtinModelsManifests = manifests })
+	builtinModelsManifests = []BuiltinModelsManifest{{
+		BaseURLPattern: "api.example.com", ServiceType: "openai", ModelsURL: "https://api.example.com:8443/models",
+	}}
+	if modelsURL, ok := ResolveBuiltinModelsURL("https://api.example.com", "OPENAI"); ok || modelsURL != "" {
+		t.Fatalf("不同端口不应接收渠道凭证: modelsURL=%q ok=%v", modelsURL, ok)
+	}
+}
+
 func TestLookupBuiltinManifest_MiMoOpenAIChatTokenPlan(t *testing.T) {
 	manifest, found := LookupBuiltinManifest("https://token-plan-cn.xiaomimimo.com/v1", "openai")
 	if !found {

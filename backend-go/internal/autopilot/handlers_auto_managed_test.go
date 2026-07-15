@@ -495,12 +495,123 @@ func TestProviderAutoAddReusesExistingAccount(t *testing.T) {
 		t.Fatalf("追加已有 provider key status=%d body=%s", w.Code, w.Body.String())
 	}
 	channels := cfgManager.GetAccountChannels("acct_test")
-	if len(channels) != 1 || channels[0].Upstream.ChannelUID != "ch_messages" {
-		t.Fatalf("不应创建新渠道: %+v", channels)
+	if len(channels) != 4 {
+		t.Fatalf("旧账号应自动补齐模板中的协议渠道: %+v", channels)
+	}
+	kinds := make(map[string]bool, len(channels))
+	for _, channel := range channels {
+		kinds[channel.Kind] = true
+	}
+	for _, kind := range []string{"messages", "chat", "responses", "gemini"} {
+		if !kinds[kind] {
+			t.Fatalf("旧账号缺少 %s route: %+v", kind, channels)
+		}
 	}
 	var response AutoAddResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.AccountUID != "acct_test" {
 		t.Fatalf("响应未返回已有账号: body=%s err=%v", w.Body.String(), err)
+	}
+	if len(response.Channels) != 4 {
+		t.Fatalf("响应未返回补齐后的全部渠道: %+v", response.Channels)
+	}
+}
+
+func TestMissingProviderAccountRoutes(t *testing.T) {
+	tmpl, ok := config.GetProviderTemplate("deepseek")
+	if !ok {
+		t.Fatal("缺少 deepseek provider 模板")
+	}
+	existing := []config.AccountChannel{{
+		Kind:     "messages",
+		Upstream: config.UpstreamConfig{ServiceType: "claude"},
+	}}
+	missing := missingProviderAccountRoutes(tmpl, existing)
+	if len(missing) != 2 || missing[0].ChannelKind != "chat" || missing[1].ChannelKind != "responses" {
+		t.Fatalf("missing routes = %+v", missing)
+	}
+	configs, baseURLs, err := bindProviderRouteKeys(tmpl, missing[0], []string{"sk-existing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(configs) != 1 || configs[0].BaseURL != "https://api.deepseek.com" || len(baseURLs) != 1 {
+		t.Fatalf("route 绑定结果不正确: configs=%+v baseURLs=%v", configs, baseURLs)
+	}
+}
+
+func TestBindProviderRouteKeysPreservesExistingEndpointAffinity(t *testing.T) {
+	tests := []struct {
+		providerID      string
+		apiKey          string
+		existingBaseURL string
+		targetKind      string
+		wantBaseURL     string
+	}{
+		{
+			providerID: "mimo", apiKey: "tp-existing",
+			existingBaseURL: "https://token-plan-sgp.xiaomimimo.com/anthropic",
+			targetKind:      "chat", wantBaseURL: "https://token-plan-sgp.xiaomimimo.com/v1",
+		},
+		{
+			providerID: "volcengine", apiKey: "ark-existing",
+			existingBaseURL: "https://ark.cn-beijing.volces.com/api/coding",
+			targetKind:      "responses", wantBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.providerID, func(t *testing.T) {
+			tmpl, ok := config.GetProviderTemplate(tt.providerID)
+			if !ok {
+				t.Fatalf("缺少 provider 模板: %s", tt.providerID)
+			}
+			existing := []config.AccountChannel{{
+				Kind: "messages",
+				Upstream: config.UpstreamConfig{
+					ProviderID: tt.providerID, ServiceType: "claude", APIKeys: []string{tt.apiKey},
+					APIKeyConfigs: []config.APIKeyConfig{{Key: tt.apiKey, BaseURL: tt.existingBaseURL}},
+				},
+			}}
+			var target config.ProviderRoute
+			for _, route := range tmpl.AutoAddRoutes() {
+				if route.ChannelKind == tt.targetKind {
+					target = route
+					break
+				}
+			}
+			configs, _, err := bindProviderRouteKeysWithAffinities(
+				tmpl, target, []string{tt.apiKey}, providerKeyCandidateAffinities(tmpl, existing),
+			)
+			if err != nil || len(configs) != 1 || configs[0].BaseURL != tt.wantBaseURL {
+				t.Fatalf("亲和绑定错误: configs=%+v err=%v want=%s", configs, err, tt.wantBaseURL)
+			}
+		})
+	}
+}
+
+func TestPlanProviderAccountRouteAdditionsRejectsNewKeyBeforeMutation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	tmpl := &config.ProviderTemplate{
+		ProviderID: "test-provider",
+		Routes: []config.ProviderRoute{
+			{ChannelKind: "messages", ServiceType: "claude", Candidates: []config.ProviderCandidate{{BaseURL: server.URL + "/anthropic"}}},
+			{ChannelKind: "chat", ServiceType: "openai", Candidates: []config.ProviderCandidate{{BaseURL: server.URL + "/v1"}}},
+		},
+	}
+	existing := []config.AccountChannel{{
+		Kind: "messages",
+		Upstream: config.UpstreamConfig{
+			AccountUID: "acct_test", ChannelUID: "ch_messages", Name: "test-provider",
+			ProviderID: "test-provider", ServiceType: "claude", AutoManaged: true, APIKeys: []string{"sk-existing"},
+		},
+	}}
+	additions, status, err := planProviderAccountRouteAdditions(
+		t.Context(), config.Config{}, tmpl, "acct_test", []string{"sk-existing", "sk-invalid"}, existing,
+	)
+	if err == nil || status != http.StatusBadRequest || len(additions) != 0 {
+		t.Fatalf("无效新 Key 应在生成新增 route 前失败: status=%d additions=%+v err=%v", status, additions, err)
 	}
 }
 

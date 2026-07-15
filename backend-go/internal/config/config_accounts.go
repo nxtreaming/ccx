@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/BenedictKing/ccx/internal/utils"
 )
 
 // AccountChannel 是账号级管理 API 使用的渠道快照。
@@ -19,6 +21,12 @@ type AccountChannelUpdate struct {
 	APIKeys      []string
 	APIKeyConfig []APIKeyConfig
 	BaseURLs     []string
+}
+
+// AccountChannelAddition 描述账号事务中需要新增的一条协议渠道。
+type AccountChannelAddition struct {
+	Kind     string
+	Upstream UpstreamConfig
 }
 
 // GetAccountChannels 返回账号下全部协议渠道的深拷贝。
@@ -433,35 +441,82 @@ func (cm *ConfigManager) mergeManagedProviderAccounts() bool {
 
 // UpdateAccountChannels 原子更新账号下所有协议渠道的 Key -> BaseURL 绑定。
 func (cm *ConfigManager) UpdateAccountChannels(accountUID string, updates []AccountChannelUpdate) error {
+	return cm.ApplyAccountChannelChanges(accountUID, updates, nil)
+}
+
+// ApplyAccountChannelChanges 在一次配置写入中更新现有渠道并新增缺失协议渠道。
+func (cm *ConfigManager) ApplyAccountChannelChanges(accountUID string, updates []AccountChannelUpdate, additions []AccountChannelAddition) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
+	next := cm.config.deepCopy()
+	if err := applyAccountChannelChanges(&next, accountUID, updates, additions); err != nil {
+		return err
+	}
+	return cm.saveConfigLocked(next)
+}
+
+func applyAccountChannelChanges(cfg *Config, accountUID string, updates []AccountChannelUpdate, additions []AccountChannelAddition) error {
+	if cfg == nil {
+		return fmt.Errorf("配置为空")
+	}
+	accountUID = strings.TrimSpace(accountUID)
+	if accountUID == "" {
+		return fmt.Errorf("accountUID 不能为空")
+	}
 	byChannel := make(map[string]AccountChannelUpdate, len(updates))
 	for _, update := range updates {
+		if update.ChannelUID == "" {
+			return fmt.Errorf("账号 %s 包含空 channelUID 更新", accountUID)
+		}
+		if _, exists := byChannel[update.ChannelUID]; exists {
+			return fmt.Errorf("账号 %s 包含重复渠道更新: %s", accountUID, update.ChannelUID)
+		}
 		byChannel[update.ChannelUID] = update
 	}
 	known := 0
 	total := 0
+	providerID := ""
+	providerMismatch := false
 	countKnown := func(channels []UpstreamConfig) {
 		for i := range channels {
 			if channels[i].AccountUID == accountUID {
 				total++
+				if providerID == "" {
+					providerID = channels[i].ProviderID
+				} else if channels[i].ProviderID != providerID {
+					providerMismatch = true
+				}
 				if _, ok := byChannel[channels[i].ChannelUID]; ok {
 					known++
 				}
 			}
 		}
 	}
-	countKnown(cm.config.Upstream)
-	countKnown(cm.config.ChatUpstream)
-	countKnown(cm.config.ResponsesUpstream)
-	countKnown(cm.config.GeminiUpstream)
-	countKnown(cm.config.ImagesUpstream)
-	countKnown(cm.config.VectorsUpstream)
-	if known == 0 {
+	countKnown(cfg.Upstream)
+	countKnown(cfg.ChatUpstream)
+	countKnown(cfg.ResponsesUpstream)
+	countKnown(cfg.GeminiUpstream)
+	countKnown(cfg.ImagesUpstream)
+	countKnown(cfg.VectorsUpstream)
+	if providerMismatch {
+		return fmt.Errorf("账号 %s 包含不一致的 provider", accountUID)
+	}
+	for _, addition := range additions {
+		additionProvider := strings.TrimSpace(addition.Upstream.ProviderID)
+		if providerID == "" {
+			providerID = additionProvider
+		} else if additionProvider != providerID {
+			return fmt.Errorf("账号 %s 的新增渠道 provider 不一致", accountUID)
+		}
+	}
+	if total == 0 && len(additions) == 0 {
 		return fmt.Errorf("账号 %s 不存在或没有可更新渠道", accountUID)
 	}
-	if known != total || len(updates) != total {
+	if total == 0 && len(updates) != 0 {
+		return fmt.Errorf("账号 %s 不存在，不能应用渠道更新", accountUID)
+	}
+	if total > 0 && (known != total || len(updates) != total) {
 		return fmt.Errorf("账号 %s 渠道更新不完整: matched=%d total=%d updates=%d", accountUID, known, total, len(updates))
 	}
 
@@ -494,22 +549,131 @@ func (cm *ConfigManager) UpdateAccountChannels(accountUID string, updates []Acco
 			matched++
 		}
 	}
-	apply(cm.config.Upstream)
-	apply(cm.config.ChatUpstream)
-	apply(cm.config.ResponsesUpstream)
-	apply(cm.config.GeminiUpstream)
-	apply(cm.config.ImagesUpstream)
-	apply(cm.config.VectorsUpstream)
+	apply(cfg.Upstream)
+	apply(cfg.ChatUpstream)
+	apply(cfg.ResponsesUpstream)
+	apply(cfg.GeminiUpstream)
+	apply(cfg.ImagesUpstream)
+	apply(cfg.VectorsUpstream)
 
 	if matched != known {
 		return fmt.Errorf("账号 %s 渠道更新计数异常: matched=%d known=%d", accountUID, matched, known)
 	}
-	for i := range cm.config.ManagedAccounts {
-		if cm.config.ManagedAccounts[i].AccountUID == accountUID && len(updates) > 0 {
-			cm.config.ManagedAccounts[i].Name = managedAccountName(updates[0].Name)
+	for i := range cfg.ManagedAccounts {
+		if cfg.ManagedAccounts[i].AccountUID == accountUID && len(updates) > 0 {
+			cfg.ManagedAccounts[i].Name = managedAccountName(updates[0].Name)
 		}
 	}
-	return cm.saveConfigLocked(cm.config)
+	for _, addition := range additions {
+		if err := appendAccountChannelAddition(cfg, accountUID, addition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func appendAccountChannelAddition(cfg *Config, accountUID string, addition AccountChannelAddition) error {
+	channels, fallback, err := accountChannelSlice(cfg, addition.Kind)
+	if err != nil {
+		return err
+	}
+	upstream := *addition.Upstream.Clone()
+	if upstream.AccountUID != accountUID || !upstream.AutoManaged || strings.TrimSpace(upstream.ProviderID) == "" {
+		return fmt.Errorf("新增渠道必须属于账号 %s 的官方自动托管 provider", accountUID)
+	}
+	if strings.TrimSpace(upstream.ChannelUID) == "" || strings.TrimSpace(upstream.Name) == "" {
+		return fmt.Errorf("新增 %s 渠道缺少 name 或 channelUID", addition.Kind)
+	}
+	if len(upstream.APIKeys) == 0 {
+		return fmt.Errorf("新增 %s 渠道缺少 API Key", addition.Kind)
+	}
+	for _, existing := range *channels {
+		if existing.Name == upstream.Name {
+			return fmt.Errorf("渠道名称 '%s' 已存在", upstream.Name)
+		}
+	}
+	if configHasChannelUID(cfg, upstream.ChannelUID) {
+		return fmt.Errorf("channelUID %s 已存在", upstream.ChannelUID)
+	}
+
+	upstream.ServiceType = normalizeUpstreamServiceType(upstream.ServiceType, fallback)
+	if addition.Kind == "images" {
+		upstream.ServiceType, err = normalizeImagesServiceType(upstream.ServiceType)
+	} else if addition.Kind == "vectors" {
+		upstream.ServiceType, err = normalizeVectorsServiceType(upstream.ServiceType)
+	}
+	if err != nil {
+		return err
+	}
+	upstream.AuthHeader, err = applyAuthHeader(upstream.AuthHeader)
+	if err != nil {
+		return err
+	}
+	if err := validateRequestTimeoutMs(upstream.RequestTimeoutMs); err != nil {
+		return err
+	}
+	if err := validateResponseHeaderTimeoutMs(upstream.ResponseHeaderTimeoutMs); err != nil {
+		return err
+	}
+	if upstream.RateLimitRPM < 0 || upstream.RateLimitBurst < 0 || upstream.RateLimitMaxConcurrent < 0 {
+		return fmt.Errorf("限速参数不能为负数")
+	}
+	if err := validateStreamTimeouts(upstream.StreamFirstContentTimeoutMs, upstream.StreamInactivityTimeoutMs, upstream.StreamToolCallIdleTimeoutMs); err != nil {
+		return err
+	}
+	if upstream.Status == "" {
+		upstream.Status = "active"
+	}
+	upstream.APIKeys = deduplicateStrings(upstream.APIKeys)
+	upstream.APIKeyConfigs = normalizeAPIKeyConfigs(upstream.APIKeys, upstream.APIKeyConfigs)
+	for i := range upstream.APIKeyConfigs {
+		if upstream.APIKeyConfigs[i].CredentialUID == "" {
+			upstream.APIKeyConfigs[i].CredentialUID = GenerateCredentialUID(accountUID, upstream.APIKeyConfigs[i].Key)
+		}
+	}
+	upstream.BaseURL = utils.CanonicalBaseURL(upstream.BaseURL, upstream.ServiceType)
+	upstream.BaseURLs = deduplicateBaseURLs(upstream.BaseURLs, upstream.ServiceType)
+	applyDefaultBaseURL(&upstream)
+	*channels = append([]UpstreamConfig{upstream}, (*channels)...)
+	return nil
+}
+
+func accountChannelSlice(cfg *Config, kind string) (*[]UpstreamConfig, string, error) {
+	switch kind {
+	case "messages":
+		return &cfg.Upstream, "claude", nil
+	case "chat":
+		return &cfg.ChatUpstream, "openai", nil
+	case "responses":
+		return &cfg.ResponsesUpstream, "responses", nil
+	case "gemini":
+		return &cfg.GeminiUpstream, "gemini", nil
+	case "images":
+		return &cfg.ImagesUpstream, "openai", nil
+	case "vectors":
+		return &cfg.VectorsUpstream, "openai", nil
+	default:
+		return nil, "", fmt.Errorf("不支持的渠道类型: %s", kind)
+	}
+}
+
+func configHasChannelUID(cfg *Config, channelUID string) bool {
+	found := false
+	visit := func(channels []UpstreamConfig) {
+		for _, channel := range channels {
+			if channel.ChannelUID == channelUID {
+				found = true
+				return
+			}
+		}
+	}
+	visit(cfg.Upstream)
+	visit(cfg.ChatUpstream)
+	visit(cfg.ResponsesUpstream)
+	visit(cfg.GeminiUpstream)
+	visit(cfg.ImagesUpstream)
+	visit(cfg.VectorsUpstream)
+	return found
 }
 
 // DeleteAccountChannels 原子删除账号下全部协议渠道，返回被删除的 channelUid。

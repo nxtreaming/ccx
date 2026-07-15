@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 // ============== 智能路由全局配置（§9.1） ==============
@@ -214,6 +215,23 @@ type CostOptimizationConfig struct {
 	PreferLowerEffectiveCost bool    `json:"preferLowerEffectiveCost,omitempty"`
 	SupervisorSavingsWeight  float64 `json:"supervisorSavingsWeight,omitempty"`
 	WorkerSavingsWeight      float64 `json:"workerSavingsWeight,omitempty"`
+	// ProviderTimePricing 描述官方 provider 的按时段计价规则，key 为 providerId。
+	// effectiveFrom 为空或尚未到达时不加价；基础模型价格始终保留在模型注册表中。
+	ProviderTimePricing map[string]ProviderTimePricingConfig `json:"providerTimePricing,omitempty"`
+}
+
+// ProviderTimePricingConfig 描述一个 provider 的生效时间、时区和每日高峰窗口。
+type ProviderTimePricingConfig struct {
+	EffectiveFrom  string               `json:"effectiveFrom,omitempty"`
+	TimeZone       string               `json:"timeZone,omitempty"`
+	PeakMultiplier float64              `json:"peakMultiplier,omitempty"`
+	PeakWindows    []DailyPricingWindow `json:"peakWindows,omitempty"`
+}
+
+// DailyPricingWindow 使用 provider 所在时区的 HH:MM 半开区间 [start, end)。
+type DailyPricingWindow struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
 }
 
 // OriginPolicyConfig 来源信任策略配置。
@@ -344,7 +362,7 @@ type ABTestConfig struct {
 // ── 模式常量 ──
 
 const (
-	currentAutopilotConfigSchemaVersion = 1
+	currentAutopilotConfigSchemaVersion = 2
 
 	// AutopilotModeOff 完全关闭。
 	AutopilotModeOff = "off"
@@ -442,6 +460,17 @@ func DefaultAutopilotRoutingConfig() AutopilotRoutingConfig {
 			PreferLowerEffectiveCost: true,
 			SupervisorSavingsWeight:  0.5,
 			WorkerSavingsWeight:      3,
+			ProviderTimePricing: map[string]ProviderTimePricingConfig{
+				"deepseek": {
+					EffectiveFrom:  "2026-07-20T00:00:00+08:00",
+					TimeZone:       "Asia/Shanghai",
+					PeakMultiplier: 2,
+					PeakWindows: []DailyPricingWindow{
+						{Start: "09:00", End: "12:00"},
+						{Start: "14:00", End: "18:00"},
+					},
+				},
+			},
 		},
 
 		OriginPolicy: OriginPolicyConfig{
@@ -540,6 +569,7 @@ func (c *AutopilotRoutingConfig) Validate() {
 
 	// 2. 成本偏好校验
 	c.CostPreference.validate()
+	c.CostOptimization.validateProviderTimePricing()
 
 	// 3. 派系偏好校验
 	c.ModelFamilyPreference.validate()
@@ -681,6 +711,88 @@ func normalizeCostPreferenceMode(mode string) string {
 	default:
 		return "balanced"
 	}
+}
+
+func (c *CostOptimizationConfig) validateProviderTimePricing() {
+	if c.ProviderTimePricing == nil {
+		return
+	}
+	normalized := make(map[string]ProviderTimePricingConfig, len(c.ProviderTimePricing))
+	for providerID, rule := range c.ProviderTimePricing {
+		providerID = strings.ToLower(strings.TrimSpace(providerID))
+		if providerID == "" {
+			continue
+		}
+		rule.EffectiveFrom = strings.TrimSpace(rule.EffectiveFrom)
+		if rule.EffectiveFrom != "" {
+			if _, err := time.Parse(time.RFC3339, rule.EffectiveFrom); err != nil {
+				rule.EffectiveFrom = ""
+			}
+		}
+		rule.TimeZone = strings.TrimSpace(rule.TimeZone)
+		if rule.TimeZone != "" {
+			if _, err := time.LoadLocation(rule.TimeZone); err != nil {
+				rule.TimeZone = ""
+			}
+		}
+		if rule.PeakMultiplier <= 0 || rule.PeakMultiplier != rule.PeakMultiplier {
+			rule.PeakMultiplier = 1
+		} else if rule.PeakMultiplier > 10 {
+			rule.PeakMultiplier = 10
+		}
+		windows := make([]DailyPricingWindow, 0, len(rule.PeakWindows))
+		for _, window := range rule.PeakWindows {
+			window.Start = strings.TrimSpace(window.Start)
+			window.End = strings.TrimSpace(window.End)
+			start, startOK := parseDailyClock(window.Start)
+			end, endOK := parseDailyClock(window.End)
+			if startOK && endOK && start != end {
+				windows = append(windows, window)
+			}
+		}
+		rule.PeakWindows = windows
+		normalized[providerID] = rule
+	}
+	c.ProviderTimePricing = normalized
+}
+
+// ProviderTimePricingMultiplier 返回请求时刻的 provider 计价倍率。
+// 未配置、未到 effectiveFrom、配置无效或不在高峰窗口时均安全回退到 1.0。
+func (c CostOptimizationConfig) ProviderTimePricingMultiplier(providerID string, at time.Time) float64 {
+	rule, ok := c.ProviderTimePricing[strings.ToLower(strings.TrimSpace(providerID))]
+	if !ok || strings.TrimSpace(rule.EffectiveFrom) == "" || strings.TrimSpace(rule.TimeZone) == "" {
+		return 1
+	}
+	effectiveFrom, err := time.Parse(time.RFC3339, rule.EffectiveFrom)
+	if err != nil || at.Before(effectiveFrom) {
+		return 1
+	}
+	location, err := time.LoadLocation(rule.TimeZone)
+	if err != nil || rule.PeakMultiplier <= 0 {
+		return 1
+	}
+	local := at.In(location)
+	minute := local.Hour()*60 + local.Minute()
+	for _, window := range rule.PeakWindows {
+		start, startOK := parseDailyClock(window.Start)
+		end, endOK := parseDailyClock(window.End)
+		if !startOK || !endOK || start == end {
+			continue
+		}
+		if (start < end && minute >= start && minute < end) ||
+			(start > end && (minute >= start || minute < end)) {
+			return rule.PeakMultiplier
+		}
+	}
+	return 1
+}
+
+func parseDailyClock(value string) (int, bool) {
+	parsed, err := time.Parse("15:04", strings.TrimSpace(value))
+	if err != nil {
+		return 0, false
+	}
+	return parsed.Hour()*60 + parsed.Minute(), true
 }
 
 // validate 归一化 ModelFamilyPreferenceConfig。
@@ -907,6 +1019,17 @@ func (c AutopilotRoutingConfig) deepCopy() AutopilotRoutingConfig {
 		cp.CostPreference.PerTaskClass = make(map[string]string, len(c.CostPreference.PerTaskClass))
 		for k, v := range c.CostPreference.PerTaskClass {
 			cp.CostPreference.PerTaskClass[k] = v
+		}
+	}
+
+	// CostOptimization.ProviderTimePricing
+	if c.CostOptimization.ProviderTimePricing != nil {
+		cp.CostOptimization.ProviderTimePricing = make(map[string]ProviderTimePricingConfig, len(c.CostOptimization.ProviderTimePricing))
+		for providerID, rule := range c.CostOptimization.ProviderTimePricing {
+			if rule.PeakWindows != nil {
+				rule.PeakWindows = append([]DailyPricingWindow(nil), rule.PeakWindows...)
+			}
+			cp.CostOptimization.ProviderTimePricing[providerID] = rule
 		}
 	}
 

@@ -21,6 +21,12 @@ func CalculateTokenCostUSD(model string, inputTokens, outputTokens, cacheCreatio
 	return calcCostWithPricing(pricing, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens)
 }
 
+// CalculateTokenCostUSDWithPricing 使用已解析的模型价格估算成本。
+// 调用方可在渠道级模型注册表覆盖生效时避免再次按全局模型名解析。
+func CalculateTokenCostUSDWithPricing(pricing *config.ModelPricing, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int64) float64 {
+	return calcCostWithPricing(pricing, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens)
+}
+
 // calcCostWithPricing 根据给定价格估算 token 成本（USD）。
 func calcCostWithPricing(pricing *config.ModelPricing, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int64) float64 {
 	if pricing == nil {

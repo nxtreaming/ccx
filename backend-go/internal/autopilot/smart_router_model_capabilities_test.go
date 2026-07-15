@@ -4,6 +4,7 @@ import (
 	"math"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
 	"github.com/BenedictKing/ccx/internal/scheduler"
@@ -67,6 +68,38 @@ func TestBuildChannelEntryUsesRegistryCapabilities(t *testing.T) {
 					tt.wantVision, tt.wantTools, tt.wantReasoning)
 			}
 		})
+	}
+}
+
+func TestBuildChannelEntryAppliesProviderTimePricingAfterActivation(t *testing.T) {
+	manager, cleanup := createTestConfigManager(t, config.Config{AutopilotRouting: config.DefaultAutopilotRoutingConfig()})
+	defer cleanup()
+	router := NewSmartRouter(nil, nil, nil, manager)
+	upstream := &config.UpstreamConfig{ChannelUID: "ch_deepseek", ProviderID: "deepseek"}
+	channel := scheduler.ChannelInfo{Index: 0, Name: "deepseek", Status: "active"}
+
+	router.now = func() time.Time {
+		return time.Date(2026, 7, 19, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	before := router.buildChannelEntry(channel, upstream, "messages", "deepseek-v4-pro", nil)
+	router.now = func() time.Time {
+		return time.Date(2026, 7, 20, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	peak := router.buildChannelEntry(channel, upstream, "messages", "deepseek-v4-pro", nil)
+	if before.EstimatedCost <= 0 || math.Abs(peak.EstimatedCost-before.EstimatedCost*2) > 1e-9 {
+		t.Fatalf("estimated cost before=%v peak=%v", before.EstimatedCost, peak.EstimatedCost)
+	}
+
+	upstream.ProviderID = ""
+	upstream.BaseURL = "https://api.deepseek.com/anthropic"
+	manualOfficial := router.buildChannelEntry(channel, upstream, "messages", "deepseek-v4-pro", nil)
+	if math.Abs(manualOfficial.EstimatedCost-peak.EstimatedCost) > 1e-9 {
+		t.Fatalf("手动官方 DeepSeek 渠道未应用峰值倍率: managed=%v manual=%v", peak.EstimatedCost, manualOfficial.EstimatedCost)
+	}
+	upstream.BaseURL = "https://relay.example/v1"
+	relay := router.buildChannelEntry(channel, upstream, "messages", "deepseek-v4-pro", nil)
+	if math.Abs(relay.EstimatedCost-before.EstimatedCost) > 1e-9 {
+		t.Fatalf("第三方 relay 不应应用 DeepSeek 官方倍率: before=%v relay=%v", before.EstimatedCost, relay.EstimatedCost)
 	}
 }
 

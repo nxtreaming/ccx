@@ -3429,7 +3429,18 @@ P3：copilot / codex（验证+用量窗口提示，无余额）
       "exchangeRateSource": "manual",
       "preferLowerEffectiveCost": true,
       "supervisorSavingsWeight": 0.5,
-      "workerSavingsWeight": 3
+      "workerSavingsWeight": 3,
+      "providerTimePricing": {
+        "deepseek": {
+          "effectiveFrom": "2026-07-20T00:00:00+08:00",
+          "timeZone": "Asia/Shanghai",
+          "peakMultiplier": 2,
+          "peakWindows": [
+            { "start": "09:00", "end": "12:00" },
+            { "start": "14:00", "end": "18:00" }
+          ]
+        }
+      }
     },
 
     "originPolicy": {
@@ -3562,6 +3573,8 @@ P3：copilot / codex（验证+用量窗口提示，无余额）
   }
 }
 ```
+
+`providerTimePricing.effectiveFrom` 使用 RFC3339；修改该值即可调整激活时间，设为空字符串则停用对应规则。
 
 ### 9.2 渠道级配置
 

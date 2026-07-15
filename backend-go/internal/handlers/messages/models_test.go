@@ -1392,19 +1392,17 @@ func TestBuildClaudeCompatibleModelsURLs(t *testing.T) {
 			},
 		},
 		{
-			name:    "带 /anthropic 尾段产生两个候选（剔除后即纯域名）",
+			name:    "DeepSeek Anthropic 入口使用官方模型地址",
 			baseURL: "https://api.deepseek.com/anthropic",
 			expected: []string{
-				"https://api.deepseek.com/anthropic/v1/models",
-				"https://api.deepseek.com/v1/models",
+				"https://api.deepseek.com/models",
 			},
 		},
 		{
-			name:    "带 /anthropic/v1 尾段产生两个候选",
+			name:    "DeepSeek Anthropic v1 入口使用官方模型地址",
 			baseURL: "https://api.deepseek.com/anthropic/v1",
 			expected: []string{
-				"https://api.deepseek.com/anthropic/v1/models",
-				"https://api.deepseek.com/v1/models",
+				"https://api.deepseek.com/models",
 			},
 		},
 		{

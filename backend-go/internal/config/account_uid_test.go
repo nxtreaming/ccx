@@ -153,3 +153,64 @@ func TestUpdateAccountChannelsUpdatesAllRoutes(t *testing.T) {
 		t.Fatalf("账号级删除未清理全部 route 或凭证源")
 	}
 }
+
+func TestApplyAccountChannelChangesDoesNotPartiallyCommit(t *testing.T) {
+	cm := &ConfigManager{config: Config{
+		Upstream: []UpstreamConfig{{
+			AccountUID: "acct_test", ChannelUID: "ch_messages", Name: "mimo", ServiceType: "claude",
+			ProviderID: "mimo", AutoManaged: true, APIKeys: []string{"sk-old"},
+		}},
+		ResponsesUpstream: []UpstreamConfig{{
+			AccountUID: "acct_other", ChannelUID: "ch_taken", Name: "mimo-codex", ServiceType: "openai",
+		}},
+	}}
+	updates := []AccountChannelUpdate{{
+		ChannelUID: "ch_messages", Name: "mimo-claude", APIKeys: []string{"sk-new"},
+		APIKeyConfig: []APIKeyConfig{{Key: "sk-new", BaseURL: "https://m.example/anthropic"}},
+		BaseURLs:     []string{"https://m.example/anthropic"},
+	}}
+	additions := []AccountChannelAddition{
+		{Kind: "chat", Upstream: UpstreamConfig{
+			AccountUID: "acct_test", ChannelUID: "ch_chat", Name: "mimo-chat", ServiceType: "openai",
+			ProviderID: "mimo", AutoManaged: true, BaseURL: "https://m.example/v1",
+			APIKeys: []string{"sk-new"}, APIKeyConfigs: []APIKeyConfig{{Key: "sk-new", BaseURL: "https://m.example/v1"}},
+		}},
+		{Kind: "responses", Upstream: UpstreamConfig{
+			AccountUID: "acct_test", ChannelUID: "ch_responses", Name: "mimo-codex", ServiceType: "openai",
+			ProviderID: "mimo", AutoManaged: true, BaseURL: "https://m.example/v1",
+			APIKeys: []string{"sk-new"}, APIKeyConfigs: []APIKeyConfig{{Key: "sk-new", BaseURL: "https://m.example/v1"}},
+		}},
+	}
+
+	if err := cm.ApplyAccountChannelChanges("acct_test", updates, additions); err == nil {
+		t.Fatal("第二条新增渠道名称冲突时应拒绝整个事务")
+	}
+	cfg := cm.GetConfig()
+	if len(cfg.Upstream) != 1 || len(cfg.Upstream[0].APIKeys) != 1 || cfg.Upstream[0].APIKeys[0] != "sk-old" {
+		t.Fatalf("失败事务修改了原渠道: %+v", cfg.Upstream)
+	}
+	if len(cfg.ChatUpstream) != 0 || len(cfg.ResponsesUpstream) != 1 {
+		t.Fatalf("失败事务留下部分新增渠道: chat=%+v responses=%+v", cfg.ChatUpstream, cfg.ResponsesUpstream)
+	}
+}
+
+func TestApplyAccountChannelChangesKeepsMemoryOnSaveFailure(t *testing.T) {
+	cm := &ConfigManager{
+		config: Config{Upstream: []UpstreamConfig{{
+			AccountUID: "acct_test", ChannelUID: "ch_messages", Name: "mimo", ServiceType: "claude",
+			ProviderID: "mimo", AutoManaged: true, APIKeys: []string{"sk-old"},
+		}}},
+		configFile: t.TempDir() + "/missing/config.json",
+	}
+	updates := []AccountChannelUpdate{{
+		ChannelUID: "ch_messages", Name: "mimo", APIKeys: []string{"sk-new"},
+		APIKeyConfig: []APIKeyConfig{{Key: "sk-new", BaseURL: "https://m.example/anthropic"}},
+		BaseURLs:     []string{"https://m.example/anthropic"},
+	}}
+	if err := cm.UpdateAccountChannels("acct_test", updates); err == nil {
+		t.Fatal("配置目录不存在时应保存失败")
+	}
+	if got := cm.GetConfig().Upstream[0].APIKeys; len(got) != 1 || got[0] != "sk-old" {
+		t.Fatalf("保存失败后内存配置被替换: %v", got)
+	}
+}

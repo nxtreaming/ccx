@@ -361,6 +361,9 @@ func buildGeminiModelsURL(baseURL string) string {
 
 // buildModelsURL 构建 models 端点的 URL
 func buildModelsURL(baseURL string) string {
+	if modelsURL, ok := config.ResolveBuiltinModelsURL(baseURL, "openai"); ok {
+		return modelsURL
+	}
 	if strings.Contains(baseURL, "api.githubcopilot.com") {
 		return strings.TrimSuffix(strings.TrimSuffix(baseURL, "#"), "/") + "/models"
 	}

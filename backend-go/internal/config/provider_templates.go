@@ -1,6 +1,9 @@
 package config
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+)
 
 // ProviderTemplate 描述一个官方 provider 的模板化添加配置。
 //
@@ -101,13 +104,31 @@ var builtinProviderTemplates = []ProviderTemplate{
 	{
 		ProviderID:  "deepseek",
 		DisplayName: "DeepSeek",
-		Description: "DeepSeek 官方 API（Anthropic 兼容协议）",
+		Description: "DeepSeek 官方 API（Claude Messages 与 OpenAI Chat 兼容；Responses 由 CCX 转换）",
 		ChannelKind: "messages",
 		ServiceType: "claude",
 		OriginType:  "official_api",
 		OriginTier:  "first",
-		Candidates: []ProviderCandidate{
-			{BaseURL: "https://api.deepseek.com/anthropic", PlanTag: "", Region: "", Priority: 0},
+		Candidates:  deepseekClaudeCandidates(),
+		Routes: []ProviderRoute{
+			{
+				ChannelKind: "messages",
+				ServiceType: "claude",
+				Description: "Claude Messages Anthropic 兼容入口",
+				Candidates:  deepseekClaudeCandidates(),
+			},
+			{
+				ChannelKind: "chat",
+				ServiceType: "openai",
+				Description: "OpenAI Chat Completions 兼容入口",
+				Candidates:  deepseekOpenAICandidates(),
+			},
+			{
+				ChannelKind: "responses",
+				ServiceType: "openai",
+				Description: "Responses 请求转换到 OpenAI Chat Completions",
+				Candidates:  deepseekOpenAICandidates(),
+			},
 		},
 	},
 	{
@@ -176,6 +197,18 @@ var builtinProviderTemplates = []ProviderTemplate{
 	},
 }
 
+func deepseekClaudeCandidates() []ProviderCandidate {
+	return []ProviderCandidate{
+		{BaseURL: "https://api.deepseek.com/anthropic", PlanTag: "", Region: "", Priority: 0},
+	}
+}
+
+func deepseekOpenAICandidates() []ProviderCandidate {
+	return []ProviderCandidate{
+		{BaseURL: "https://api.deepseek.com", PlanTag: "", Region: "", Priority: 0},
+	}
+}
+
 // ListProviderTemplates 返回所有内置 provider 模板。
 func ListProviderTemplates() []ProviderTemplate {
 	out := make([]ProviderTemplate, len(builtinProviderTemplates))
@@ -191,6 +224,61 @@ func GetProviderTemplate(providerID string) (*ProviderTemplate, bool) {
 		}
 	}
 	return nil, false
+}
+
+// InferProviderIDFromBaseURL 仅按官方模板候选端点识别 provider。
+// 使用最长路径匹配，避免把仅承载同名模型的第三方 relay 误判为官方渠道。
+func InferProviderIDFromBaseURL(baseURL string) (string, bool) {
+	target, err := url.Parse(strings.TrimSuffix(strings.TrimSpace(baseURL), "#"))
+	if err != nil || target.Hostname() == "" {
+		return "", false
+	}
+	targetPath := strings.TrimRight(target.EscapedPath(), "/")
+	bestProvider := ""
+	bestPathLen := -1
+	for _, tmpl := range builtinProviderTemplates {
+		for _, route := range tmpl.AutoAddRoutes() {
+			for _, candidate := range route.Candidates {
+				candidateURL, parseErr := url.Parse(strings.TrimSpace(candidate.BaseURL))
+				if parseErr != nil || !sameURLServer(target, candidateURL) {
+					continue
+				}
+				candidatePath := strings.TrimRight(candidateURL.EscapedPath(), "/")
+				if candidatePath != "" && targetPath != candidatePath && !strings.HasPrefix(targetPath, candidatePath+"/") {
+					continue
+				}
+				if len(candidatePath) > bestPathLen {
+					bestProvider = tmpl.ProviderID
+					bestPathLen = len(candidatePath)
+				}
+			}
+		}
+	}
+	return bestProvider, bestProvider != ""
+}
+
+func sameURLServer(left, right *url.URL) bool {
+	if left == nil || right == nil || !strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+	return effectiveURLPort(left) == effectiveURLPort(right)
+}
+
+func effectiveURLPort(value *url.URL) string {
+	if value == nil {
+		return ""
+	}
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return ""
+	}
 }
 
 // AutoAddRoutes 返回 provider 快速添加时需要创建的渠道 route。

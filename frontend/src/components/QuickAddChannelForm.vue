@@ -142,46 +142,22 @@
       {{ submitError }}
     </v-alert>
 
-    <!-- 发现状态面板 -->
+    <!-- 创建状态面板；发现任务在创建成功后转入后台 -->
     <v-card v-if="submitting" variant="outlined" class="discovery-card" rounded="lg">
       <v-card-text class="pa-4">
-        <div class="d-flex align-center ga-3 mb-3">
-          <v-progress-circular
-            v-if="autoStatus.status === 'discovering'"
-            indeterminate
-            size="20"
-            width="2"
-            color="primary"
-          />
-          <v-icon v-else-if="autoStatus.status === 'done'" color="success" size="20">mdi-check-circle</v-icon>
-          <v-icon v-else-if="autoStatus.status === 'failed'" color="error" size="20">mdi-alert-circle</v-icon>
-          <span class="text-body-2 font-weight-medium">{{ statusText }}</span>
+        <div class="d-flex align-center ga-3">
+          <v-progress-circular indeterminate size="20" width="2" color="primary" />
+          <span class="text-body-2 font-weight-medium">{{ t('autopilot.quickAdd.discovering') }}</span>
         </div>
-
-        <template v-if="autoStatus.endpoints.length > 0">
-          <v-divider class="mb-3" />
-          <div class="d-flex flex-column ga-2">
-            <div v-for="(ep, idx) in autoStatus.endpoints" :key="idx" class="d-flex align-center ga-2 text-caption">
-              <v-icon size="14" :color="ep.protocolOk ? 'success' : 'error'">
-                {{ ep.protocolOk ? 'mdi-check-circle' : 'mdi-close-circle' }}
-              </v-icon>
-              <code class="text-caption">{{ ep.keyMask }}</code>
-              <v-spacer />
-              <span v-if="ep.modelsCount > 0" class="text-success">
-                {{ ep.modelsCount }} {{ t('autopilot.quickAdd.models') }}
-              </span>
-            </div>
-          </div>
-        </template>
       </v-card-text>
     </v-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from '../i18n'
-import { autoAddChannel, getChannelAutoStatus, getProviderTemplates } from '../services/autopilot-api'
+import { autoAddChannel, getProviderTemplates } from '../services/autopilot-api'
 import type { ProviderTemplate } from '../services/autopilot-api'
 
 type ChannelType = 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors'
@@ -214,16 +190,6 @@ const providerId = ref('')
 const providerTemplates = ref<ProviderTemplate[]>([])
 const providerTemplatesLoading = ref(true)
 
-// ---- 发现状态 ----
-import type { AutoEndpointStatus } from '../services/autopilot-api'
-
-const autoStatus = reactive({
-  status: '' as 'discovering' | 'done' | 'failed' | '',
-  endpoints: [] as AutoEndpointStatus[]
-})
-
-let pollTimer: ReturnType<typeof setInterval> | null = null
-
 // ---- Provider 模板计算属性 ----
 // 仅展示与当前渠道类型匹配的 provider；多 route provider 只要包含当前 tab 即可显示。
 const availableProviders = computed(() =>
@@ -246,19 +212,6 @@ const isFormValid = computed(() => {
   if (isProviderMode.value) return hasKey
   const hasUrl = baseUrls.value.some(u => u.trim() !== '')
   return hasUrl && hasKey
-})
-
-const statusText = computed(() => {
-  switch (autoStatus.status) {
-    case 'discovering':
-      return t('autopilot.quickAdd.discovering')
-    case 'done':
-      return t('autopilot.quickAdd.discoveryDone')
-    case 'failed':
-      return t('autopilot.quickAdd.discoveryFailed')
-    default:
-      return ''
-  }
 })
 
 // ---- 方法 ----
@@ -342,57 +295,11 @@ function getGeneratedName(): string {
   }
 }
 
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
-
-async function startPolling(kind: ChannelType, channelId: number) {
-  let attempts = 0
-  const maxAttempts = 60 // 最多 5 分钟 (5s * 60)
-
-  pollTimer = setInterval(async () => {
-    attempts++
-    if (attempts > maxAttempts) {
-      stopPolling()
-      autoStatus.status = 'failed'
-      submitting.value = false
-      return
-    }
-
-    try {
-      const result = await getChannelAutoStatus(kind, channelId)
-      const discovery = result.discovery
-      if (!discovery) return // 尚未触发发现
-      if (discovery.status === 'done') {
-        stopPolling()
-        autoStatus.status = 'done'
-        autoStatus.endpoints = discovery.endpoints || []
-        submitting.value = false
-        emit('added', channelId)
-      } else if (discovery.status === 'failed') {
-        stopPolling()
-        autoStatus.status = 'failed'
-        autoStatus.endpoints = discovery.endpoints || []
-        submitting.value = false
-      } else {
-        autoStatus.endpoints = discovery.endpoints || []
-      }
-    } catch {
-      // 忽略轮询错误，继续尝试
-    }
-  }, 5000)
-}
-
 async function handleSubmit() {
   if (!isFormValid.value || submitting.value) return
 
   submitting.value = true
   submitError.value = ''
-  autoStatus.status = 'discovering'
-  autoStatus.endpoints = []
 
   try {
     const result = await autoAddChannel(
@@ -411,19 +318,10 @@ async function handleSubmit() {
 
     const currentChannel = result.channels?.find(ch => ch.channelKind === props.channelType)
     const currentIndex = currentChannel?.index ?? result.index
-    const discoveryStarted = currentChannel?.discoveryStarted ?? result.discoveryStarted
-
-    if (discoveryStarted) {
-      startPolling(props.channelType, currentIndex)
-    } else {
-      autoStatus.status = ''
-      submitting.value = false
-      emit('added', currentIndex)
-    }
-  } catch (err) {
-    stopPolling()
     submitting.value = false
-    autoStatus.status = 'failed'
+    emit('added', currentIndex)
+  } catch (err) {
+    submitting.value = false
     // provider 模式下后端会对无效 key 返回 400（含明确原因），提取给用户
     submitError.value = extractErrorMessage(err)
     console.error('[QuickAdd-Submit] 自动添加渠道失败:', err)
@@ -455,18 +353,11 @@ function resetForm() {
   autoManaged.value = true
   submitting.value = false
   submitError.value = ''
-  autoStatus.status = ''
-  autoStatus.endpoints = []
-  stopPolling()
 }
 
 // ---- 生命周期 ----
 onMounted(() => {
   loadProviderTemplates()
-})
-
-onUnmounted(() => {
-  stopPolling()
 })
 
 // 暴露给父组件

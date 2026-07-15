@@ -523,6 +523,17 @@ func TestNormalizeSavingsScore(t *testing.T) {
 		}
 	})
 
+	t.Run("未知成本保持中性且不被当作免费", func(t *testing.T) {
+		result := NormalizeSavingsScore(map[string]float64{
+			"unknown": -1,
+			"cheap":   1,
+			"costly":  3,
+		})
+		if !floatEq(result["unknown"], 0.5) || !floatEq(result["cheap"], 1) || !floatEq(result["costly"], 0) {
+			t.Fatalf("unexpected savings scores: %+v", result)
+		}
+	})
+
 	t.Run("空输入返回 nil", func(t *testing.T) {
 		result := NormalizeSavingsScore(nil)
 		if result != nil {

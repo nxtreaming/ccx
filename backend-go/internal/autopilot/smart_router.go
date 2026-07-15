@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
+	"github.com/BenedictKing/ccx/internal/metrics"
 	"github.com/BenedictKing/ccx/internal/scheduler"
 )
 
@@ -51,6 +52,7 @@ type SmartRouter struct {
 	localRuntimeStore *LocalRuntimeStore     // Phase 2: 本地运行时存储（nil = 不纳入本地候选）
 	modelResolver     *ModelResolver         // dry-run 自动模型映射预览（nil = 不扩展候选）
 	modelProfileStore *ModelProfileStore     // endpoint 模型质量/任务域覆盖（nil = 仅用规范基准与种子）
+	now               func() time.Time
 
 	// onCandidatesRanked Phase 4 Item 8: 候选排名回调（A/B 测试用）。
 	// executeFilter 完成评分排序后调用，传入 ranked candidates。
@@ -71,6 +73,7 @@ func NewSmartRouter(
 		intentStore:   intentStore,
 		traceStore:    traceStore,
 		configManager: configManager,
+		now:           time.Now,
 	}
 }
 
@@ -987,20 +990,23 @@ func (r *SmartRouter) buildChannelEntry(
 		channelKind = string(scheduler.ChannelKindMessages)
 	}
 	entry := channelScoreEntry{
-		ChannelUID:   channelUID,
-		ChannelKind:  channelKind,
-		ChannelIndex: ch.Index,
-		HealthState:  HealthStateUnknown,
-		OriginTier:   OriginTierUnknown, // 无画像时默认 unknown
+		ChannelUID:    channelUID,
+		ChannelKind:   channelKind,
+		ChannelIndex:  ch.Index,
+		HealthState:   HealthStateUnknown,
+		OriginTier:    OriginTierUnknown, // 无画像时默认 unknown
+		EstimatedCost: -1,                // 负数表示未知，避免被误判为免费渠道
 	}
 	actualModel := model
 	modelProvider := ""
+	var modelPricing *config.ModelPricing
 	if model != "" {
 		resolved := config.ResolveUpstreamCapability(model, upstream, upstreamModelCapabilities)
 		actualModel = resolved.ActualModel
 		if resolved.Known {
 			capability := resolved.Capability
 			modelProvider = capability.Provider
+			modelPricing = capability.Pricing
 			entry.ContextWindowTokens = capability.ContextWindowTokens
 			entry.SupportsVision = capability.Capabilities["vision"]
 			entry.SupportsToolCalls = capability.Capabilities["toolCalls"]
@@ -1008,6 +1014,26 @@ func (r *SmartRouter) buildChannelEntry(
 		}
 	}
 	entry.ModelID = actualModel
+	if modelPricing != nil {
+		multiplier := 1.0
+		pricingProviderID := strings.TrimSpace(upstream.ProviderID)
+		if pricingProviderID == "" {
+			pricingProviderID, _ = config.InferProviderIDFromBaseURL(upstream.BaseURL)
+		}
+		if pricingProviderID == "" {
+			for _, baseURL := range upstream.BaseURLs {
+				if inferred, ok := config.InferProviderIDFromBaseURL(baseURL); ok {
+					pricingProviderID = inferred
+					break
+				}
+			}
+		}
+		if r.configManager != nil && pricingProviderID != "" {
+			multiplier = r.configManager.GetAutopilotRouting().CostOptimization.ProviderTimePricingMultiplier(pricingProviderID, r.currentTime())
+		}
+		// 使用各类 token 每百万的参考成本做候选间归一化，时段倍率统一作用于全部计费项。
+		entry.EstimatedCost = metrics.CalculateTokenCostUSDWithPricing(modelPricing, 1_000_000, 1_000_000, 1_000_000, 1_000_000) * multiplier
+	}
 	modelFamily := InferModelFamily(actualModel, modelProvider)
 	visionDisabled := upstream.NoVision || containsString(upstream.NoVisionModels, actualModel)
 	if visionDisabled {
@@ -1075,6 +1101,13 @@ func (r *SmartRouter) buildChannelEntry(
 	}
 	r.attachDomainProfiles(&entry, modelProvider)
 	return entry
+}
+
+func (r *SmartRouter) currentTime() time.Time {
+	if r != nil && r.now != nil {
+		return r.now()
+	}
+	return time.Now()
 }
 
 func (r *SmartRouter) attachDomainProfiles(entry *channelScoreEntry, provider string) {

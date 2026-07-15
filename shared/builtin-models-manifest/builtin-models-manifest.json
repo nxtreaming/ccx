@@ -20,6 +20,28 @@
       "disableProbe": false
     },
     {
+      "baseUrlPattern": "api.deepseek.com/anthropic",
+      "serviceType": "messages",
+      "planHint": "deepseek_anthropic",
+      "modelsUrl": "https://api.deepseek.com/models",
+      "modelIds": [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash"
+      ],
+      "disableProbe": false
+    },
+    {
+      "baseUrlPattern": "api.deepseek.com",
+      "serviceType": "openai",
+      "planHint": "deepseek_openai",
+      "modelsUrl": "https://api.deepseek.com/models",
+      "modelIds": [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash"
+      ],
+      "disableProbe": false
+    },
+    {
       "baseUrlPattern": "api.xiaomimimo.com/anthropic",
       "serviceType": "messages",
       "planHint": "mimo_payg_anthropic",

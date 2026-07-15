@@ -215,6 +215,7 @@ func assertCurrentAutopilotDefaults(t *testing.T, cfg AutopilotRoutingConfig) {
 	if cfg.SLORollback.ConsecutiveWindows != 3 || cfg.ABTest.ShadowCandidateCount != 1 {
 		t.Fatalf("缺失新增子配置默认值: slo=%+v abTest=%+v", cfg.SLORollback, cfg.ABTest)
 	}
+	assertDeepSeekTimePricingDefault(t, cfg)
 }
 
 func assertLegacyAutopilotOverrides(t *testing.T, cfg AutopilotRoutingConfig) {
@@ -239,5 +240,15 @@ func assertLegacyAutopilotOverrides(t *testing.T, cfg AutopilotRoutingConfig) {
 	}
 	if !cfg.HealthCheck.Enabled || cfg.SLORollback.ConsecutiveWindows != 3 {
 		t.Fatalf("缺失字段未升级到当前默认值: health=%+v slo=%+v", cfg.HealthCheck, cfg.SLORollback)
+	}
+	assertDeepSeekTimePricingDefault(t, cfg)
+}
+
+func assertDeepSeekTimePricingDefault(t *testing.T, cfg AutopilotRoutingConfig) {
+	t.Helper()
+	rule, ok := cfg.CostOptimization.ProviderTimePricing["deepseek"]
+	if !ok || rule.EffectiveFrom != "2026-07-20T00:00:00+08:00" || rule.TimeZone != "Asia/Shanghai" ||
+		rule.PeakMultiplier != 2 || len(rule.PeakWindows) != 2 {
+		t.Fatalf("DeepSeek 峰谷定价默认值未迁移: %+v", rule)
 	}
 }

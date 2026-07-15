@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
@@ -81,6 +82,7 @@ type AutoManagedDeps struct {
 	CfgManager        *config.ConfigManager
 	Runner            *AutoDiscoveryRunner
 	MiMoConsoleClient *MiMoConsoleClient
+	DeepSeekClient    *DeepSeekClient
 }
 
 // RegisterAutoManagedRoutes 注册自动托管 API 路由。
@@ -102,11 +104,89 @@ func RegisterAutoManagedRoutes(apiGroup *gin.RouterGroup, deps *AutoManagedDeps)
 	apiGroup.PUT("/accounts/:accountUid/credentials/:credentialUid/mimo-console-cookie", handleSetMiMoConsoleCookie(deps))
 	apiGroup.POST("/accounts/:accountUid/credentials/:credentialUid/mimo-console-cookie/refresh", handleRefreshMiMoConsoleCookie(deps))
 	apiGroup.DELETE("/accounts/:accountUid/credentials/:credentialUid/mimo-console-cookie", handleClearMiMoConsoleCookie(deps))
+	apiGroup.GET("/accounts/:accountUid/deepseek-balance", handleDeepSeekBalance(deps))
 	kinds := []string{"messages", "chat", "responses", "gemini", "images", "vectors"}
 	for _, kind := range kinds {
 		apiGroup.POST("/"+kind+"/channels/auto-add", handleAutoAdd(deps))
 		apiGroup.POST("/"+kind+"/channels/:id/auto-discover", handleAutoDiscover(deps))
 		apiGroup.GET("/"+kind+"/channels/:id/auto-status", handleAutoStatus(deps))
+	}
+}
+
+type managedDeepSeekCredentialBalance struct {
+	CredentialUID string                `json:"credentialUid"`
+	KeyMask       string                `json:"keyMask"`
+	IsAvailable   bool                  `json:"isAvailable"`
+	BalanceInfos  []DeepSeekBalanceInfo `json:"balanceInfos,omitempty"`
+	FetchedAt     time.Time             `json:"fetchedAt"`
+	Error         string                `json:"error,omitempty"`
+}
+
+func handleDeepSeekBalance(deps *AutoManagedDeps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if deps == nil || deps.CfgManager == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "配置管理器不可用"})
+			return
+		}
+		accountUID := strings.TrimSpace(c.Param("accountUid"))
+		cfg := deps.CfgManager.GetConfig()
+		var account *config.ManagedAccountConfig
+		for i := range cfg.ManagedAccounts {
+			if cfg.ManagedAccounts[i].AccountUID == accountUID {
+				account = &cfg.ManagedAccounts[i]
+				break
+			}
+		}
+		if account == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "账号不存在"})
+			return
+		}
+		if account.ProviderID != "deepseek" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仅 DeepSeek 自动托管账号支持余额查询"})
+			return
+		}
+
+		client := deps.DeepSeekClient
+		if client == nil {
+			client = NewDeepSeekClient(nil)
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), deepSeekRequestTimeout)
+		defer cancel()
+		balances := make([]managedDeepSeekCredentialBalance, len(account.Credentials))
+		workers := make(chan struct{}, deepSeekBalanceWorkers)
+		var wg sync.WaitGroup
+		for i, credential := range account.Credentials {
+			wg.Add(1)
+			go func(index int, credential config.ManagedAccountCredential) {
+				defer wg.Done()
+				select {
+				case workers <- struct{}{}:
+					defer func() { <-workers }()
+				case <-ctx.Done():
+					balances[index] = managedDeepSeekCredentialBalance{
+						CredentialUID: credential.CredentialUID,
+						KeyMask:       utils.MaskAPIKey(credential.APIKey),
+						FetchedAt:     time.Now().UTC(),
+						Error:         "DeepSeek 余额查询超时",
+					}
+					return
+				}
+				balance, err := client.FetchBalance(ctx, credential.APIKey)
+				balances[index] = managedDeepSeekCredentialBalance{
+					CredentialUID: credential.CredentialUID,
+					KeyMask:       utils.MaskAPIKey(credential.APIKey),
+					FetchedAt:     time.Now().UTC(),
+				}
+				if err != nil {
+					balances[index].Error = err.Error()
+					return
+				}
+				balances[index].IsAvailable = balance.IsAvailable
+				balances[index].BalanceInfos = balance.BalanceInfos
+			}(i, credential)
+		}
+		wg.Wait()
+		c.JSON(http.StatusOK, gin.H{"accountUid": accountUID, "balances": balances})
 	}
 }
 
@@ -577,6 +657,38 @@ func applyManagedAccountUpdate(ctx context.Context, deps *AutoManagedDeps, accou
 	if !ok || providerID == "" {
 		return updateAccountResponse{}, http.StatusBadRequest, fmt.Errorf("仅 provider 自动托管账号支持账号级更新")
 	}
+	updates, status, err := planManagedAccountUpdates(ctx, accountUID, req, channels, tmpl, len(channels))
+	if err != nil {
+		return updateAccountResponse{}, status, err
+	}
+	if err := deps.CfgManager.UpdateAccountChannels(accountUID, updates); err != nil {
+		return updateAccountResponse{}, http.StatusInternalServerError, err
+	}
+	started := 0
+	for _, accountChannel := range channels {
+		if triggerDiscoveryForChannel(deps, accountChannel.Kind, accountChannel.Upstream.ChannelUID) {
+			started++
+		}
+	}
+	return updateAccountResponse{AccountUID: accountUID, KeyCount: len(req.APIKeys), ChannelCount: len(channels), DiscoveryStarted: started}, http.StatusOK, nil
+}
+
+func planManagedAccountUpdates(
+	ctx context.Context,
+	accountUID string,
+	req updateAccountRequest,
+	channels []config.AccountChannel,
+	tmpl *config.ProviderTemplate,
+	totalRouteCount int,
+) ([]config.AccountChannelUpdate, int, error) {
+	if len(channels) == 0 || tmpl == nil {
+		return nil, http.StatusNotFound, fmt.Errorf("账号不存在")
+	}
+	req.APIKeys = uniqueNonEmptyStrings(req.APIKeys)
+	if len(req.APIKeys) == 0 {
+		return nil, http.StatusBadRequest, fmt.Errorf("apiKeys 不能为空")
+	}
+	providerID := channels[0].Upstream.ProviderID
 	baseName := strings.TrimSpace(req.Name)
 	if baseName == "" {
 		baseName = strings.TrimSuffix(channels[0].Upstream.Name, accountRouteSuffix(channels[0].Kind))
@@ -585,11 +697,11 @@ func applyManagedAccountUpdate(ctx context.Context, deps *AutoManagedDeps, accou
 	for _, accountChannel := range channels {
 		channel := accountChannel.Upstream
 		if !channel.AutoManaged || channel.ProviderID != providerID {
-			return updateAccountResponse{}, http.StatusConflict, fmt.Errorf("账号包含非托管渠道或 provider 不一致")
+			return nil, http.StatusConflict, fmt.Errorf("账号包含非托管渠道或 provider 不一致")
 		}
 		route, found := providerRouteForChannel(tmpl, accountChannel.Kind, channel.ServiceType)
 		if !found {
-			return updateAccountResponse{}, http.StatusConflict, fmt.Errorf("provider %s 缺少 %s route", providerID, accountChannel.Kind)
+			return nil, http.StatusConflict, fmt.Errorf("provider %s 缺少 %s route", providerID, accountChannel.Kind)
 		}
 		existing := make(map[string]config.APIKeyConfig, len(channel.APIKeyConfigs))
 		for _, keyConfig := range channel.APIKeyConfigs {
@@ -604,7 +716,7 @@ func applyManagedAccountUpdate(ctx context.Context, deps *AutoManagedDeps, accou
 		if len(added) > 0 {
 			verified, _, err := verifyProviderRouteKeys(ctx, tmpl, route, added)
 			if err != nil {
-				return updateAccountResponse{}, http.StatusBadRequest, err
+				return nil, http.StatusBadRequest, err
 			}
 			for _, keyConfig := range verified {
 				existing[keyConfig.Key] = keyConfig
@@ -626,20 +738,11 @@ func applyManagedAccountUpdate(ctx context.Context, deps *AutoManagedDeps, accou
 			}
 		}
 		updates = append(updates, config.AccountChannelUpdate{
-			ChannelUID: channel.ChannelUID, Name: providerRouteName(baseName, route, len(channels) > 1),
+			ChannelUID: channel.ChannelUID, Name: providerRouteName(baseName, route, totalRouteCount > 1),
 			APIKeys: append([]string(nil), req.APIKeys...), APIKeyConfig: configs, BaseURLs: uniqueNonEmptyStrings(baseURLs),
 		})
 	}
-	if err := deps.CfgManager.UpdateAccountChannels(accountUID, updates); err != nil {
-		return updateAccountResponse{}, http.StatusInternalServerError, err
-	}
-	started := 0
-	for _, accountChannel := range channels {
-		if triggerDiscoveryForChannel(deps, accountChannel.Kind, accountChannel.Upstream.ChannelUID) {
-			started++
-		}
-	}
-	return updateAccountResponse{AccountUID: accountUID, KeyCount: len(req.APIKeys), ChannelCount: len(channels), DiscoveryStarted: started}, http.StatusOK, nil
+	return updates, http.StatusOK, nil
 }
 
 func handleAddAccountCredentials(deps *AutoManagedDeps) gin.HandlerFunc {
@@ -872,6 +975,7 @@ func handleAutoAdd(deps *AutoManagedDeps) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
 			return
 		}
+		req.APIKeys = uniqueNonEmptyStrings(req.APIKeys)
 		if len(req.APIKeys) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "apiKeys 不能为空"})
 			return
@@ -993,7 +1097,7 @@ func handleProviderAutoAdd(c *gin.Context, deps *AutoManagedDeps, requestKind st
 
 	now := time.Now()
 	accountUID := config.GenerateAccountUID()
-	results := make([]AutoAddChannelResult, 0, len(planned))
+	additions := make([]config.AccountChannelAddition, 0, len(planned))
 	for _, item := range planned {
 		for i := range item.keyConfigs {
 			item.keyConfigs[i].CredentialUID = config.GenerateCredentialUID(accountUID, item.keyConfigs[i].Key)
@@ -1014,15 +1118,22 @@ func handleProviderAutoAdd(c *gin.Context, deps *AutoManagedDeps, requestKind st
 			APIKeys:       append([]string(nil), req.APIKeys...),
 			APIKeyConfigs: item.keyConfigs,
 		}
-		if err := addUpstreamByKind(deps.CfgManager, item.route.ChannelKind, upstream); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建渠道失败: %v", err)})
-			return
-		}
-		index := findChannelIndexByUID(getChannelSlice(deps.CfgManager.GetConfig(), item.route.ChannelKind), upstream.ChannelUID)
-		discoveryStarted := triggerDiscoveryForChannel(deps, item.route.ChannelKind, upstream.ChannelUID)
+		additions = append(additions, config.AccountChannelAddition{Kind: item.route.ChannelKind, Upstream: upstream})
+	}
+	if err := deps.CfgManager.ApplyAccountChannelChanges(accountUID, nil, additions); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建渠道失败: %v", err)})
+		return
+	}
+
+	cfg = deps.CfgManager.GetConfig()
+	results := make([]AutoAddChannelResult, 0, len(additions))
+	for _, addition := range additions {
+		upstream := addition.Upstream
+		index := findChannelIndexByUID(getChannelSlice(cfg, addition.Kind), upstream.ChannelUID)
+		discoveryStarted := triggerDiscoveryForChannel(deps, addition.Kind, upstream.ChannelUID)
 		results = append(results, AutoAddChannelResult{
 			AccountUID:       accountUID,
-			ChannelKind:      item.route.ChannelKind,
+			ChannelKind:      addition.Kind,
 			ChannelUID:       upstream.ChannelUID,
 			Index:            index,
 			Name:             upstream.Name,
@@ -1030,7 +1141,7 @@ func handleProviderAutoAdd(c *gin.Context, deps *AutoManagedDeps, requestKind st
 			DiscoveryStarted: discoveryStarted,
 		})
 		log.Printf("[AutoManaged-Add] 创建自动托管 provider 渠道: provider=%s kind=%s serviceType=%s name=%s uid=%s",
-			tmpl.ProviderID, item.route.ChannelKind, item.route.ServiceType, upstream.Name, upstream.ChannelUID)
+			tmpl.ProviderID, addition.Kind, upstream.ServiceType, upstream.Name, upstream.ChannelUID)
 	}
 
 	primary := primaryAutoAddResult(results, requestKind)
@@ -1063,25 +1174,51 @@ func appendCredentialsToProviderAccount(c *gin.Context, deps *AutoManagedDeps, r
 		c.JSON(http.StatusNotFound, gin.H{"error": "provider 账号不存在"})
 		return
 	}
-	desired := append([]string(nil), channels[0].Upstream.APIKeys...)
+	var desired []string
+	for _, channel := range channels {
+		desired = append(desired, channel.Upstream.APIKeys...)
+	}
 	desired = uniqueNonEmptyStrings(append(desired, apiKeys...))
-	accountName := strings.TrimSuffix(channels[0].Upstream.Name, accountRouteSuffix(channels[0].Kind))
-	update, status, err := applyManagedAccountUpdate(c.Request.Context(), deps, accountUID, updateAccountRequest{
-		Name: accountName, APIKeys: desired,
-	})
+	tmpl, ok := config.GetProviderTemplate(channels[0].Upstream.ProviderID)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provider 模板不存在"})
+		return
+	}
+	additions, status, err := planProviderAccountRouteAdditions(c.Request.Context(), deps.CfgManager.GetConfig(), tmpl, accountUID, desired, channels)
 	if err != nil {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	accountName := strings.TrimSuffix(channels[0].Upstream.Name, accountRouteSuffix(channels[0].Kind))
+	updates, status, err := planManagedAccountUpdates(c.Request.Context(), accountUID, updateAccountRequest{
+		Name: accountName, APIKeys: desired,
+	}, channels, tmpl, len(channels)+len(additions))
+	if err != nil {
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	if err := deps.CfgManager.ApplyAccountChannelChanges(accountUID, updates, additions); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, addition := range additions {
+		log.Printf("[AutoManaged-Add] 已补齐 provider 账号渠道: provider=%s account=%s kind=%s serviceType=%s uid=%s",
+			tmpl.ProviderID, accountUID, addition.Kind, addition.Upstream.ServiceType, addition.Upstream.ChannelUID)
+	}
 
+	channels = deps.CfgManager.GetAccountChannels(accountUID)
+	discoveryStarted := make(map[string]bool, len(channels))
+	for _, channel := range channels {
+		discoveryStarted[channel.Upstream.ChannelUID] = triggerDiscoveryForChannel(deps, channel.Kind, channel.Upstream.ChannelUID)
+	}
 	results := make([]AutoAddChannelResult, 0, len(channels))
 	cfg := deps.CfgManager.GetConfig()
-	for _, channel := range deps.CfgManager.GetAccountChannels(accountUID) {
+	for _, channel := range channels {
 		index := findChannelIndexByUID(getChannelSlice(cfg, channel.Kind), channel.Upstream.ChannelUID)
 		results = append(results, AutoAddChannelResult{
 			AccountUID: accountUID, ChannelKind: channel.Kind, ChannelUID: channel.Upstream.ChannelUID,
 			Index: index, Name: channel.Upstream.Name, ServiceType: channel.Upstream.ServiceType,
-			DiscoveryStarted: update.DiscoveryStarted > 0,
+			DiscoveryStarted: discoveryStarted[channel.Upstream.ChannelUID],
 		})
 	}
 	primary := primaryAutoAddResult(results, requestKind)
@@ -1090,6 +1227,191 @@ func appendCredentialsToProviderAccount(c *gin.Context, deps *AutoManagedDeps, r
 		AccountUID: accountUID, ChannelUID: primary.ChannelUID, Index: primary.Index,
 		DiscoveryStarted: primary.DiscoveryStarted, Channels: results,
 	})
+}
+
+func planProviderAccountRouteAdditions(
+	ctx context.Context,
+	cfg config.Config,
+	tmpl *config.ProviderTemplate,
+	accountUID string,
+	apiKeys []string,
+	existing []config.AccountChannel,
+) ([]config.AccountChannelAddition, int, error) {
+	if tmpl == nil || len(existing) == 0 {
+		return nil, http.StatusNotFound, fmt.Errorf("provider 账号不存在")
+	}
+	missing := missingProviderAccountRoutes(tmpl, existing)
+	if len(missing) == 0 {
+		return nil, http.StatusOK, nil
+	}
+
+	baseName := strings.TrimSuffix(existing[0].Upstream.Name, accountRouteSuffix(existing[0].Kind))
+	allRoutes := tmpl.AutoAddRoutes()
+	for _, route := range missing {
+		name := providerRouteName(baseName, route, len(allRoutes) > 1)
+		if channelNameExists(getChannelSlice(cfg, route.ChannelKind), name) {
+			return nil, http.StatusConflict, fmt.Errorf("渠道名称 '%s' 已存在", name)
+		}
+	}
+
+	existingKeys := make(map[string]bool)
+	for _, channel := range existing {
+		for _, apiKey := range channel.Upstream.APIKeys {
+			existingKeys[apiKey] = true
+		}
+	}
+	var addedKeys []string
+	for _, apiKey := range uniqueNonEmptyStrings(apiKeys) {
+		if !existingKeys[apiKey] {
+			addedKeys = append(addedKeys, apiKey)
+		}
+	}
+
+	now := time.Now()
+	additions := make([]config.AccountChannelAddition, 0, len(missing))
+	affinities := providerKeyCandidateAffinities(tmpl, existing)
+	for _, route := range missing {
+		keyConfigs, _, err := bindProviderRouteKeysWithAffinities(tmpl, route, apiKeys, affinities)
+		if err != nil {
+			return nil, http.StatusBadRequest, err
+		}
+		if len(addedKeys) > 0 {
+			verified, _, err := verifyProviderRouteKeys(ctx, tmpl, route, addedKeys)
+			if err != nil {
+				return nil, http.StatusBadRequest, err
+			}
+			verifiedByKey := make(map[string]config.APIKeyConfig, len(verified))
+			for _, keyConfig := range verified {
+				verifiedByKey[keyConfig.Key] = keyConfig
+			}
+			for i := range keyConfigs {
+				if verifiedConfig, ok := verifiedByKey[keyConfigs[i].Key]; ok {
+					keyConfigs[i] = verifiedConfig
+				}
+			}
+		}
+		baseURLs := make([]string, 0, len(keyConfigs))
+		for i := range keyConfigs {
+			keyConfigs[i].CredentialUID = config.GenerateCredentialUID(accountUID, keyConfigs[i].Key)
+			baseURLs = append(baseURLs, keyConfigs[i].BaseURL)
+		}
+		upstream := config.UpstreamConfig{
+			Name:          providerRouteName(baseName, route, len(allRoutes) > 1),
+			AccountUID:    accountUID,
+			ChannelUID:    config.GenerateChannelUID(),
+			ServiceType:   route.ServiceType,
+			Status:        "active",
+			AutoManaged:   true,
+			AutoManagedAt: &now,
+			ProviderID:    tmpl.ProviderID,
+			OriginType:    tmpl.OriginType,
+			OriginTier:    tmpl.OriginTier,
+			BaseURL:       baseURLs[0],
+			BaseURLs:      uniqueNonEmptyStrings(baseURLs),
+			APIKeys:       append([]string(nil), apiKeys...),
+			APIKeyConfigs: keyConfigs,
+		}
+		additions = append(additions, config.AccountChannelAddition{Kind: route.ChannelKind, Upstream: upstream})
+	}
+	return additions, http.StatusOK, nil
+}
+
+// bindProviderRouteKeys 为已验证过的托管账号凭证选择 route 的首选官方端点。
+// 旧账号补齐新协议时不应重新发送模型请求；端点可达性由随后触发的 discovery 异步确认。
+func bindProviderRouteKeys(tmpl *config.ProviderTemplate, route config.ProviderRoute, apiKeys []string) ([]config.APIKeyConfig, []string, error) {
+	return bindProviderRouteKeysWithAffinities(tmpl, route, apiKeys, nil)
+}
+
+type providerCandidateAffinity struct {
+	PlanTag  string
+	Region   string
+	Priority int
+}
+
+func bindProviderRouteKeysWithAffinities(
+	tmpl *config.ProviderTemplate,
+	route config.ProviderRoute,
+	apiKeys []string,
+	affinities map[string]providerCandidateAffinity,
+) ([]config.APIKeyConfig, []string, error) {
+	if tmpl == nil {
+		return nil, nil, fmt.Errorf("provider 模板为空")
+	}
+	apiKeys = uniqueNonEmptyStrings(apiKeys)
+	if len(apiKeys) == 0 {
+		return nil, nil, fmt.Errorf("apiKeys 不能为空")
+	}
+
+	keyConfigs := make([]config.APIKeyConfig, 0, len(apiKeys))
+	baseURLs := make([]string, 0, len(route.Candidates))
+	seenBaseURL := make(map[string]bool)
+	for _, apiKey := range apiKeys {
+		candidates := tmpl.CandidatesForRouteKey(route, apiKey)
+		if len(candidates) == 0 || strings.TrimSpace(candidates[0].BaseURL) == "" {
+			return nil, nil, fmt.Errorf("provider %s 无可用候选端点（kind=%s serviceType=%s）", tmpl.ProviderID, route.ChannelKind, route.ServiceType)
+		}
+		selected := candidates[0]
+		if affinity, ok := affinities[apiKey]; ok {
+			for _, candidate := range candidates {
+				if candidate.PlanTag == affinity.PlanTag && candidate.Region == affinity.Region && candidate.Priority == affinity.Priority {
+					selected = candidate
+					break
+				}
+			}
+		}
+		baseURL := strings.TrimSpace(selected.BaseURL)
+		keyConfigs = append(keyConfigs, config.APIKeyConfig{Key: apiKey, BaseURL: baseURL})
+		if !seenBaseURL[baseURL] {
+			seenBaseURL[baseURL] = true
+			baseURLs = append(baseURLs, baseURL)
+		}
+	}
+	return keyConfigs, baseURLs, nil
+}
+
+func providerKeyCandidateAffinities(tmpl *config.ProviderTemplate, existing []config.AccountChannel) map[string]providerCandidateAffinity {
+	affinities := make(map[string]providerCandidateAffinity)
+	if tmpl == nil {
+		return affinities
+	}
+	for _, accountChannel := range existing {
+		route, ok := providerRouteForChannel(tmpl, accountChannel.Kind, accountChannel.Upstream.ServiceType)
+		if !ok {
+			continue
+		}
+		for _, apiKey := range accountChannel.Upstream.APIKeys {
+			if _, exists := affinities[apiKey]; exists {
+				continue
+			}
+			boundURL := utils.CanonicalBaseURL(accountChannel.Upstream.BoundBaseURLForKey(apiKey), route.ServiceType)
+			if boundURL == "" {
+				continue
+			}
+			for _, candidate := range tmpl.CandidatesForRouteKey(route, apiKey) {
+				if utils.CanonicalBaseURL(candidate.BaseURL, route.ServiceType) == boundURL {
+					affinities[apiKey] = providerCandidateAffinity{
+						PlanTag: candidate.PlanTag, Region: candidate.Region, Priority: candidate.Priority,
+					}
+					break
+				}
+			}
+		}
+	}
+	return affinities
+}
+
+func missingProviderAccountRoutes(tmpl *config.ProviderTemplate, existing []config.AccountChannel) []config.ProviderRoute {
+	present := make(map[string]bool, len(existing))
+	for _, channel := range existing {
+		present[channel.Kind+"\x00"+channel.Upstream.ServiceType] = true
+	}
+	var missing []config.ProviderRoute
+	for _, route := range tmpl.AutoAddRoutes() {
+		if !present[route.ChannelKind+"\x00"+route.ServiceType] {
+			missing = append(missing, route)
+		}
+	}
+	return missing
 }
 
 func addUpstreamByKind(cfgManager *config.ConfigManager, kind string, upstream config.UpstreamConfig) error {

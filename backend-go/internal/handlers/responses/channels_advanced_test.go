@@ -32,6 +32,9 @@ func setupResponsesConfigManager(t *testing.T, upstream []config.UpstreamConfig)
 }
 
 func TestBuildHealthCheckURLs_UseExistingVersionSuffix(t *testing.T) {
+	if got := buildModelsURL("https://api.deepseek.com"); got != "https://api.deepseek.com/models" {
+		t.Fatalf("DeepSeek buildModelsURL() = %s", got)
+	}
 	if got := buildMessagesURL("https://api.example.com/codex/v1"); got != "https://api.example.com/codex/v1/messages" {
 		t.Fatalf("buildMessagesURL() = %s", got)
 	}

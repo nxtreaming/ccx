@@ -1417,6 +1417,27 @@ export interface ManagedAccountCredential {
   mimoTokenPlan?: MiMoTokenPlanSnapshot
 }
 
+export interface DeepSeekBalanceInfo {
+  currency: 'CNY' | 'USD' | string
+  totalBalance: string
+  grantedBalance: string
+  toppedUpBalance: string
+}
+
+export interface DeepSeekCredentialBalance {
+  credentialUid: string
+  keyMask: string
+  isAvailable: boolean
+  balanceInfos?: DeepSeekBalanceInfo[]
+  fetchedAt: string
+  error?: string
+}
+
+export interface DeepSeekAccountBalancesResponse {
+  accountUid: string
+  balances: DeepSeekCredentialBalance[]
+}
+
 /** 火山套餐单个时间窗口用量。Agent Plan 含 quota/used，Coding Plan 含 usedPercent。 */
 export interface VolcenginePlanUsageWindow {
   quota?: number

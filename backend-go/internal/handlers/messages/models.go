@@ -1297,6 +1297,9 @@ func selectChannelWithDisabledKeys(cfgManager *config.ConfigManager, failedChann
 
 // buildModelsURL 构建 models 端点的 URL
 func buildModelsURL(baseURL string) string {
+	if modelsURL, ok := config.ResolveBuiltinModelsURL(baseURL, "openai"); ok {
+		return modelsURL
+	}
 	skipVersionPrefix := strings.HasSuffix(baseURL, "#")
 	if skipVersionPrefix {
 		baseURL = strings.TrimSuffix(baseURL, "#")
@@ -1339,6 +1342,9 @@ var claudeCompatProtocolSuffixes = []string{"anthropic", "claude", "messages"}
 // buildClaudeCompatibleModelsURLs 为 messages/claude 渠道构建候选模型列表 URL（去重）
 // 顺序：1) 当前逻辑 2) 剔除协议尾段后 3) 纯域名根路径
 func buildClaudeCompatibleModelsURLs(baseURL string) []string {
+	if modelsURL, ok := config.ResolveBuiltinModelsURL(baseURL, "messages"); ok {
+		return []string{modelsURL}
+	}
 	candidates := make([]string, 0, 3)
 	seen := make(map[string]bool, 3)
 

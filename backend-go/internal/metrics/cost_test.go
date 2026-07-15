@@ -40,7 +40,7 @@ func TestCalculateTokenCostUSD_USDNoConversion(t *testing.T) {
 		InputCacheMissPrice: floatPtr(1),
 		OutputPrice:         floatPtr(3),
 	}
-	cost := calcCostWithPricing(pricing, 1_000_000, 1_000_000, 0, 0)
+	cost := CalculateTokenCostUSDWithPricing(pricing, 1_000_000, 1_000_000, 0, 0)
 	if math.Abs(cost-4.0) > 0.0001 {
 		t.Fatalf("expected 4 USD, got %v", cost)
 	}

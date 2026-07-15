@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestDefaultAutopilotRoutingConfig(t *testing.T) {
@@ -37,6 +38,35 @@ func TestDefaultAutopilotRoutingConfig(t *testing.T) {
 	// 默认权重为 0.2
 	if cfg.ModelFamilyPreference.Weight != 0.2 {
 		t.Errorf("默认 ModelFamilyPreference.Weight = %f, 期望 0.2", cfg.ModelFamilyPreference.Weight)
+	}
+}
+
+func TestDeepSeekProviderTimePricingSchedule(t *testing.T) {
+	cost := DefaultAutopilotRoutingConfig().CostOptimization
+	tests := []struct {
+		name string
+		at   string
+		want float64
+	}{
+		{name: "生效前高峰不加价", at: "2026-07-19T10:00:00+08:00", want: 1},
+		{name: "上午高峰", at: "2026-07-20T09:00:00+08:00", want: 2},
+		{name: "午间平峰", at: "2026-07-20T12:00:00+08:00", want: 1},
+		{name: "下午高峰", at: "2026-07-20T17:59:00+08:00", want: 2},
+		{name: "晚间平峰", at: "2026-07-20T18:00:00+08:00", want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			at, err := time.Parse(time.RFC3339, tt.at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cost.ProviderTimePricingMultiplier("deepseek", at); got != tt.want {
+				t.Fatalf("multiplier = %v, want %v", got, tt.want)
+			}
+		})
+	}
+	if got := cost.ProviderTimePricingMultiplier("other-provider", time.Now()); got != 1 {
+		t.Fatalf("未配置 provider multiplier = %v, want 1", got)
 	}
 }
 
@@ -513,6 +543,9 @@ func TestAutopilotRoutingConfig_DeepCopy(t *testing.T) {
 	cp.ModelFamilyPreference.GlobalOrder[0] = "modified"
 	cp.WeightOverrides["w_new"] = 1.0
 	cp.TaskDomainStrength.SeedMatrixOverrides["openai/gpt-5"] = map[string]float64{"reasoning": 0.8}
+	deepseekRule := cp.CostOptimization.ProviderTimePricing["deepseek"]
+	deepseekRule.PeakWindows[0].Start = "10:00"
+	cp.CostOptimization.ProviderTimePricing["deepseek"] = deepseekRule
 
 	if _, exists := original.CostPreference.PerTaskClass["worker"]; exists {
 		t.Error("修改副本 PerTaskClass 不应影响原始")
@@ -526,6 +559,9 @@ func TestAutopilotRoutingConfig_DeepCopy(t *testing.T) {
 	if _, exists := original.TaskDomainStrength.SeedMatrixOverrides["openai/gpt-5"]; exists {
 		t.Error("修改副本 SeedMatrixOverrides 不应影响原始")
 	}
+	if original.CostOptimization.ProviderTimePricing["deepseek"].PeakWindows[0].Start != "09:00" {
+		t.Error("修改副本 ProviderTimePricing 不应影响原始")
+	}
 }
 
 func TestGetAutopilotRoutingReturnsDeepCopy(t *testing.T) {
@@ -538,6 +574,9 @@ func TestGetAutopilotRoutingReturnsDeepCopy(t *testing.T) {
 	first := cm.GetAutopilotRouting()
 	first.WeightOverrides["w_quality"] = 1
 	first.ModelFamilyPreference.GlobalOrder[0] = "modified"
+	rule := first.CostOptimization.ProviderTimePricing["deepseek"]
+	rule.PeakWindows[0].Start = "10:00"
+	first.CostOptimization.ProviderTimePricing["deepseek"] = rule
 
 	second := cm.GetAutopilotRouting()
 	if second.WeightOverrides["w_quality"] != 0.5 {
@@ -545,6 +584,9 @@ func TestGetAutopilotRoutingReturnsDeepCopy(t *testing.T) {
 	}
 	if second.ModelFamilyPreference.GlobalOrder[0] != "claude" {
 		t.Fatal("修改 getter 返回的 slice 不应污染 ConfigManager")
+	}
+	if second.CostOptimization.ProviderTimePricing["deepseek"].PeakWindows[0].Start != "09:00" {
+		t.Fatal("修改 getter 返回的 ProviderTimePricing 不应污染 ConfigManager")
 	}
 }
 

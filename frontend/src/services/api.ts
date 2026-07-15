@@ -56,6 +56,7 @@ import type {
   AutoAddChannelResponse,
   UpdateManagedAccountResponse,
   ManagedAccountsResponse,
+  DeepSeekAccountBalancesResponse,
   MiMoConsoleCookieResponse,
   VolcengineAccessKeyResponse,
   VolcenginePlanUsageRefreshResponse,
@@ -1380,6 +1381,11 @@ export class ApiService {
   /** 获取自动托管账号及掩码凭证，不返回明文 Key。 */
   async getManagedAccounts(): Promise<ManagedAccountsResponse> {
     return this.request('/accounts')
+  }
+
+  /** 使用托管账号中已保存的 Key 查询 DeepSeek 官方余额，不回传明文 Key。 */
+  async getDeepSeekAccountBalances(accountUid: string): Promise<DeepSeekAccountBalancesResponse> {
+    return this.request(`/accounts/${encodeURIComponent(accountUid)}/deepseek-balance`)
   }
 
   /** 向账号增量添加一批凭证。 */

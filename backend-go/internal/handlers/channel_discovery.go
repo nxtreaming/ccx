@@ -1269,6 +1269,13 @@ func discoverTransientModels(ctx context.Context, channel *config.UpstreamConfig
 	}
 
 	modelsURL := discoveryModelsURL(baseURL, channelKind, channel.ServiceType)
+	manifestServiceType := strings.ToLower(strings.TrimSpace(channel.ServiceType))
+	if manifestServiceType == "claude" {
+		manifestServiceType = "messages"
+	}
+	if manifestURL, ok := config.ResolveBuiltinModelsURL(baseURL, manifestServiceType); ok {
+		modelsURL = manifestURL
+	}
 	client := httpclient.GetManager().GetStandardClient(10*time.Second, channel.InsecureSkipVerify, channel.ProxyURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {

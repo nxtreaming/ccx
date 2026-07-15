@@ -913,8 +913,11 @@ func (cm *ConfigManager) saveConfigLocked(config Config) error {
 		return err
 	}
 
+	if err := os.WriteFile(cm.configFile, data, 0600); err != nil { // 仅所有者可读写，保护敏感配置
+		return err
+	}
 	cm.config = config
-	return os.WriteFile(cm.configFile, data, 0600) // 仅所有者可读写，保护敏感配置
+	return nil
 }
 
 // SaveConfig 保存配置

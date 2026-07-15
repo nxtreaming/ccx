@@ -332,6 +332,9 @@ func buildMessagesURL(baseURL string) string {
 
 // buildModelsURL 构建 models 端点的 URL
 func buildModelsURL(baseURL string) string {
+	if modelsURL, ok := config.ResolveBuiltinModelsURL(baseURL, "openai"); ok {
+		return modelsURL
+	}
 	return buildEndpointURL(baseURL, "/v1", "/models")
 }
 

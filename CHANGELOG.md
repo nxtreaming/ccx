@@ -2,11 +2,15 @@
 
 ### 新增
 
+- **DeepSeek 官方账号自动托管** - 快速添加同时创建 Messages、Chat 与 Responses 协议渠道，模型发现统一使用官方 `/models`，编辑渠道时可按凭证查询余额
+- **DeepSeek 峰谷成本倍率配置** - Autopilot 成本评分支持按供应商、时区和时间窗口应用倍率；内置规则延后至 2026-07-20 激活，可通过配置调整生效时间
 - **Autopilot 规范模型能力基准** - 模型注册表新增独立 benchmark 领域向量，按渠道质量证据向下折算并写入路由 trace；首批覆盖 Claude Opus 4.8、GPT-5.6 Terra 与 GPT-5.6 Sol
 - **Autopilot 手动 L3 供应商质量探测** - 新增固定 canary、每日预算与 endpoint×model 画像回写，支持 Messages、Chat、Responses、Gemini 上游协议，响应和持久化均不包含明文 Key 或模型原始输出
 
 ### 修复
 
+- **Provider 多协议账号部分写入** - 首次创建与旧账号补协议改为验证后单次提交，失败不残留半成品渠道，并保留 MiMo 区域及火山套餐端点亲和性
+- **快速添加成功后对话框未关闭** - provider 自动托管创建成功后立即结束交互，模型发现继续在后台执行
 - **Autopilot 配置迁移与运行态隔离** - 旧配置块解析或升级失败时回退安全默认值，支持结构体指针叠加，并避免环境急停经管理 API 写回配置文件
 - **辅助路由协议回归** - `assist` 保留无法评分的原候选供 failover，真实路由 trace 回填实际渠道，修复模型不支持错误重试、普通 Key 的模型限制执行、relay 耗尽误限制及 Messages 响应模型字段丢失
 

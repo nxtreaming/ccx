@@ -428,7 +428,7 @@ func NormalizeSavingsScore(costs map[string]float64) map[string]float64 {
 	diff := maxCost - minCost
 	for uid, c := range costs {
 		if c < 0 {
-			result[uid] = 0
+			result[uid] = 0.5
 			continue
 		}
 		// 越便宜分越高：1.0 - (cost - min) / (max - min)

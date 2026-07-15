@@ -88,6 +88,51 @@ func TestCandidatesForKeyNoPrefixRules(t *testing.T) {
 	}
 }
 
+func TestProviderTemplateDeepSeekRoutes(t *testing.T) {
+	tmpl, ok := GetProviderTemplate("deepseek")
+	if !ok {
+		t.Fatal("未找到 deepseek 模板")
+	}
+	routes := tmpl.AutoAddRoutes()
+	if len(routes) != 3 {
+		t.Fatalf("deepseek 应创建 messages/chat/responses 三条 route，实际 %d: %+v", len(routes), routes)
+	}
+	want := map[string]struct {
+		serviceType string
+		baseURL     string
+	}{
+		"messages":  {serviceType: "claude", baseURL: "https://api.deepseek.com/anthropic"},
+		"chat":      {serviceType: "openai", baseURL: "https://api.deepseek.com"},
+		"responses": {serviceType: "openai", baseURL: "https://api.deepseek.com"},
+	}
+	for _, route := range routes {
+		expect, found := want[route.ChannelKind]
+		if !found || route.ServiceType != expect.serviceType || len(route.Candidates) != 1 || route.Candidates[0].BaseURL != expect.baseURL {
+			t.Fatalf("DeepSeek route 不符合预期: %+v", route)
+		}
+	}
+}
+
+func TestInferProviderIDFromBaseURL(t *testing.T) {
+	tests := []struct {
+		baseURL string
+		want    string
+		ok      bool
+	}{
+		{baseURL: "https://api.deepseek.com", want: "deepseek", ok: true},
+		{baseURL: "https://api.deepseek.com/anthropic/v1", want: "deepseek", ok: true},
+		{baseURL: "https://ark.cn-beijing.volces.com/api/plan/v3", want: "volcengine", ok: true},
+		{baseURL: "https://relay.example/v1", ok: false},
+		{baseURL: "https://api.deepseek.com.evil.example", ok: false},
+	}
+	for _, tt := range tests {
+		got, ok := InferProviderIDFromBaseURL(tt.baseURL)
+		if got != tt.want || ok != tt.ok {
+			t.Fatalf("InferProviderIDFromBaseURL(%q) = %q, %v; want %q, %v", tt.baseURL, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
 func TestProviderTemplateVolcenginePlanRoutes(t *testing.T) {
 	tmpl, ok := GetProviderTemplate("volcengine")
 	if !ok {

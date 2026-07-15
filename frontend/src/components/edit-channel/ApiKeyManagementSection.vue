@@ -169,6 +169,75 @@
           </v-list>
         </div>
 
+        <div v-if="providerId === 'deepseek' && accountUid" class="deepseek-balance mb-5">
+          <v-divider class="mb-4" />
+          <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-2">
+            <div class="d-flex align-center ga-2">
+              <v-icon color="primary" size="small">mdi-wallet-outline</v-icon>
+              <span class="text-body-2 font-weight-medium">{{ t('deepseekBalance.title') }}</span>
+            </div>
+            <v-btn
+              icon
+              size="small"
+              variant="text"
+              color="primary"
+              :loading="deepseekBalancesLoading"
+              :title="t('deepseekBalance.refresh')"
+              @click="loadDeepSeekBalances"
+            >
+              <v-icon size="small">mdi-refresh</v-icon>
+            </v-btn>
+          </div>
+          <div class="text-caption text-medium-emphasis mb-3">{{ t('deepseekBalance.hint') }}</div>
+          <v-progress-linear v-if="deepseekBalancesLoading" indeterminate color="primary" class="mb-3" />
+          <v-alert v-if="deepseekBalancesError" color="error" variant="tonal" density="compact" class="mb-3">
+            {{ deepseekBalancesError }}
+          </v-alert>
+          <div
+            v-for="credential in deepseekBalances"
+            :key="credential.credentialUid"
+            class="deepseek-credential py-3"
+          >
+            <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-2">
+              <code class="text-caption">{{ credential.keyMask }}</code>
+              <v-chip
+                size="x-small"
+                variant="tonal"
+                :color="credential.error ? 'error' : credential.isAvailable ? 'success' : 'warning'"
+              >
+                {{ credential.error
+                  ? t('deepseekBalance.queryFailed')
+                  : credential.isAvailable
+                    ? t('deepseekBalance.available')
+                    : t('deepseekBalance.unavailable') }}
+              </v-chip>
+            </div>
+            <v-alert v-if="credential.error" color="error" variant="tonal" density="compact">
+              {{ credential.error }}
+            </v-alert>
+            <div v-else-if="credential.balanceInfos?.length" class="deepseek-balance-grid">
+              <div v-for="balance in credential.balanceInfos" :key="balance.currency" class="deepseek-balance-currency">
+                <div class="text-caption font-weight-medium mb-2">{{ balance.currency }}</div>
+                <div class="deepseek-balance-values">
+                  <div>
+                    <div class="text-caption text-medium-emphasis">{{ t('deepseekBalance.total') }}</div>
+                    <div class="text-body-2 font-weight-medium">{{ balance.totalBalance }}</div>
+                  </div>
+                  <div>
+                    <div class="text-caption text-medium-emphasis">{{ t('deepseekBalance.granted') }}</div>
+                    <div class="text-body-2 font-weight-medium">{{ balance.grantedBalance }}</div>
+                  </div>
+                  <div>
+                    <div class="text-caption text-medium-emphasis">{{ t('deepseekBalance.toppedUp') }}</div>
+                    <div class="text-body-2 font-weight-medium">{{ balance.toppedUpBalance }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-caption text-disabled">{{ t('deepseekBalance.noBalance') }}</div>
+          </div>
+        </div>
+
         <div v-if="providerId === 'volcengine' && accountUid" class="volcengine-access-keys mb-5">
           <v-divider class="mb-4" />
           <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-2">
@@ -656,7 +725,7 @@
 import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from '../../i18n'
 import { ApiError, ApiService } from '../../services/api'
-import type { ManagedAccountCredential, MiMoTokenPlanQuota, VolcenginePlanUsage, VolcenginePlanUsageWindow } from '../../services/api-types'
+import type { DeepSeekCredentialBalance, ManagedAccountCredential, MiMoTokenPlanQuota, VolcenginePlanUsage, VolcenginePlanUsageWindow } from '../../services/api-types'
 import { maskApiKey } from '../../utils/apiKeyMask'
 
 interface KeyModelsStatus {
@@ -713,6 +782,9 @@ const newApiKey = ref('')
 const apiKeyError = ref('')
 const duplicateKeyIndex = ref<number | null>(null)
 const copiedKeyIndex = ref<number | null>(null)
+const deepseekBalances = ref<DeepSeekCredentialBalance[]>([])
+const deepseekBalancesLoading = ref(false)
+const deepseekBalancesError = ref('')
 interface VolcengineCredentialForm {
   accessKeyId: string
   secretAccessKey: string
@@ -772,6 +844,27 @@ const visibleDisabledKeys = computed(() => {
 })
 
 const visibleDisabledKeyModels = computed(() => props.disabledKeyModels || [])
+
+const loadDeepSeekBalances = async () => {
+  deepseekBalances.value = []
+  deepseekBalancesError.value = ''
+  if (props.providerId !== 'deepseek' || !props.accountUid) return
+  deepseekBalancesLoading.value = true
+  try {
+    const response = await apiService.getDeepSeekAccountBalances(props.accountUid)
+    deepseekBalances.value = response.balances
+  } catch (err) {
+    deepseekBalancesError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    deepseekBalancesLoading.value = false
+  }
+}
+
+watch(
+  () => [props.providerId, props.accountUid],
+  () => { void loadDeepSeekBalances() },
+  { immediate: true }
+)
 
 const loadVolcengineCredentials = async () => {
   volcengineCredentials.value = []
@@ -1274,6 +1367,28 @@ const getDisabledKeyLabel = (reason: string) => {
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
+.deepseek-credential + .deepseek-credential {
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.deepseek-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.deepseek-balance-currency {
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 6px;
+}
+
+.deepseek-balance-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .volcengine-key-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1298,6 +1413,10 @@ const getDisabledKeyLabel = (reason: string) => {
   }
 
   .mimo-usage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .deepseek-balance-values {
     grid-template-columns: minmax(0, 1fr);
   }
 }
