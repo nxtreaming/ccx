@@ -205,11 +205,12 @@ func buildTestRequestWithModel(protocol string, channel *config.UpstreamConfig, 
 	}
 
 	var (
-		requestURL     string
-		body           []byte
-		err            error
-		isGemini       bool
-		headerProtocol = protocol
+		requestURL          string
+		body                []byte
+		err                 error
+		isGemini            bool
+		claudeCodeSessionID string
+		headerProtocol      = protocol
 	)
 
 	if from, to, ok := parseCompositeProtocol(protocol); ok {
@@ -289,6 +290,9 @@ func buildTestRequestWithModel(protocol string, channel *config.UpstreamConfig, 
 	if err != nil {
 		return nil, fmt.Errorf("marshal request body failed: %w", err)
 	}
+	if headerProtocol == "messages" {
+		body, claudeCodeSessionID = ensureClaudeCodeProbeBody(body)
+	}
 
 	req, err := http.NewRequest("POST", requestURL, bytes.NewReader(body))
 	if err != nil {
@@ -302,10 +306,7 @@ func buildTestRequestWithModel(protocol string, channel *config.UpstreamConfig, 
 	} else {
 		utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, channel.AuthHeader)
 		if headerProtocol == "messages" {
-			req.Header.Set("anthropic-version", "2023-06-01")
-			req.Header.Set("anthropic-beta", "claude-code-20250219,adaptive-thinking-2026-01-28,prompt-caching-scope-2026-01-05,effort-2025-11-24")
-			req.Header.Set("User-Agent", "claude-cli/2.1.71 (external, cli)")
-			req.Header.Set("X-App", "cli")
+			applyClaudeCodeProbeHeaders(req.Header, claudeCodeSessionID)
 		}
 		if headerProtocol == "responses" {
 			req.Header.Set("Originator", "codex_cli_rs")

@@ -49,15 +49,17 @@ func providerServiceTypeForProtocol(protocol CapabilityBaseProtocol) string {
 
 // buildMessagesProbeBody 构造 messages 协议最小探测请求体。
 func buildMessagesProbeBody(probeModel string, global map[string]config.UpstreamModelCapability, channel ...*config.UpstreamConfig) []byte {
+	metadata, _ := newClaudeCodeProbeMetadata()
 	body := map[string]interface{}{
 		"model": probeModel,
 		"system": []map[string]interface{}{
 			{
 				"type": "text",
-				"text": "x-anthropic-billing-header: cc_version=2.1.71.2f9; cc_entrypoint=cli;",
+				"text": claudeCodeProbeBillingHeader,
 			},
 		},
 		"messages":   []map[string]string{{"role": "user", "content": "What are you best at: code generation, creative writing, or math problem solving?"}},
+		"metadata":   metadata,
 		"max_tokens": capabilityProbeMaxTokens,
 		"stream":     true,
 		"thinking": map[string]interface{}{

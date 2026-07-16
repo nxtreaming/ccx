@@ -607,14 +607,14 @@ func diagnoseGeminiChannelWithModel(channel *config.UpstreamConfig, apiKey, base
 // ============== 请求构建 ==============
 
 func buildClaudeCompatRequest(baseURL string, body []byte, channel *config.UpstreamConfig, apiKey string) (*http.Request, error) {
+	body, sessionID := ensureClaudeCodeProbeBody(body)
 	url := buildCapabilityTestURL(baseURL, "/v1", "/messages")
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "claude-code-20250219,adaptive-thinking-2026-01-28,effort-2025-11-24")
+	applyClaudeCodeProbeHeaders(req.Header, sessionID)
 	utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, channel.AuthHeader)
 	for k, v := range channel.CustomHeaders {
 		req.Header.Set(k, v)

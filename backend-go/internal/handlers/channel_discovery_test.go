@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
 	"github.com/gin-gonic/gin"
@@ -224,6 +225,113 @@ func TestDiscoveryProtocolProbeModelsCanCoverEveryDiscoveredModel(t *testing.T) 
 	limited := discoveryProtocolProbeModels(models, false)
 	if len(limited) >= len(models.Items) {
 		t.Fatalf("普通发现仍应使用代表模型，got %v", limited)
+	}
+}
+
+func TestRunDiscoveryProtocolProbeMatchesClaudeCodeOnlyRelay(t *testing.T) {
+	models := []string{"claude-opus-4-7", "claude-opus-4-8"}
+	seen := make(map[string]bool, len(models))
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.Header.Get("User-Agent"), "claude-cli/"+claudeCodeProbeVersion) ||
+			r.Header.Get("X-App") == "" ||
+			r.Header.Get("anthropic-beta") == "" ||
+			r.Header.Get("anthropic-version") == "" {
+			http.Error(w, "not a Claude Code client", http.StatusServiceUnavailable)
+			return
+		}
+
+		var body struct {
+			Model  string `json:"model"`
+			System []struct {
+				Text string `json:"text"`
+			} `json:"system"`
+			Metadata struct {
+				UserID string `json:"user_id"`
+			} `json:"metadata"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+		if len(body.System) == 0 || !strings.HasPrefix(body.System[0].Text, "x-anthropic-billing-header") ||
+			!strings.Contains(body.System[0].Text, "cc_entrypoint=") {
+			http.Error(w, "missing Claude Code billing block", http.StatusServiceUnavailable)
+			return
+		}
+		var userID claudeCodeProbeUserID
+		if err := json.Unmarshal([]byte(body.Metadata.UserID), &userID); err != nil ||
+			userID.DeviceID == "" || userID.SessionID == "" ||
+			r.Header.Get("X-Claude-Code-Session-Id") != userID.SessionID {
+			http.Error(w, "invalid Claude Code metadata", http.StatusServiceUnavailable)
+			return
+		}
+
+		seen[body.Model] = true
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n"))
+		_, _ = w.Write([]byte("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"))
+	}))
+	defer upstream.Close()
+
+	channel := &config.UpstreamConfig{
+		Name:        "Claude Code only",
+		BaseURL:     upstream.URL,
+		BaseURLs:    []string{upstream.URL},
+		APIKeys:     []string{"sk-test"},
+		ServiceType: "claude",
+	}
+	result := runDiscoveryProtocolProbe(context.Background(), channel, "messages", models, 5*time.Second, nil)
+	if !result.Success || !sameStringSet(result.SuccessModels, models) {
+		t.Fatalf("probe result=%#v, want both Opus models successful", result)
+	}
+	for _, model := range models {
+		if !seen[model] {
+			t.Fatalf("model %q was not probed", model)
+		}
+	}
+}
+
+func TestBuildClaudeCompatRequestUsesClaudeCodeClientFingerprint(t *testing.T) {
+	channel := &config.UpstreamConfig{AuthHeader: "bearer"}
+	req, err := buildClaudeCompatRequest(
+		"https://api.example.com",
+		buildClaudeToolCallProbeBody("claude-opus-4-7"),
+		channel,
+		"sk-test",
+	)
+	if err != nil {
+		t.Fatalf("buildClaudeCompatRequest() error = %v", err)
+	}
+	defer req.Body.Close()
+
+	var body struct {
+		System []struct {
+			Text string `json:"text"`
+		} `json:"system"`
+		Metadata struct {
+			UserID string `json:"user_id"`
+		} `json:"metadata"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	if len(body.System) < 2 || body.System[0].Text != claudeCodeProbeBillingHeader {
+		t.Fatalf("system=%#v, want billing block before probe prompt", body.System)
+	}
+	var userID claudeCodeProbeUserID
+	if err := json.Unmarshal([]byte(body.Metadata.UserID), &userID); err != nil {
+		t.Fatalf("decode metadata.user_id: %v", err)
+	}
+	if userID.SessionID == "" || req.Header.Get("X-Claude-Code-Session-Id") != userID.SessionID {
+		t.Fatalf("session header=%q metadata=%#v", req.Header.Get("X-Claude-Code-Session-Id"), userID)
+	}
+	if req.Header.Get("User-Agent") != claudeCodeProbeUserAgent ||
+		req.Header.Get("anthropic-dangerous-direct-browser-access") != "true" {
+		t.Fatalf("unexpected Claude Code headers: %#v", req.Header)
 	}
 }
 

@@ -147,6 +147,39 @@ func TestBuildMessagesProbeBody_LegacyModelsKeepTopLevelSystem(t *testing.T) {
 	}
 }
 
+func TestBuildMessagesProbeBody_UsesCurrentClaudeCodeMetadata(t *testing.T) {
+	bodyBytes := buildMessagesProbeBody("claude-opus-4-7", nil)
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Fatalf("unmarshal body failed: %v", err)
+	}
+	metadata, ok := body["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metadata=%T, want map[string]interface{}", body["metadata"])
+	}
+	userID, ok := metadata["user_id"].(string)
+	if !ok || userID == "" {
+		t.Fatalf("metadata.user_id=%#v, want JSON string", metadata["user_id"])
+	}
+	var parsed claudeCodeProbeUserID
+	if err := json.Unmarshal([]byte(userID), &parsed); err != nil {
+		t.Fatalf("metadata.user_id is not JSON: %v", err)
+	}
+	if parsed.DeviceID == "" || parsed.AccountUUID == "" || parsed.SessionID == "" {
+		t.Fatalf("incomplete Claude Code metadata: %#v", parsed)
+	}
+
+	system, ok := body["system"].([]interface{})
+	if !ok || len(system) == 0 {
+		t.Fatalf("system=%#v, want billing block", body["system"])
+	}
+	first, ok := system[0].(map[string]interface{})
+	if !ok || first["text"] != claudeCodeProbeBillingHeader {
+		t.Fatalf("first system block=%#v, want current billing header", first)
+	}
+}
+
 func TestBuildMessagesProbeBody_KimiK27CodeEnablesRequiredThinking(t *testing.T) {
 	bodyBytes := buildMessagesProbeBody("kimi-k2.7-code", nil)
 
