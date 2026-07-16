@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,100 @@ func TestGetAdminAPIKeyReturnsErrorWhenNoKeysAvailable(t *testing.T) {
 	_, _, err := cm.GetAdminAPIKey(upstream, nil, "Messages")
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGetNextAPIKeySkipsDisabledManagedCredential(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	recoverAt := time.Now().Add(time.Hour).Format(time.RFC3339)
+	initialConfig := `{
+		"managedAccounts": [{
+			"accountUid": "acct-glm",
+			"providerId": "glm",
+			"name": "glm",
+			"credentials": [{"credentialUid": "cred-glm", "apiKey": "glm-managed-key"}]
+		}],
+		"upstream": [{
+			"accountUid": "acct-glm",
+			"channelUid": "ch-glm-messages",
+			"providerId": "glm",
+			"name": "glm-claude",
+			"autoManaged": true,
+			"status": "active",
+			"baseUrl": "https://glm.example/api/anthropic",
+			"serviceType": "claude",
+			"apiKeyConfigs": [{"credentialUid": "cred-glm", "baseUrl": "https://glm.example/api/anthropic"}],
+			"disabledApiKeys": [{
+				"key": "glm-managed-key",
+				"reason": "insufficient_balance",
+				"message": "disabled for test",
+				"disabledAt": "2026-07-16T12:00:00Z",
+				"recoverAt": "` + recoverAt + `"
+			}]
+		}]
+	}`
+	if err := os.WriteFile(configPath, []byte(initialConfig), 0600); err != nil {
+		t.Fatalf("写入初始配置失败: %v", err)
+	}
+
+	cm, err := NewConfigManager(configPath, "")
+	if err != nil {
+		t.Fatalf("NewConfigManager() error = %v", err)
+	}
+	defer cm.Close()
+
+	cfg := cm.GetConfig()
+	upstream := &cfg.Upstream[0]
+	if len(upstream.APIKeys) != 1 || upstream.APIKeys[0] != "glm-managed-key" {
+		t.Fatalf("自动托管凭据未注入测试渠道: %+v", upstream.APIKeys)
+	}
+	if _, err := cm.GetNextAPIKey(upstream, nil, "Messages"); err == nil {
+		t.Fatal("GetNextAPIKey() 选中了 DisabledAPIKeys 中的自动托管凭据")
+	}
+}
+
+func TestBlacklistKeyRefreshesExistingRecordWithoutDuplicate(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	initialConfig := `{
+		"upstream": [{
+			"name": "test-channel",
+			"baseUrl": "https://example.com",
+			"apiKeys": ["sk-active"],
+			"serviceType": "claude",
+			"disabledApiKeys": [{
+				"key": "sk-active",
+				"reason": "insufficient_balance",
+				"message": "old message",
+				"disabledAt": "2026-07-16T12:00:00Z",
+				"recoverAt": "2026-07-16T13:00:00Z"
+			}]
+		}]
+	}`
+	if err := os.WriteFile(configPath, []byte(initialConfig), 0600); err != nil {
+		t.Fatalf("写入初始配置失败: %v", err)
+	}
+
+	cm, err := NewConfigManager(configPath, "")
+	if err != nil {
+		t.Fatalf("NewConfigManager() error = %v", err)
+	}
+	defer cm.Close()
+
+	if err := cm.BlacklistKey("Messages", 0, "sk-active", "insufficient_balance", "new message"); err != nil {
+		t.Fatalf("BlacklistKey() error = %v", err)
+	}
+
+	upstream := cm.GetConfig().Upstream[0]
+	if len(upstream.DisabledAPIKeys) != 1 {
+		t.Fatalf("len(DisabledAPIKeys) = %d, want 1", len(upstream.DisabledAPIKeys))
+	}
+	if got := upstream.DisabledAPIKeys[0].Message; got != "new message" {
+		t.Fatalf("禁用记录未刷新，message = %q", got)
+	}
+	if slices.Contains(upstream.APIKeys, "sk-active") {
+		t.Fatal("重复拉黑后 Key 仍在活跃列表")
 	}
 }
 

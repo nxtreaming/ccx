@@ -61,6 +61,9 @@ func CandidatesForModel(upstream *config.UpstreamConfig, failedKeys map[string]b
 		if key == "" || failedKeys[key] {
 			continue
 		}
+		if upstream.IsKeyDisabledNow(key, now) {
+			continue
+		}
 		cfg := byKey[key]
 		if cfg.Key == "" {
 			cfg.Key = key

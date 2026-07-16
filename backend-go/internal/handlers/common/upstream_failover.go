@@ -976,7 +976,7 @@ func selectAttemptAPIKeyFiltered(
 
 	if !keypool.HasEffectiveConfig(upstream) {
 		// 无 keypool 配置时：对 raw APIKeys 应用 policy filter/sort
-		effectiveFailedKeys := failedKeysWithModelRestrictions(upstream, failedKeys, model)
+		effectiveFailedKeys := failedKeysWithPersistentRestrictions(upstream, failedKeys, model)
 		apiKeys := make([]string, 0, len(upstream.APIKeys))
 		for _, key := range upstream.APIKeys {
 			if key != "" && !effectiveFailedKeys[key] {
@@ -1165,7 +1165,7 @@ func selectAttemptAPIKey(channelScheduler *scheduler.ChannelScheduler, kind sche
 		if fallback == nil {
 			return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
 		}
-		apiKey, err := fallback(upstream, failedKeysWithModelRestrictions(upstream, failedKeys, model))
+		apiKey, err := fallback(upstream, failedKeysWithPersistentRestrictions(upstream, failedKeys, model))
 		if err != nil {
 			return keypool.Selection{}, "", err
 		}
@@ -1204,15 +1204,17 @@ func selectAttemptAPIKey(channelScheduler *scheduler.ChannelScheduler, kind sche
 	return keypool.Selection{}, "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
 }
 
-func failedKeysWithModelRestrictions(upstream *config.UpstreamConfig, failedKeys map[string]bool, model string) map[string]bool {
-	if upstream == nil || model == "" || len(upstream.DisabledKeyModels) == 0 {
+func failedKeysWithPersistentRestrictions(upstream *config.UpstreamConfig, failedKeys map[string]bool, model string) map[string]bool {
+	if upstream == nil || (len(upstream.DisabledAPIKeys) == 0 && (model == "" || len(upstream.DisabledKeyModels) == 0)) {
 		return failedKeys
 	}
 
 	var effective map[string]bool
 	now := time.Now()
 	for _, key := range upstream.APIKeys {
-		if !upstream.IsKeyModelDisabledNow(key, model, now) {
+		keyDisabled := upstream.IsKeyDisabledNow(key, now)
+		modelDisabled := model != "" && upstream.IsKeyModelDisabledNow(key, model, now)
+		if !keyDisabled && !modelDisabled {
 			continue
 		}
 		if effective == nil {

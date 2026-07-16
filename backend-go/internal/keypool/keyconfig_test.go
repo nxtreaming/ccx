@@ -189,3 +189,27 @@ func TestCandidatesForModel_DisabledKeyModelFiltered(t *testing.T) {
 		t.Fatalf("want 2 candidates after expiry, got %d", len(cands))
 	}
 }
+
+func TestCandidatesForModel_DisabledKeyFiltered(t *testing.T) {
+	up := &config.UpstreamConfig{
+		APIKeys: []string{"k1", "k2"},
+		APIKeyConfigs: []config.APIKeyConfig{
+			{Key: "k1", Weight: 2},
+			{Key: "k2", Weight: 1},
+		},
+		DisabledAPIKeys: []config.DisabledKeyInfo{
+			{Key: "k1", RecoverAt: time.Now().Add(time.Hour).Format(time.RFC3339)},
+		},
+	}
+
+	cands := CandidatesForModel(up, nil, "gpt-5.6-sol")
+	if len(cands) != 1 || cands[0].APIKey != "k2" {
+		t.Fatalf("want only k2 while k1 is disabled, got %+v", cands)
+	}
+
+	up.DisabledAPIKeys[0].RecoverAt = time.Now().Add(-time.Hour).Format(time.RFC3339)
+	cands = CandidatesForModel(up, nil, "gpt-5.6-sol")
+	if len(cands) != 2 {
+		t.Fatalf("want 2 candidates after disabled record expires, got %d", len(cands))
+	}
+}

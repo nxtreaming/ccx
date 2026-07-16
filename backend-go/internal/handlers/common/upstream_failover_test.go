@@ -115,6 +115,53 @@ func TestPlainAPIKeySelectionSkipsDisabledModel(t *testing.T) {
 	}
 }
 
+func TestPlainAPIKeySelectionSkipsDisabledKey(t *testing.T) {
+	upstream := &config.UpstreamConfig{
+		Name:    "managed-plain-keys",
+		BaseURL: "https://example.com",
+		APIKeys: []string{"sk-disabled", "sk-allowed"},
+		DisabledAPIKeys: []config.DisabledKeyInfo{
+			{
+				Key:       "sk-disabled",
+				RecoverAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+			},
+		},
+	}
+	fallback := func(upstream *config.UpstreamConfig, failedKeys map[string]bool) (string, error) {
+		for _, key := range upstream.APIKeys {
+			if !failedKeys[key] {
+				return key, nil
+			}
+		}
+		return "", errors.New("no key")
+	}
+
+	tests := []struct {
+		name   string
+		policy *autopilot.EndpointAttemptPolicy
+	}{
+		{name: "without endpoint policy"},
+		{name: "with endpoint policy", policy: &autopilot.EndpointAttemptPolicy{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var key string
+			var err error
+			if tt.policy == nil {
+				_, key, err = selectAttemptAPIKey(nil, scheduler.ChannelKindMessages, 0, upstream, map[string]bool{}, map[string]bool{}, "target-model", fallback)
+			} else {
+				_, key, err = selectAttemptAPIKeyFiltered(nil, scheduler.ChannelKindMessages, 0, upstream, upstream.BaseURL, map[string]bool{}, map[string]bool{}, "target-model", fallback, tt.policy, "Messages", nil)
+			}
+			if err != nil {
+				t.Fatalf("select key error: %v", err)
+			}
+			if key != "sk-allowed" {
+				t.Fatalf("selected key = %q, want sk-allowed", key)
+			}
+		})
+	}
+}
+
 func TestTryUpstreamWithAllKeysRejectsOversizedVisionFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

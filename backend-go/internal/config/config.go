@@ -471,6 +471,30 @@ func (u *UpstreamConfig) IsAutoBlacklistBalanceEnabled() bool {
 	return *u.AutoBlacklistBalance
 }
 
+// IsKeyDisabledNow 判断 API Key 当前是否处于整 Key 禁用期内。
+// RecoverAt 为空表示必须手动恢复；已到期的自动恢复记录不再阻断请求。
+func (u *UpstreamConfig) IsKeyDisabledNow(apiKey string, now time.Time) bool {
+	if apiKey == "" || len(u.DisabledAPIKeys) == 0 {
+		return false
+	}
+	for _, disabled := range u.DisabledAPIKeys {
+		if disabled.Key != apiKey {
+			continue
+		}
+		if disabled.RecoverAt == "" {
+			return true
+		}
+		recoverAt, err := time.Parse(time.RFC3339, disabled.RecoverAt)
+		if err != nil {
+			return true
+		}
+		if now.Before(recoverAt) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsKeyModelDisabledNow 判断 (apiKey, model) 组合当前是否处于限制期内。
 // 纯只读方法，供 keypool 候选过滤与 ConfigManager 复用，避免反向依赖。
 // RecoverAt 为空或已到期视为不再限制。model 比较大小写不敏感。
@@ -836,15 +860,11 @@ func (cm *ConfigManager) GetNextAPIKey(upstream *UpstreamConfig, failedKeys map[
 		return "", fmt.Errorf("上游 %s 没有可用的API密钥", upstream.Name)
 	}
 
-	// 单 Key 直接返回
-	if len(upstream.APIKeys) == 1 {
-		return upstream.APIKeys[0], nil
-	}
-
-	// 筛选可用密钥：排除临时失败密钥和内存中的失败密钥
+	// 筛选可用密钥：排除持久禁用、本次请求失败和内存冷却中的密钥。
+	now := time.Now()
 	availableKeys := []string{}
 	for _, key := range upstream.APIKeys {
-		if !failedKeys[key] && !cm.isKeyFailed(key, apiType) {
+		if !failedKeys[key] && !upstream.IsKeyDisabledNow(key, now) && !cm.isKeyFailed(key, apiType) {
 			availableKeys = append(availableKeys, key)
 		}
 	}
@@ -852,11 +872,11 @@ func (cm *ConfigManager) GetNextAPIKey(upstream *UpstreamConfig, failedKeys map[
 	if len(availableKeys) == 0 {
 		// 如果所有密钥都失效，尝试选择失败时间最早的密钥（恢复尝试）
 		var oldestFailedKey string
-		oldestTime := time.Now()
+		oldestTime := now
 
 		cm.mu.RLock()
 		for _, key := range upstream.APIKeys {
-			if !failedKeys[key] { // 排除本次请求已经尝试过的密钥
+			if !failedKeys[key] && !upstream.IsKeyDisabledNow(key, now) { // 排除本次请求失败或持久禁用的密钥
 				cacheKey := failedKeyCacheKey(apiType, key)
 				if failure, exists := cm.failedKeysCache[cacheKey]; exists {
 					if failure.Timestamp.Before(oldestTime) {
@@ -1127,28 +1147,15 @@ func (cm *ConfigManager) BlacklistKey(apiType string, channelIndex int, apiKey s
 
 	upstream := &(*upstreams)[channelIndex]
 
-	// 检查 key 是否在活跃列表中
-	keyIdx := -1
-	for i, k := range upstream.APIKeys {
-		if k == apiKey {
-			keyIdx = i
-			break
-		}
-	}
-	if keyIdx == -1 {
-		return nil // key 不在活跃列表，可能已被拉黑，忽略
+	wasActive := slices.Contains(upstream.APIKeys, apiKey)
+	wasDisabled := slices.ContainsFunc(upstream.DisabledAPIKeys, func(disabled DisabledKeyInfo) bool {
+		return disabled.Key == apiKey
+	})
+	if !wasActive && !wasDisabled {
+		return nil
 	}
 
-	// 从 APIKeys 中移除
-	upstream.APIKeys = append(upstream.APIKeys[:keyIdx], upstream.APIKeys[keyIdx+1:]...)
-	upstream.APIKeyConfigs = normalizeAPIKeyConfigs(upstream.APIKeys, upstream.APIKeyConfigs)
-
-	// 添加到 DisabledAPIKeys
-	disabledAt := time.Now().Format(time.RFC3339)
-	recoverAt := ""
-	if IsAutoRecoverableDisabledReason(reason) {
-		recoverAt = time.Now().Add(time.Hour).Format(time.RFC3339)
-	}
+	// 在移除活跃 Key 前保存附加配置；重复拉黑时沿用已有快照。
 	var disabledCfg *APIKeyConfig
 	for _, cfg := range upstream.APIKeyConfigs {
 		if cfg.Key == apiKey {
@@ -1157,23 +1164,56 @@ func (cm *ConfigManager) BlacklistKey(apiType string, channelIndex int, apiKey s
 			break
 		}
 	}
-	upstream.DisabledAPIKeys = append(upstream.DisabledAPIKeys, DisabledKeyInfo{
+	if disabledCfg == nil {
+		for _, disabled := range upstream.DisabledAPIKeys {
+			if disabled.Key == apiKey && disabled.Config != nil {
+				copyCfg := cloneAPIKeyConfig(*disabled.Config)
+				disabledCfg = &copyCfg
+				break
+			}
+		}
+	}
+
+	upstream.APIKeys = slices.DeleteFunc(upstream.APIKeys, func(key string) bool {
+		return key == apiKey
+	})
+	upstream.APIKeyConfigs = normalizeAPIKeyConfigs(upstream.APIKeys, upstream.APIKeyConfigs)
+
+	// 同一 Key 只保留一条禁用记录；再次命中时刷新原因和恢复时间。
+	disabledAt := time.Now().Format(time.RFC3339)
+	recoverAt := ""
+	if IsAutoRecoverableDisabledReason(reason) {
+		recoverAt = time.Now().Add(time.Hour).Format(time.RFC3339)
+	}
+	refreshed := DisabledKeyInfo{
 		Key:        apiKey,
 		Reason:     reason,
 		Message:    message,
 		DisabledAt: disabledAt,
 		RecoverAt:  recoverAt,
 		Config:     disabledCfg,
-	})
+	}
+	disabledKeys := make([]DisabledKeyInfo, 0, len(upstream.DisabledAPIKeys)+1)
+	disabledKeys = append(disabledKeys, refreshed)
+	for _, disabled := range upstream.DisabledAPIKeys {
+		if disabled.Key != apiKey {
+			disabledKeys = append(disabledKeys, disabled)
+		}
+	}
+	upstream.DisabledAPIKeys = disabledKeys
 
 	// 同时添加到 HistoricalAPIKeys（保留统计数据）
 	if !slices.Contains(upstream.HistoricalAPIKeys, apiKey) {
 		upstream.HistoricalAPIKeys = append(upstream.HistoricalAPIKeys, apiKey)
 	}
 
-	log.Printf("[%s-Blacklist] Key %s 已被拉黑 (原因: %s, 渠道: %s, 剩余Key: %d)",
+	fromState := "active"
+	if !wasActive {
+		fromState = "disabled"
+	}
+	log.Printf("[%s-Blacklist] Key %s 禁用记录已更新 (原因: %s, 渠道: %s, 剩余Key: %d)",
 		apiType, utils.MaskAPIKey(apiKey), reason, upstream.Name, len(upstream.APIKeys))
-	statelog.LogStateTransition(apiType+"-Blacklist", "key", utils.MaskAPIKey(apiKey), "active", "disabled", reason, "channel="+upstream.Name)
+	statelog.LogStateTransition(apiType+"-Blacklist", "key", utils.MaskAPIKey(apiKey), fromState, "disabled", reason, "channel="+upstream.Name)
 
 	if len(upstream.APIKeys) == 0 {
 		log.Printf("[%s-Blacklist] 警告: 渠道 %s 的所有 Key 都已被拉黑！", apiType, upstream.Name)
