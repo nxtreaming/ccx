@@ -190,6 +190,16 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		return nil, traceErr(err)
 	}
 	trace.setStage("context_filter", len(activeChannels))
+
+	// 在进入 SmartRouter、亲和与优先级排序前剔除没有可选 Key 的渠道。
+	// 这是基础可用性约束，不属于模型重定向或自动路由决策：
+	// 已持久禁用、enabled=false 或空 Key 渠道即使被选中，后续也只会立即 failover。
+	activeChannels = s.filterChannelsByKeyAvailability(activeChannels, kind, trace)
+	trace.setStage("key_availability_filter", len(activeChannels))
+	if len(activeChannels) == 0 {
+		return nil, traceErr(fmt.Errorf("没有具有可用 API Key 的 %s 渠道", kindDisplayName(kind)))
+	}
+
 	if opts.CandidateFilter != nil {
 		beforeFilter := append([]ChannelInfo(nil), activeChannels...)
 		activeChannels, err = opts.CandidateFilter(activeChannels, func(ch ChannelInfo) *config.UpstreamConfig {
@@ -270,7 +280,7 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 	if promotedChannel != nil && !failedChannels[promotedChannel.Index] {
 		// 促销渠道存在且未失败，直接使用（不检查健康状态，让用户设置的促销渠道有机会尝试）
 		upstream := s.getUpstreamByIndex(promotedChannel.Index, kind)
-		if upstream != nil && len(upstream.APIKeys) > 0 && !s.channelInRuntimeCooldown(kind, promotedChannel.Index) {
+		if channelHasSelectableKey(upstream) && !s.channelInRuntimeCooldown(kind, promotedChannel.Index) {
 			failureRate := s.channelFailureRate(upstream, kind)
 			prefix := kindSchedulerLogPrefix(kind)
 			log.Printf("[%s-Promotion] 促销期优先选择渠道: [%d] %s (失败率: %.1f%%, 绕过健康检查)", prefix, promotedChannel.Index, upstream.Name, failureRate*100)
@@ -355,7 +365,7 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		}
 
 		upstream := s.getUpstreamByIndex(ch.Index, kind)
-		if upstream == nil || len(upstream.APIKeys) == 0 {
+		if !channelHasSelectableKey(upstream) {
 			trace.skipChannel(ch, "priority_order", "missing_upstream_or_keys", "")
 			continue
 		}
@@ -446,13 +456,55 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 }
 
 func (s *ChannelScheduler) channelAvailableForCandidateFilter(ch ChannelInfo, upstream *config.UpstreamConfig, kind ChannelKind) bool {
-	if ch.Status != "active" || upstream == nil || len(upstream.APIKeys) == 0 {
+	if ch.Status != "active" || !channelHasSelectableKey(upstream) {
 		return false
 	}
 	if s.channelInRuntimeCooldown(kind, ch.Index) {
 		return false
 	}
 	return s.channelCircuitState(upstream, kind) != metrics.CircuitStateOpen
+}
+
+func (s *ChannelScheduler) filterChannelsByKeyAvailability(channels []ChannelInfo, kind ChannelKind, trace *SelectionTrace) []ChannelInfo {
+	cfg := s.configManager.GetConfig()
+	var upstreams []config.UpstreamConfig
+	switch kind {
+	case ChannelKindResponses:
+		upstreams = cfg.ResponsesUpstream
+	case ChannelKindGemini:
+		upstreams = cfg.GeminiUpstream
+	case ChannelKindChat:
+		upstreams = cfg.ChatUpstream
+	case ChannelKindImages:
+		upstreams = cfg.ImagesUpstream
+	case ChannelKindVectors:
+		upstreams = cfg.VectorsUpstream
+	default:
+		upstreams = cfg.Upstream
+	}
+
+	filtered := make([]ChannelInfo, 0, len(channels))
+	for _, ch := range channels {
+		if ch.Index < 0 || ch.Index >= len(upstreams) {
+			trace.skipChannel(ch, "key_availability_filter", "missing_upstream", "")
+			continue
+		}
+		upstream := &upstreams[ch.Index]
+		if !channelHasSelectableKey(upstream) {
+			trace.skipChannel(ch, "key_availability_filter", "no_selectable_keys",
+				fmt.Sprintf("configured=%d disabled=%d", len(upstream.APIKeys), len(upstream.DisabledAPIKeys)))
+			continue
+		}
+		filtered = append(filtered, ch)
+	}
+	return filtered
+}
+
+// channelHasSelectableKey 只判断渠道的基础 Key 可用性。
+// model 置空，避免在 scheduler 尚未确定自动映射实际模型时误用 per-key model 白名单；
+// 模型级限制仍由请求路径基于 redirectedModel 精确执行。
+func channelHasSelectableKey(upstream *config.UpstreamConfig) bool {
+	return upstream != nil && len(keypool.CandidatesForModel(upstream, nil, "")) > 0
 }
 
 func traceCandidateFilterSkips(before, after []ChannelInfo, trace *SelectionTrace) {
@@ -706,7 +758,7 @@ func (s *ChannelScheduler) channelIsHealthy(upstream *config.UpstreamConfig, kin
 }
 
 func (s *ChannelScheduler) channelIsRuntimeAvailable(upstream *config.UpstreamConfig, kind ChannelKind, channelIndex int) bool {
-	if upstream == nil {
+	if !channelHasSelectableKey(upstream) {
 		return false
 	}
 	if s.channelCircuitState(upstream, kind) == metrics.CircuitStateOpen {
@@ -999,7 +1051,7 @@ func (s *ChannelScheduler) selectFallbackChannelWithRecord(
 		}
 
 		upstream := s.getUpstreamByIndex(ch.Index, kind)
-		if upstream == nil || len(upstream.APIKeys) == 0 {
+		if !channelHasSelectableKey(upstream) {
 			continue
 		}
 
@@ -1147,7 +1199,7 @@ func (s *ChannelScheduler) findBestAvailableChannelPriority(
 		}
 
 		upstream := s.getUpstreamByIndex(ch.Index, kind)
-		if upstream == nil || len(upstream.APIKeys) == 0 {
+		if !channelHasSelectableKey(upstream) {
 			continue
 		}
 		if !s.channelIsRuntimeAvailable(upstream, kind, ch.Index) {

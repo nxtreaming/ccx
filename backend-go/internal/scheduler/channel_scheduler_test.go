@@ -181,6 +181,121 @@ func TestSelectChannelTraceRecordsActiveModelFilterSkips(t *testing.T) {
 	}
 }
 
+func TestSelectChannelFiltersUnavailableKeysBeforeCandidateFilter(t *testing.T) {
+	disabled := false
+	cfg := config.Config{
+		Upstream: []config.UpstreamConfig{
+			{
+				Name:     "persistently-disabled",
+				BaseURL:  "https://disabled.example.com",
+				APIKeys:  []string{"sk-disabled"},
+				Status:   "active",
+				Priority: 1,
+				DisabledAPIKeys: []config.DisabledKeyInfo{
+					{Key: "sk-disabled", RecoverAt: time.Now().Add(time.Hour).Format(time.RFC3339)},
+				},
+			},
+			{
+				Name:     "config-disabled",
+				BaseURL:  "https://config-disabled.example.com",
+				APIKeys:  []string{"sk-config-disabled"},
+				Status:   "active",
+				Priority: 2,
+				APIKeyConfigs: []config.APIKeyConfig{
+					{Key: "sk-config-disabled", Enabled: &disabled},
+				},
+			},
+			{
+				Name:     "selected",
+				BaseURL:  "https://selected.example.com",
+				APIKeys:  []string{"sk-selected"},
+				Status:   "active",
+				Priority: 3,
+			},
+		},
+	}
+
+	scheduler, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	candidateCount := -1
+	result, err := scheduler.SelectChannelWithOptions(context.Background(), SelectionOptions{
+		Kind: ChannelKindMessages,
+		CandidateFilter: func(
+			channels []ChannelInfo,
+			upstreamFor func(ChannelInfo) *config.UpstreamConfig,
+			candidateAvailable func(ChannelInfo, *config.UpstreamConfig) bool,
+		) ([]ChannelInfo, error) {
+			candidateCount = len(channels)
+			return channels, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("选择渠道失败: %v", err)
+	}
+	if result.ChannelIndex != 2 {
+		t.Fatalf("result channel = %d, want 2", result.ChannelIndex)
+	}
+	if candidateCount != 1 {
+		t.Fatalf("CandidateFilter 收到 %d 个渠道，want 1", candidateCount)
+	}
+
+	keySkips := 0
+	for _, skipped := range result.Trace.Candidates {
+		if skipped.Stage == "key_availability_filter" && skipped.Reason == "no_selectable_keys" {
+			keySkips++
+		}
+	}
+	if keySkips != 2 {
+		t.Fatalf("key availability skips = %d, want 2: %#v", keySkips, result.Trace.Candidates)
+	}
+	stageCount := -1
+	for _, stage := range result.Trace.Stages {
+		if stage.Name == "key_availability_filter" {
+			stageCount = stage.Count
+			break
+		}
+	}
+	if stageCount != 1 {
+		t.Fatalf("key_availability_filter count = %d, want 1", stageCount)
+	}
+}
+
+func TestSelectChannelAllowsExpiredDisabledKeyForRecovery(t *testing.T) {
+	cfg := config.Config{
+		Upstream: []config.UpstreamConfig{
+			{
+				Name:     "recovery-due",
+				BaseURL:  "https://recovery.example.com",
+				APIKeys:  []string{"sk-recovery"},
+				Status:   "active",
+				Priority: 1,
+				DisabledAPIKeys: []config.DisabledKeyInfo{
+					{Key: "sk-recovery", RecoverAt: time.Now().Add(-time.Minute).Format(time.RFC3339)},
+				},
+			},
+			{
+				Name:     "fallback",
+				BaseURL:  "https://fallback.example.com",
+				APIKeys:  []string{"sk-fallback"},
+				Status:   "active",
+				Priority: 2,
+			},
+		},
+	}
+
+	scheduler, cleanup := createTestScheduler(t, cfg)
+	defer cleanup()
+
+	result, err := scheduler.SelectChannel(context.Background(), "", nil, ChannelKindMessages, "", "", "")
+	if err != nil {
+		t.Fatalf("选择渠道失败: %v", err)
+	}
+	if result.ChannelIndex != 0 {
+		t.Fatalf("到期禁用 Key 应允许恢复探测，selected=%d want=0", result.ChannelIndex)
+	}
+}
+
 func TestSelectChannelTraceRecordsCandidateFilterSkips(t *testing.T) {
 	cfg := config.Config{
 		Upstream: []config.UpstreamConfig{
