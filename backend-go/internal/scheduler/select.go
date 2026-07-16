@@ -1265,9 +1265,18 @@ func (s *ChannelScheduler) buildSmartFilterFromProvider(
 	}
 
 	return func(ctx context.Context, channels []ChannelInfo) []ChannelInfo {
-		result, err := filter(channels, func(ch ChannelInfo) *config.UpstreamConfig {
-			return s.getUpstreamByIndex(ch.Index, kind)
-		}, func(ch ChannelInfo, upstream *config.UpstreamConfig) bool {
+		// SmartRouter 在评分、结果映射和硬约束阶段会多次读取同一渠道。
+		// 请求级缓存避免每次读取都通过 GetConfig 深拷贝整份配置。
+		upstreamCache := make(map[int]*config.UpstreamConfig, len(channels))
+		upstreamFor := func(ch ChannelInfo) *config.UpstreamConfig {
+			if upstream, ok := upstreamCache[ch.Index]; ok {
+				return upstream
+			}
+			upstream := s.getUpstreamByIndex(ch.Index, kind)
+			upstreamCache[ch.Index] = upstream
+			return upstream
+		}
+		result, err := filter(channels, upstreamFor, func(ch ChannelInfo, upstream *config.UpstreamConfig) bool {
 			return s.channelAvailableForCandidateFilter(ch, upstream, kind)
 		})
 		if err != nil {

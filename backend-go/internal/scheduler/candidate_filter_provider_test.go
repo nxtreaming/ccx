@@ -75,3 +75,44 @@ func TestCandidateSelectionObserverReceivesActualChannelUID(t *testing.T) {
 		t.Fatalf("dry-run unexpectedly called observer: %v", observed)
 	}
 }
+
+func TestSmartFilterCachesUpstreamSnapshotPerChannel(t *testing.T) {
+	s, cleanup := createTestScheduler(t, config.Config{
+		ResponsesUpstream: []config.UpstreamConfig{
+			{Name: "first", BaseURL: "https://first.example.com", APIKeys: []string{"sk-first"}, Status: "active"},
+			{Name: "second", BaseURL: "https://second.example.com", APIKeys: []string{"sk-second"}, Status: "active"},
+		},
+	})
+	defer cleanup()
+
+	s.SetCandidateFilterProvider(func(context.Context, ChannelKind, string) (CandidateFilterFunc, CandidateSelectionObserver) {
+		return func(
+			channels []ChannelInfo,
+			upstreamFor func(ChannelInfo) *config.UpstreamConfig,
+			_ func(ChannelInfo, *config.UpstreamConfig) bool,
+		) ([]ChannelInfo, error) {
+			first := upstreamFor(channels[0])
+			firstAgain := upstreamFor(channels[0])
+			second := upstreamFor(channels[1])
+			if first == nil || second == nil {
+				t.Fatal("upstream snapshot must not be nil")
+			}
+			if first != firstAgain {
+				t.Fatal("same channel should reuse the request-scoped upstream snapshot")
+			}
+			if first == second {
+				t.Fatal("different channels must not share an upstream snapshot")
+			}
+			return channels, nil
+		}, nil
+	})
+
+	filter, _ := s.buildSmartFilterFromProvider(context.Background(), ChannelKindResponses, "gpt-5.6-sol")
+	if filter == nil {
+		t.Fatal("buildSmartFilterFromProvider() returned nil filter")
+	}
+	channels := []ChannelInfo{{Index: 0, Name: "first"}, {Index: 1, Name: "second"}}
+	if got := filter(context.Background(), channels); len(got) != len(channels) {
+		t.Fatalf("filtered channels = %d, want %d", len(got), len(channels))
+	}
+}
