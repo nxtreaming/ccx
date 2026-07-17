@@ -1997,7 +1997,7 @@ Score = w_quality * qualityScore
   domainStrengthScore:   模型在当前任务域的优势分，0.0-1.0（0.5=中性），见 §5.7
 
   tierMatchBonus: 渠道画像标签匹配策略优先标签时 +10
-  penalty:        healthState=degraded 时 -5, limited 时 -20
+  penalty:        healthState=degraded 时 -5, limited 时 -20；assist 下 dead/misconfigured 额外 -100 并保留在队尾
 
   权重根据 TaskClass 不同（w_family 统一为 0.2，w_provider_quality 统一为 1.0）：
   Supervisor:      w_quality=3, w_stability=2, w_speed=1, w_cost=0, w_savings=0.5, w_family=0.2, w_provider_quality=1.0

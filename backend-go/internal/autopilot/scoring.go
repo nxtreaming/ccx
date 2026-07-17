@@ -311,13 +311,16 @@ func calcTierMatchBonus(c ScoringCandidate, hint string) float64 {
 }
 
 // calcPenalty 计算健康状态惩罚分（§5.3）。
-// degraded 时 -5，limited 时 -20。
+// assist 模式必须保留全部候选，因此用终态惩罚确保 dead/misconfigured
+// 不会因成本或输入顺序排在仍可尝试的渠道之前。
 func calcPenalty(hs HealthState) float64 {
 	switch hs {
 	case HealthStateDegraded:
 		return 5
 	case HealthStateLimited:
 		return 20
+	case HealthStateDead, HealthStateMisconfigured:
+		return 100
 	default:
 		return 0
 	}

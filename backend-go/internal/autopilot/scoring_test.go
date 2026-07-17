@@ -649,25 +649,31 @@ func TestScoreCandidate_Penalty(t *testing.T) {
 	}
 
 	healthy := ScoreCandidate(base, ctx)
-
-	degraded := base
-	degraded.HealthState = HealthStateDegraded
-	degraded.ChannelUID = "degraded"
-	resultDegraded := ScoreCandidate(degraded, ctx)
-
-	limited := base
-	limited.HealthState = HealthStateLimited
-	limited.ChannelUID = "limited"
-	resultLimited := ScoreCandidate(limited, ctx)
-
-	// degraded 比 healthy 低 5 分
-	if !floatEq(healthy.Score-resultDegraded.Score, 5.0) {
-		t.Errorf("degraded penalty diff = %v, want 5.0", healthy.Score-resultDegraded.Score)
+	tests := []struct {
+		name        string
+		healthState HealthState
+		wantPenalty float64
+	}{
+		{name: "unknown", healthState: HealthStateUnknown, wantPenalty: 0},
+		{name: "degraded", healthState: HealthStateDegraded, wantPenalty: 5},
+		{name: "limited", healthState: HealthStateLimited, wantPenalty: 20},
+		{name: "misconfigured", healthState: HealthStateMisconfigured, wantPenalty: 100},
+		{name: "dead", healthState: HealthStateDead, wantPenalty: 100},
 	}
 
-	// limited 比 healthy 低 20 分
-	if !floatEq(healthy.Score-resultLimited.Score, 20.0) {
-		t.Errorf("limited penalty diff = %v, want 20.0", healthy.Score-resultLimited.Score)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := base
+			candidate.ChannelUID = tt.name
+			candidate.HealthState = tt.healthState
+			result := ScoreCandidate(candidate, ctx)
+			if !floatEq(result.Penalty, tt.wantPenalty) {
+				t.Fatalf("Penalty = %v, want %v", result.Penalty, tt.wantPenalty)
+			}
+			if !floatEq(healthy.Score-result.Score, tt.wantPenalty) {
+				t.Fatalf("score diff = %v, want %v", healthy.Score-result.Score, tt.wantPenalty)
+			}
+		})
 	}
 }
 
