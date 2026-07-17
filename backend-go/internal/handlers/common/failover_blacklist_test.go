@@ -438,6 +438,12 @@ func TestShouldBlacklistKey_BalanceMessages(t *testing.T) {
 			},
 		},
 		{
+			name:       "403 image generation permission should not blacklist whole key",
+			statusCode: 403,
+			body:       `{"error":{"code":"","message":"Image generation is not enabled for this group","type":"permission_error"}}`,
+			want:       BlacklistResult{},
+		},
+		{
 			name:       "503 no permission to access group should not blacklist (only 403)",
 			statusCode: 503,
 			body:       `{"error":{"code":"","message":"No permission to access group foo","type":"new_api_error"}}`,
@@ -619,6 +625,11 @@ func TestIsKeyModelRestrictionError(t *testing.T) {
 			name: "relay exhaustion with model_not_found code",
 			body: `{"error":{"code":"model_not_found","message":"No available channel for model claude-sonnet-5 under group default (distributor)"}}`,
 			want: false,
+		},
+		{
+			name: "image generation group permission is key model restriction",
+			body: `{"error":{"code":"","message":"Image generation is not enabled for this group","type":"permission_error"}}`,
+			want: true,
 		},
 		{
 			name: "unrelated invalid request",

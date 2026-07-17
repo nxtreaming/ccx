@@ -85,6 +85,33 @@ func hashModelMapping(m map[string]string) string {
 	return hex.EncodeToString(h[:8])
 }
 
+func hashCapabilityProbePool(channel *config.UpstreamConfig) string {
+	if channel == nil || (len(channel.APIKeys) <= 1 && len(channel.GetAllBaseURLs()) <= 1) {
+		return ""
+	}
+	payload, err := json.Marshal(struct {
+		APIKeys       []string              `json:"apiKeys"`
+		APIKeyConfigs []config.APIKeyConfig `json:"apiKeyConfigs"`
+		BaseURLs      []string              `json:"baseUrls"`
+	}{
+		APIKeys:       channel.APIKeys,
+		APIKeyConfigs: channel.APIKeyConfigs,
+		BaseURLs:      channel.GetAllBaseURLs(),
+	})
+	if err != nil {
+		return ""
+	}
+	sum := sha1.Sum(payload)
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+func capabilityProbeCacheAPIKey(channel *config.UpstreamConfig, fallback string) string {
+	if poolHash := hashCapabilityProbePool(channel); poolHash != "" {
+		return fallback + ":pool:" + poolHash
+	}
+	return fallback
+}
+
 func normalizeCapabilityModels(models []string) []string {
 	if len(models) == 0 {
 		return nil

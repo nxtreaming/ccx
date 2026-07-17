@@ -1181,16 +1181,16 @@ func isModelRoutingError(bodyBytes []byte) bool {
 	return false
 }
 
-// isKeyModelRestrictionError 只识别能归因到当前 Key/上游明确不支持模型的错误。
+// keyModelRestrictionReason 只识别能归因到当前 Key 的模型或模型工具权限错误。
 // 中转站 "no available channel" 属于 relay 级临时耗尽，只允许 failover，不能禁用健康 Key。
-func isKeyModelRestrictionError(bodyBytes []byte) bool {
+func keyModelRestrictionReason(bodyBytes []byte) string {
 	var errResp map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &errResp); err != nil {
-		return false
+		return ""
 	}
 	errObj, ok := errResp["error"].(map[string]interface{})
 	if !ok {
-		return false
+		return ""
 	}
 
 	code := strings.ToLower(strings.TrimSpace(toStringField(errObj, "code")))
@@ -1198,15 +1198,52 @@ func isKeyModelRestrictionError(bodyBytes []byte) bool {
 	if strings.Contains(message, "no available channel for model") ||
 		strings.Contains(message, "under group") ||
 		strings.Contains(message, "(distributor)") {
-		return false
+		if !isImageGenerationKeyRestrictionMessage(message) {
+			return ""
+		}
+	}
+	if isImageGenerationKeyRestrictionMessage(message) {
+		return "image_generation_not_enabled"
 	}
 	if code == "model_not_found" {
-		return true
+		return "model_not_found"
 	}
-	return strings.Contains(message, "supported api model names") ||
+	if strings.Contains(message, "supported api model names") ||
 		strings.Contains(message, "unsupported model") ||
 		(strings.Contains(message, "model") && strings.Contains(message, "not supported")) ||
-		strings.Contains(message, "model not found")
+		strings.Contains(message, "model not found") {
+		return "model_not_found"
+	}
+	return ""
+}
+
+func isKeyModelRestrictionError(bodyBytes []byte) bool {
+	return keyModelRestrictionReason(bodyBytes) != ""
+}
+
+func isImageGenerationKeyRestrictionMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if !strings.Contains(message, "image generation") && !strings.Contains(message, "image_generation") &&
+		!strings.Contains(message, "image_gen") && !strings.Contains(message, "imagegen") {
+		return false
+	}
+	markers := []string{
+		"not enabled",
+		"not allowed",
+		"not supported",
+		"unsupported",
+		"does not have access",
+		"permission",
+		"unknown tool",
+		"invalid tool",
+		"unrecognized tool",
+	}
+	for _, marker := range markers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeUpstreamErrorStatus 修正上游误报的客户端配置错误状态码
@@ -1244,6 +1281,11 @@ func ShouldBlacklistKey(statusCode int, bodyBytes []byte) BlacklistResult {
 	}
 
 	typeLower := strings.ToLower(errType)
+	// 图片工具未向当前分组开放属于 Key×模型能力差异，不能按通用
+	// permission_error 拉黑整把 Key；请求链路会改用组合级限制。
+	if isImageGenerationKeyRestrictionMessage(errMessage) {
+		return BlacklistResult{}
+	}
 
 	// 高置信 message 优先于状态码/type/code。部分中转站会用 400 + invalid_request_error
 	// 包装真实的 Key 余额/认证状态，不能让外层错误码短路拉黑。

@@ -133,6 +133,22 @@ func TestStripImageGenerationFromChatTools(t *testing.T) {
 		}
 	})
 
+	t.Run("剥离 Codex image_gen namespace 与扁平 function", func(t *testing.T) {
+		reqMap := map[string]interface{}{
+			"tools": []interface{}{
+				map[string]interface{}{"type": "namespace", "name": "image_gen"},
+				map[string]interface{}{"type": "function", "function": map[string]interface{}{"name": "image_gen__imagegen"}},
+				map[string]interface{}{"type": "function", "function": map[string]interface{}{"name": "lookup_user"}},
+			},
+		}
+		stripImageGenerationFromChatTools(reqMap)
+
+		tools, ok := reqMap["tools"].([]interface{})
+		if !ok || len(tools) != 1 {
+			t.Fatalf("tools = %#v, want 1 entry", reqMap["tools"])
+		}
+	})
+
 	t.Run("无 image_generation 不修改", func(t *testing.T) {
 		reqMap := map[string]interface{}{
 			"tools": []interface{}{

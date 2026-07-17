@@ -95,6 +95,7 @@ type DiscoveryCapabilityProbeResult struct {
 type DiscoveryCapabilitiesResult struct {
 	ToolCalls        DiscoveryCapabilityProbeResult `json:"toolCalls"`
 	Vision           DiscoveryCapabilityProbeResult `json:"vision"`
+	ImageGeneration  DiscoveryCapabilityProbeResult `json:"imageGeneration"`
 	ThinkingPassback DiscoveryCapabilityProbeResult `json:"thinkingPassback"`
 }
 
@@ -592,6 +593,7 @@ func runDiscoveryCapabilityProbes(
 	return DiscoveryCapabilitiesResult{
 		ToolCalls:        runDiscoveryToolCallProbe(channel, channelKind, apiKey, baseURL, probeModel, targetClients),
 		Vision:           runDiscoveryVisionProbe(channel, channelKind, apiKey, baseURL, visionProbeModel),
+		ImageGeneration:  discoveryImageGenerationProbeResult(compat),
 		ThinkingPassback: discoveryThinkingPassbackProbeResult(compat),
 	}
 }
@@ -614,7 +616,28 @@ func mergeDiscoveryCapabilityRecommendations(recommendation *DiscoveryRecommenda
 
 	merge(capabilities.ToolCalls, "toolCalls")
 	merge(capabilities.Vision, "vision")
+	merge(capabilities.ImageGeneration, "imageGeneration")
 	merge(capabilities.ThinkingPassback, "thinkingPassback")
+}
+
+func discoveryImageGenerationProbeResult(compat CompatDiagnoseResult) DiscoveryCapabilityProbeResult {
+	evidence := strings.TrimSpace(compat.Evidence["stripImageGenerationTool"])
+	strip, tested := compat.Recommendations["stripImageGenerationTool"]
+	if !tested {
+		return DiscoveryCapabilityProbeResult{
+			Tested:    false,
+			Supported: false,
+			Evidence:  strings.TrimSpace(compat.Evidence["imageGenerationToolProbe"]),
+		}
+	}
+	return DiscoveryCapabilityProbeResult{
+		Tested:    true,
+		Supported: !strip,
+		Evidence:  evidence,
+		Recommendation: map[string]bool{
+			"stripImageGenerationTool": strip,
+		},
+	}
 }
 
 func discoveryVisionProbeModel(

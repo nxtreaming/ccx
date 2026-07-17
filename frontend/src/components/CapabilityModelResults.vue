@@ -50,6 +50,10 @@
               <span class="tooltip-label">{{ t('capability.modelStatus') }}</span>
               <span class="tooltip-value">{{ getModelStatusText(modelResult) }}</span>
             </div>
+            <div v-if="modelResult.codexImageGeneration?.tested" class="tooltip-row">
+              <span class="tooltip-label">{{ t('capability.codexImageGeneration') }}</span>
+              <span class="tooltip-value">{{ formatCodexImageGeneration(modelResult) }}</span>
+            </div>
           </div>
           <div v-else-if="getModelTooltipView(modelResult) === 'pending'" class="tooltip-content">
             <div class="tooltip-title">{{ modelResult.model }}</div>
@@ -71,6 +75,10 @@
             <div class="tooltip-row">
               <span class="tooltip-label">{{ t('capability.modelStatus') }}</span>
               <span class="tooltip-value">{{ getModelStatusText(modelResult) }}</span>
+            </div>
+            <div v-if="modelResult.codexImageGeneration?.tested" class="tooltip-row">
+              <span class="tooltip-label">{{ t('capability.codexImageGeneration') }}</span>
+              <span class="tooltip-value">{{ formatCodexImageGeneration(modelResult) }}</span>
             </div>
             <div v-if="getModelDisplayState(modelResult) !== 'idle'" class="tooltip-error">{{ getModelTooltipError(modelResult) }}</div>
             <div v-if="getModelRetryHintVisible(modelResult)" class="tooltip-retry">{{ getModelDisplayState(modelResult) === 'idle' ? t('capability.testModel') : t('capability.retryModel') }}</div>
@@ -183,6 +191,19 @@ const formatLatency = (latency: number): string => latency >= 0 ? `${latency}ms`
 const formatStreaming = (modelResult: CapabilityModelJobResult): string => {
   if (!modelResult.success) return '-'
   return modelResult.streamingSupported ? t('capability.supported') : t('capability.unsupported')
+}
+
+const formatCodexImageGeneration = (modelResult: CapabilityModelJobResult): string => {
+  const probe = modelResult.codexImageGeneration
+  if (!probe) return '-'
+  const total = probe.supportedKeys + probe.unsupportedKeys + probe.inconclusiveKeys
+  const summary = t('capability.codexImageGenerationSummary', {
+    supported: probe.supportedKeys,
+    total,
+  })
+  return probe.compatibleViaStrip
+    ? `${summary} · ${t('capability.codexImageGenerationStripped')}`
+    : summary
 }
 
 const isModelSuccessful = (modelResult: CapabilityModelJobResult): boolean => getModelDisplayState(modelResult) === 'success'

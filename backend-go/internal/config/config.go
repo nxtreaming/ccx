@@ -54,7 +54,7 @@ type UpstreamConfig struct {
 	CodexToolCompat            *bool `json:"codexToolCompat,omitempty"`
 	// Deprecated: 使用 codexToolCompat；保留旧字段仅用于配置读取和旧前端写入兼容。
 	StripCodexClientTools bool `json:"stripCodexClientTools,omitempty"`
-	// Responses/Chat 工具兼容：移除 image_generation 工具（兼容未开通图片生成权限的上游）
+	// Responses/Chat 工具兼容：移除 image_generation 与 Codex image_gen 工具（兼容未开通图片生成权限的上游）
 	StripImageGenerationTool bool `json:"stripImageGenerationTool,omitempty"`
 	// Images 响应兼容：当客户端请求 b64_json 而上游只返回 URL 时，下载并转换为 b64_json（默认 false）
 	ConvertImageURLToB64JSON bool `json:"convertImageUrlToB64Json,omitempty"`
@@ -237,7 +237,7 @@ type DisabledKeyInfo struct {
 type DisabledKeyModelInfo struct {
 	Key        string `json:"key"`
 	Model      string `json:"model"`      // 触发限制的模型（redirectedModel）
-	Reason     string `json:"reason"`     // "model_not_found"
+	Reason     string `json:"reason"`     // "model_not_found" / "image_generation_not_enabled"
 	Message    string `json:"message"`    // 原始错误信息摘要
 	DisabledAt string `json:"disabledAt"` // RFC3339 时间戳
 	RecoverAt  string `json:"recoverAt"`  // RFC3339 自动恢复时间（默认 +1h）
@@ -551,7 +551,7 @@ func (u *UpstreamConfig) IsRateLimitAutoFromHeadersEnabled() bool {
 	return true
 }
 
-// IsStripImageGenerationToolEnabled 检查是否移除 image_generation 工具（默认 false）。
+// IsStripImageGenerationToolEnabled 检查是否移除 image_generation 与 Codex image_gen 工具（默认 false）。
 func (u *UpstreamConfig) IsStripImageGenerationToolEnabled() bool {
 	return u.StripImageGenerationTool
 }

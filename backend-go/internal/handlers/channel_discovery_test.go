@@ -23,6 +23,58 @@ func TestBuildTransientDiscoveryChannelRequiresBaseURLAndKey(t *testing.T) {
 	}
 }
 
+func TestDiscoveryImageGenerationProbeResult(t *testing.T) {
+	tests := []struct {
+		name          string
+		compat        CompatDiagnoseResult
+		wantTested    bool
+		wantSupported bool
+		wantStrip     bool
+	}{
+		{
+			name: "两种工具均被接受",
+			compat: CompatDiagnoseResult{
+				Recommendations: map[string]bool{"stripImageGenerationTool": false},
+				Evidence:        map[string]string{"stripImageGenerationTool": "upstream accepted image generation tools"},
+			},
+			wantTested:    true,
+			wantSupported: true,
+			wantStrip:     false,
+		},
+		{
+			name: "任一工具被拒绝",
+			compat: CompatDiagnoseResult{
+				Recommendations: map[string]bool{"stripImageGenerationTool": true},
+				Evidence:        map[string]string{"stripImageGenerationTool": "namespace HTTP 403"},
+			},
+			wantTested:    true,
+			wantSupported: false,
+			wantStrip:     true,
+		},
+		{
+			name: "探测不确定",
+			compat: CompatDiagnoseResult{
+				Recommendations: map[string]bool{},
+				Evidence:        map[string]string{"imageGenerationToolProbe": "probe was inconclusive"},
+			},
+			wantTested:    false,
+			wantSupported: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := discoveryImageGenerationProbeResult(tt.compat)
+			if got.Tested != tt.wantTested || got.Supported != tt.wantSupported {
+				t.Fatalf("结果 = %+v", got)
+			}
+			if tt.wantTested && got.Recommendation["stripImageGenerationTool"] != tt.wantStrip {
+				t.Fatalf("剥离建议 = %+v", got.Recommendation)
+			}
+		})
+	}
+}
+
 func TestBuildTransientDiscoveryChannelAllowsServiceTypeDetection(t *testing.T) {
 	req := ChannelDiscoveryRequest{
 		BaseURLs: []string{"https://api.example.com"},

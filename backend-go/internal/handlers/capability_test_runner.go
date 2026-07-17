@@ -186,14 +186,15 @@ func runCapabilityTestJob(jobID, channelKind string, channelID int, channel conf
 			rr, tested := actualModelResults[actualModel]
 			if tested {
 				modelResults = append(modelResults, ModelTestResult{
-					Model:              probeModel,
-					ActualModel:        actualModel,
-					Success:            rr.Success,
-					Latency:            rr.Latency,
-					StreamingSupported: rr.StreamingSupported,
-					Error:              rr.Error,
-					StartedAt:          rr.StartedAt,
-					TestedAt:           rr.TestedAt,
+					Model:                probeModel,
+					ActualModel:          actualModel,
+					Success:              rr.Success,
+					Latency:              rr.Latency,
+					StreamingSupported:   rr.StreamingSupported,
+					CodexImageGeneration: rr.CodexImageGeneration,
+					Error:                rr.Error,
+					StartedAt:            rr.StartedAt,
+					TestedAt:             rr.TestedAt,
 				})
 				if rr.Success {
 					successCount++
@@ -621,6 +622,24 @@ func isCapabilityJobCancelled(jobID string) bool {
 // executeModelTest 单模型测试（不调用 AcquireSendSlot，由编排器负责限流）
 // 原生协议测试直接用原始模型名发请求，不走 ModelMapping 重定向
 func executeModelTest(ctx context.Context, channel *config.UpstreamConfig, protocol, model string, timeout time.Duration, jobID string, cfgManager *config.ConfigManager, channelID int, channelKind, apiKey string, channelLogStore *metrics.ChannelLogStore) ModelTestResult {
+	if shouldProbeCodexImageGeneration(protocol, model) {
+		modelResult := executeCodexImageGenerationCapabilityTest(ctx, channel, model, timeout, cfgManager, channelID, channelKind)
+		status := CapabilityModelStatusFailed
+		if modelResult.Success {
+			status = CapabilityModelStatusSuccess
+		}
+		capabilityJobs.update(jobID, func(job *CapabilityTestJob) {
+			if job.Lifecycle == CapabilityLifecycleCancelled {
+				return
+			}
+			updateCapabilityJobModelResult(job, protocol, model, status, modelResult)
+		})
+		log.Printf("[CapabilityTest-Codex] 渠道 %s 完成 codex-auto-review 图片工具探测 (实际模型: %s, 支持 Key: %d, 不支持 Key: %d, 不确定 Key: %d)",
+			channel.Name, modelResult.ActualModel, modelResult.CodexImageGeneration.SupportedKeys,
+			modelResult.CodexImageGeneration.UnsupportedKeys, modelResult.CodexImageGeneration.InconclusiveKeys)
+		return modelResult
+	}
+
 	startedAt := time.Now()
 
 	modelResult := ModelTestResult{

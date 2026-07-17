@@ -384,54 +384,26 @@ func diagnoseImageGenerationToolWithModel(channel *config.UpstreamConfig, channe
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
 	defer cancel()
 
-	var (
-		req *http.Request
-		err error
-	)
-	switch protocol {
-	case "responses":
-		req, err = buildResponsesCompatRequest(baseURL, buildResponsesImageGenerationToolProbeBody(probeModel), channel, apiKey)
-	case "chat":
-		req, err = buildOpenAIChatCompatRequest(baseURL, buildOpenAIChatImageGenerationToolProbeBody(probeModel), channel, apiKey)
-	default:
-		return
-	}
-	if err != nil {
-		log.Printf("[CompatDiagnose] build image_generation probe: %v", err)
-		return
-	}
-
-	events, statusCode, body, sendErr := sendCompatProbe(ctx, req, channel)
-	if isCompatProbeTimeout(sendErr, ctx) {
-		log.Printf("[CompatDiagnose] image_generation probe timeout")
-		return
-	}
-	if sendErr == nil && statusCode >= 200 && statusCode < 300 {
-		if hasMeaningfulCompatSSE(events, protocol) {
-			recs["stripImageGenerationTool"] = false
+	results := probeImageGenerationToolModes(ctx, channel, protocol, apiKey, baseURL, probeModel)
+	state := aggregateImageGenerationProbeState(results)
+	switch state {
+	case ImageGenerationProbeSupported:
+		recs["stripImageGenerationTool"] = false
+		if protocol == "responses" {
+			evid["stripImageGenerationTool"] = "upstream accepted image_generation tool and Codex image_gen namespace"
+		} else {
 			evid["stripImageGenerationTool"] = "upstream accepted image_generation tool"
-			return
 		}
-		if isImageGenerationToolUnsupported(statusCode, strings.Join(events, "\n")) {
-			recs["stripImageGenerationTool"] = true
-			evid["stripImageGenerationTool"] = fmt.Sprintf("upstream rejected image_generation tool (HTTP %d)", statusCode)
-		}
-		return
-	}
-
-	diagnostic := strings.TrimSpace(body)
-	if sendErr != nil && diagnostic == "" {
-		diagnostic = sendErr.Error()
-	}
-	if isImageGenerationToolUnsupported(statusCode, diagnostic) {
+	case ImageGenerationProbeUnsupported:
 		recs["stripImageGenerationTool"] = true
-		evid["stripImageGenerationTool"] = fmt.Sprintf("upstream rejected image_generation tool (HTTP %d)", statusCode)
-		return
+		evid["stripImageGenerationTool"] = codexProbeDiagnostic(results)
+	default:
+		evid["imageGenerationToolProbe"] = "image generation tool probe was inconclusive"
+		log.Printf("[CompatDiagnose] image generation tool probes inconclusive: %s", codexProbeDiagnostic(results))
 	}
-	log.Printf("[CompatDiagnose] image_generation probe inconclusive (status=%d): %v", statusCode, sendErr)
 }
 
 // diagnoseClaudeChannel 探测 Claude 兼容渠道
@@ -661,6 +633,7 @@ func buildResponsesCompatRequest(baseURL string, body []byte, channel *config.Up
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Originator", "codex_cli_rs")
 	utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, channel.AuthHeader)
 	for k, v := range channel.CustomHeaders {
 		req.Header.Set(k, v)
@@ -857,7 +830,8 @@ func isImageGenerationToolUnsupported(statusCode int, diagnostic string) bool {
 	if text == "" {
 		return false
 	}
-	if !strings.Contains(text, "image_generation") && !strings.Contains(text, "image generation") {
+	if !strings.Contains(text, "image_generation") && !strings.Contains(text, "image generation") &&
+		!strings.Contains(text, "image_gen") && !strings.Contains(text, "imagegen") {
 		return false
 	}
 

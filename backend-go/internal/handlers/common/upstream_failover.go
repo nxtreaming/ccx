@@ -636,11 +636,12 @@ func TryUpstreamWithAllKeys(
 							RequestLogf(c, "[%s-Blacklist] 拉黑 Key 失败: %v", apiType, err)
 						}
 					}
-				} else if redirectedModel != "" && isKeyModelRestrictionError(respBodyBytes) {
-					// 上游明确声明该模型不受支持：限制该 Key 对这个特定模型的路由。
+				} else if restrictionReason := keyModelRestrictionReason(respBodyBytes); redirectedModel != "" && restrictionReason != "" &&
+					(restrictionReason != "image_generation_not_enabled" || !upstream.IsStripImageGenerationToolEnabled()) {
+					// 上游明确声明该模型或其 Codex 图片工具不受支持：限制该 Key 对这个实际模型的路由。
 					// 仅限制 (Key, 模型) 组合（持久化+定时恢复），保留 failover 换渠道，不连累该 Key 其他模型。
 					summary := errorBodySummaryForLog(apiType, resp.StatusCode, respBodyBytes)
-					if err := cfgManager.DisableKeyModel(apiType, channelIndex, apiKey, redirectedModel, "model_not_found", summary); err != nil {
+					if err := cfgManager.DisableKeyModel(apiType, channelIndex, apiKey, redirectedModel, restrictionReason, summary); err != nil {
 						RequestLogf(c, "[%s-KeyModel] 限制 (Key,模型) 组合失败: %v", apiType, err)
 					}
 				}

@@ -26,15 +26,16 @@ type CapabilityTestRequest struct {
 const defaultCapabilityTestRPM = 30
 
 type ModelTestResult struct {
-	Model              string  `json:"model"`
-	ActualModel        string  `json:"actualModel,omitempty"` // 经 ModelMapping 重定向后实际发送给上游的模型名
-	Success            bool    `json:"success"`
-	Skipped            bool    `json:"skipped,omitempty"`
-	Latency            int64   `json:"latency"` // 毫秒
-	StreamingSupported bool    `json:"streamingSupported"`
-	Error              *string `json:"error,omitempty"`
-	StartedAt          string  `json:"startedAt,omitempty"`
-	TestedAt           string  `json:"testedAt"`
+	Model                string                            `json:"model"`
+	ActualModel          string                            `json:"actualModel,omitempty"` // 经 ModelMapping 重定向后实际发送给上游的模型名
+	Success              bool                              `json:"success"`
+	Skipped              bool                              `json:"skipped,omitempty"`
+	Latency              int64                             `json:"latency"` // 毫秒
+	StreamingSupported   bool                              `json:"streamingSupported"`
+	CodexImageGeneration *CodexImageGenerationProbeSummary `json:"codexImageGeneration,omitempty"`
+	Error                *string                           `json:"error,omitempty"`
+	StartedAt            string                            `json:"startedAt,omitempty"`
+	TestedAt             string                            `json:"testedAt"`
 }
 
 // ProtocolTestResult 单个协议测试结果
@@ -144,7 +145,7 @@ func TestChannelCapability(cfgManager *config.ConfigManager, channelLogStore *me
 		normalizedModels := normalizeCapabilityModels(req.Models)
 		dispatcherKey := metrics.GenerateMetricsIdentityKey(baseURL, apiKey, channel.ServiceType)
 		identityKey := buildCapabilityIdentityKey(channel, modelMappingHash)
-		cacheKey := buildCapabilityCacheKey(baseURL, apiKey, channel.ServiceType, protocols, normalizedModels, modelMappingHash)
+		cacheKey := buildCapabilityCacheKey(baseURL, capabilityProbeCacheAPIKey(channel, apiKey), channel.ServiceType, protocols, normalizedModels, modelMappingHash)
 		executionLookupKey := buildCapabilityExecutionLookupKey(identityKey, channelKind, protocols, normalizedModels, "")
 		lookupKey := buildCapabilityJobLookupKey(cacheKey, channelKind, id)
 
@@ -198,14 +199,15 @@ func TestChannelCapability(cfgManager *config.ConfigManager, channelLogStore *me
 				for _, mr := range test.ModelResults {
 					if mr.Outcome == CapabilityOutcomeSuccess {
 						modelMap[mr.Model] = ModelTestResult{
-							Model:              mr.Model,
-							ActualModel:        mr.ActualModel,
-							Success:            mr.Success,
-							Latency:            mr.Latency,
-							StreamingSupported: mr.StreamingSupported,
-							Error:              mr.Error,
-							StartedAt:          mr.StartedAt,
-							TestedAt:           mr.TestedAt,
+							Model:                mr.Model,
+							ActualModel:          mr.ActualModel,
+							Success:              mr.Success,
+							Latency:              mr.Latency,
+							StreamingSupported:   mr.StreamingSupported,
+							CodexImageGeneration: mr.CodexImageGeneration,
+							Error:                mr.Error,
+							StartedAt:            mr.StartedAt,
+							TestedAt:             mr.TestedAt,
 						}
 					}
 				}
@@ -276,14 +278,15 @@ func TestChannelCapability(cfgManager *config.ConfigManager, channelLogStore *me
 					for _, mr := range test.ModelResults {
 						if mr.Status == CapabilityModelStatusSuccess {
 							modelMap[mr.Model] = ModelTestResult{
-								Model:              mr.Model,
-								ActualModel:        mr.ActualModel,
-								Success:            mr.Success,
-								Latency:            mr.Latency,
-								StreamingSupported: mr.StreamingSupported,
-								Error:              mr.Error,
-								StartedAt:          mr.StartedAt,
-								TestedAt:           mr.TestedAt,
+								Model:                mr.Model,
+								ActualModel:          mr.ActualModel,
+								Success:              mr.Success,
+								Latency:              mr.Latency,
+								StreamingSupported:   mr.StreamingSupported,
+								CodexImageGeneration: mr.CodexImageGeneration,
+								Error:                mr.Error,
+								StartedAt:            mr.StartedAt,
+								TestedAt:             mr.TestedAt,
 							}
 						}
 					}

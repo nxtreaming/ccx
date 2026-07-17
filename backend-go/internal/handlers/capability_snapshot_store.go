@@ -380,6 +380,9 @@ func buildCapabilityIdentityKey(channel *config.UpstreamConfig, modelMappingHash
 		apiKey = channel.DisabledAPIKeys[0].Key
 	}
 	identityKey := metrics.GenerateMetricsIdentityKey(baseURL, apiKey, channel.ServiceType)
+	if poolHash := hashCapabilityProbePool(channel); poolHash != "" {
+		identityKey += ":pool:" + poolHash
+	}
 	if modelMappingHash == "" {
 		return identityKey
 	}

@@ -649,6 +649,56 @@ func TestStripImageGenerationFromTools(t *testing.T) {
 		}
 	})
 
+	t.Run("开启后剥离 Codex image_gen namespace", func(t *testing.T) {
+		req := map[string]interface{}{
+			"tools": []interface{}{
+				map[string]interface{}{
+					"type": "namespace",
+					"name": "image_gen",
+					"tools": []interface{}{
+						map[string]interface{}{"type": "function", "name": "imagegen"},
+					},
+				},
+				map[string]interface{}{"type": "namespace", "name": "multi_agent_v2"},
+			},
+		}
+		stripImageGenerationFromTools(req)
+
+		tools, ok := req["tools"].([]interface{})
+		if !ok || len(tools) != 1 {
+			t.Fatalf("tools = %#v，期望仅保留非生图 namespace", req["tools"])
+		}
+		if got := tools[0].(map[string]interface{})["name"]; got != "multi_agent_v2" {
+			t.Fatalf("保留的 namespace = %v", got)
+		}
+	})
+
+	t.Run("开启后剥离 namespace 转换后的扁平 function", func(t *testing.T) {
+		req := map[string]interface{}{
+			"tools": []interface{}{
+				map[string]interface{}{
+					"type": "namespace",
+					"name": "image_gen",
+					"tools": []interface{}{
+						map[string]interface{}{"type": "function", "name": "imagegen", "parameters": map[string]interface{}{"type": "object"}},
+					},
+				},
+				map[string]interface{}{"type": "function", "name": "lookup_user", "parameters": map[string]interface{}{"type": "object"}},
+			},
+		}
+		convertCodexToolsForPassthrough(req)
+		stripImageGenerationFromTools(req)
+
+		tools, ok := req["tools"].([]interface{})
+		if !ok || len(tools) != 1 {
+			t.Fatalf("tools = %#v，期望仅保留普通 function", req["tools"])
+		}
+		function := tools[0].(map[string]interface{})["function"].(map[string]interface{})
+		if got := function["name"]; got != "lookup_user" {
+			t.Fatalf("保留的 function = %v", got)
+		}
+	})
+
 	t.Run("全部剥离后清理 tools/tool_choice/parallel_tool_calls", func(t *testing.T) {
 		req := map[string]interface{}{
 			"tools": []interface{}{

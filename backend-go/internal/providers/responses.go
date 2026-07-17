@@ -1108,22 +1108,11 @@ func stripImageGenerationFromTools(reqMap map[string]interface{}) {
 	kept := make([]interface{}, 0, len(rawTools))
 	removed := 0
 	for _, item := range rawTools {
-		switch v := item.(type) {
-		case string:
-			if strings.EqualFold(v, "image_generation") {
-				removed++
-				continue
-			}
-			kept = append(kept, v)
-		case map[string]interface{}:
-			if strings.EqualFold(toString(v["type"]), "image_generation") {
-				removed++
-				continue
-			}
-			kept = append(kept, v)
-		default:
-			kept = append(kept, item)
+		if IsImageGenerationToolEntry(item) {
+			removed++
+			continue
 		}
+		kept = append(kept, item)
 	}
 
 	if removed == 0 {
@@ -1138,6 +1127,50 @@ func stripImageGenerationFromTools(reqMap map[string]interface{}) {
 	}
 	reqMap["tools"] = kept
 	normalizeToolChoiceAfterToolStrip(reqMap, kept)
+}
+
+// IsImageGenerationToolEntry 判断工具条目是否属于图片生成能力。
+// 同时覆盖 OpenAI hosted tool、Codex image_gen namespace，以及 namespace
+// 转为 OpenAI function 后的扁平名称，供 Responses/Chat 兼容剥离共用。
+func IsImageGenerationToolEntry(raw interface{}) bool {
+	switch tool := raw.(type) {
+	case string:
+		return isImageGenerationToolName(tool)
+	case map[string]interface{}:
+		toolType := strings.ToLower(strings.TrimSpace(toString(tool["type"])))
+		if toolType == "image_generation" {
+			return true
+		}
+		name := toString(tool["name"])
+		if toolType == "namespace" && strings.EqualFold(strings.TrimSpace(name), "image_gen") {
+			return true
+		}
+		if namespace := toString(tool["namespace"]); strings.EqualFold(strings.TrimSpace(namespace), "image_gen") && isImageGenerationToolName(name) {
+			return true
+		}
+		if toolType == "function" {
+			if isImageGenerationToolName(name) {
+				return true
+			}
+			if function, ok := tool["function"].(map[string]interface{}); ok {
+				functionName := toString(function["name"])
+				if isImageGenerationToolName(functionName) {
+					return true
+				}
+				return strings.EqualFold(strings.TrimSpace(toString(function["namespace"])), "image_gen") && isImageGenerationToolName(functionName)
+			}
+		}
+	}
+	return false
+}
+
+func isImageGenerationToolName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "image_generation", "image_gen", "imagegen", "image_gen__imagegen":
+		return true
+	default:
+		return false
+	}
 }
 
 // convertCodexToolsForPassthrough 将 Codex 原生工具（custom/namespace/web_search 等）

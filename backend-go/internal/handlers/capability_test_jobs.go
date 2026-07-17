@@ -87,18 +87,19 @@ type CapabilityTestJobProgress struct {
 }
 
 type CapabilityModelJobResult struct {
-	Model              string                `json:"model"`
-	ActualModel        string                `json:"actualModel,omitempty"` // 经 ModelMapping 重定向后实际发送给上游的模型名
-	Status             CapabilityModelStatus `json:"status"`
-	Lifecycle          CapabilityLifecycle   `json:"lifecycle"`
-	Outcome            CapabilityOutcome     `json:"outcome"`
-	Reason             *string               `json:"reason,omitempty"`
-	Success            bool                  `json:"success"`
-	Latency            int64                 `json:"latency"`
-	StreamingSupported bool                  `json:"streamingSupported"`
-	Error              *string               `json:"error,omitempty"`
-	StartedAt          string                `json:"startedAt,omitempty"`
-	TestedAt           string                `json:"testedAt,omitempty"`
+	Model                string                            `json:"model"`
+	ActualModel          string                            `json:"actualModel,omitempty"` // 经 ModelMapping 重定向后实际发送给上游的模型名
+	Status               CapabilityModelStatus             `json:"status"`
+	Lifecycle            CapabilityLifecycle               `json:"lifecycle"`
+	Outcome              CapabilityOutcome                 `json:"outcome"`
+	Reason               *string                           `json:"reason,omitempty"`
+	Success              bool                              `json:"success"`
+	Latency              int64                             `json:"latency"`
+	StreamingSupported   bool                              `json:"streamingSupported"`
+	CodexImageGeneration *CodexImageGenerationProbeSummary `json:"codexImageGeneration,omitempty"`
+	Error                *string                           `json:"error,omitempty"`
+	StartedAt            string                            `json:"startedAt,omitempty"`
+	TestedAt             string                            `json:"testedAt,omitempty"`
 }
 
 type CapabilityProtocolJobResult struct {
@@ -120,14 +121,15 @@ type CapabilityProtocolJobResult struct {
 
 // RedirectModelResult 单个探测模型经 ModelMapping 后的测试结果
 type RedirectModelResult struct {
-	ProbeModel         string  `json:"probeModel"`  // 原生探测模型名
-	ActualModel        string  `json:"actualModel"` // ModelMapping 后实际发给上游的模型名
-	Success            bool    `json:"success"`
-	Latency            int64   `json:"latency"` // 毫秒
-	StreamingSupported bool    `json:"streamingSupported,omitempty"`
-	Error              *string `json:"error,omitempty"`
-	StartedAt          string  `json:"startedAt,omitempty"`
-	TestedAt           string  `json:"testedAt"`
+	ProbeModel           string                            `json:"probeModel"`  // 原生探测模型名
+	ActualModel          string                            `json:"actualModel"` // ModelMapping 后实际发给上游的模型名
+	Success              bool                              `json:"success"`
+	Latency              int64                             `json:"latency"` // 毫秒
+	StreamingSupported   bool                              `json:"streamingSupported,omitempty"`
+	CodexImageGeneration *CodexImageGenerationProbeSummary `json:"codexImageGeneration,omitempty"`
+	Error                *string                           `json:"error,omitempty"`
+	StartedAt            string                            `json:"startedAt,omitempty"`
+	TestedAt             string                            `json:"testedAt"`
 }
 
 type CapabilityTestJob struct {
@@ -652,18 +654,19 @@ func capabilityProtocolResultsFromResponse(resp CapabilityTestResponse) []Capabi
 				modelStatus = CapabilityModelStatusSkipped
 			}
 			modelResults = append(modelResults, CapabilityModelJobResult{
-				Model:              modelResult.Model,
-				ActualModel:        modelResult.ActualModel,
-				Status:             modelStatus,
-				Lifecycle:          capabilityModelLifecycleFromLegacy(modelStatus),
-				Outcome:            capabilityModelOutcomeFromLegacy(modelStatus, modelResult.Success),
-				Success:            modelResult.Success,
-				Latency:            modelResult.Latency,
-				StreamingSupported: modelResult.StreamingSupported,
-				Error:              modelResult.Error,
-				Reason:             modelResult.Error,
-				StartedAt:          modelResult.StartedAt,
-				TestedAt:           modelResult.TestedAt,
+				Model:                modelResult.Model,
+				ActualModel:          modelResult.ActualModel,
+				Status:               modelStatus,
+				Lifecycle:            capabilityModelLifecycleFromLegacy(modelStatus),
+				Outcome:              capabilityModelOutcomeFromLegacy(modelStatus, modelResult.Success),
+				Success:              modelResult.Success,
+				Latency:              modelResult.Latency,
+				StreamingSupported:   modelResult.StreamingSupported,
+				CodexImageGeneration: modelResult.CodexImageGeneration,
+				Error:                modelResult.Error,
+				Reason:               modelResult.Error,
+				StartedAt:            modelResult.StartedAt,
+				TestedAt:             modelResult.TestedAt,
 			})
 		}
 		results = append(results, CapabilityProtocolJobResult{

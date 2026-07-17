@@ -302,20 +302,21 @@ func executeRetryModelTest(ctx context.Context, channel *config.UpstreamConfig, 
 	}
 
 	actualModel := config.RedirectModel(model, channel)
-	redirectResult := executeRedirectModelTest(ctx, channel, parts[1], model, actualModel, timeout, jobID, cfgManager, channelID, apiKey, channelLogStore)
+	redirectResult := executeRedirectModelTest(ctx, channel, channelKind, parts[1], model, actualModel, timeout, jobID, cfgManager, channelID, apiKey, channelLogStore)
 	modelStatus := CapabilityModelStatusFailed
 	if redirectResult.Success {
 		modelStatus = CapabilityModelStatusSuccess
 	}
 	result := ModelTestResult{
-		Model:              model,
-		ActualModel:        redirectResult.ActualModel,
-		Success:            redirectResult.Success,
-		Latency:            redirectResult.Latency,
-		StreamingSupported: redirectResult.StreamingSupported,
-		Error:              redirectResult.Error,
-		StartedAt:          redirectResult.StartedAt,
-		TestedAt:           redirectResult.TestedAt,
+		Model:                model,
+		ActualModel:          redirectResult.ActualModel,
+		Success:              redirectResult.Success,
+		Latency:              redirectResult.Latency,
+		StreamingSupported:   redirectResult.StreamingSupported,
+		CodexImageGeneration: redirectResult.CodexImageGeneration,
+		Error:                redirectResult.Error,
+		StartedAt:            redirectResult.StartedAt,
+		TestedAt:             redirectResult.TestedAt,
 	}
 	capabilityJobs.update(jobID, func(job *CapabilityTestJob) {
 		updateCapabilityRetryModelResult(job, channel, protocol, model, modelStatus, result)

@@ -133,7 +133,7 @@ func runRedirectVerification(ctx context.Context, channel *config.UpstreamConfig
 				}
 			}
 		})
-		result := executeRedirectModelTest(ctx, channel, channelServiceType, rt.ProbeModel, rt.ActualModel, perModelTimeout, jobID, cfgManager, channelID, apiKey, channelLogStore)
+		result := executeRedirectModelTest(ctx, channel, channelKind, channelServiceType, rt.ProbeModel, rt.ActualModel, perModelTimeout, jobID, cfgManager, channelID, apiKey, channelLogStore)
 		results = append(results, result)
 		// 实时更新模型状态为 success/failed
 		modelStatus := CapabilityModelStatusFailed
@@ -142,13 +142,14 @@ func runRedirectVerification(ctx context.Context, channel *config.UpstreamConfig
 		}
 		capabilityJobs.update(jobID, func(job *CapabilityTestJob) {
 			updateCapabilityJobModelResultsByActualModel(job, virtualProtocol, rt.ActualModel, modelStatus, ModelTestResult{
-				ActualModel:        rt.ActualModel,
-				Success:            result.Success,
-				Latency:            result.Latency,
-				StreamingSupported: result.StreamingSupported,
-				Error:              result.Error,
-				StartedAt:          result.StartedAt,
-				TestedAt:           result.TestedAt,
+				ActualModel:          rt.ActualModel,
+				Success:              result.Success,
+				Latency:              result.Latency,
+				StreamingSupported:   result.StreamingSupported,
+				CodexImageGeneration: result.CodexImageGeneration,
+				Error:                result.Error,
+				StartedAt:            result.StartedAt,
+				TestedAt:             result.TestedAt,
 			})
 		})
 	}
@@ -177,14 +178,15 @@ func runRedirectVerification(ctx context.Context, channel *config.UpstreamConfig
 							successCount++
 						}
 						updateCapabilityJobModelResult(job, virtualProtocol, job.Tests[i].ModelResults[j].Model, modelStatus, ModelTestResult{
-							Model:              job.Tests[i].ModelResults[j].Model,
-							ActualModel:        actualModel,
-							Success:            result.Success,
-							Latency:            result.Latency,
-							StreamingSupported: result.StreamingSupported,
-							Error:              result.Error,
-							StartedAt:          result.StartedAt,
-							TestedAt:           result.TestedAt,
+							Model:                job.Tests[i].ModelResults[j].Model,
+							ActualModel:          actualModel,
+							Success:              result.Success,
+							Latency:              result.Latency,
+							StreamingSupported:   result.StreamingSupported,
+							CodexImageGeneration: result.CodexImageGeneration,
+							Error:                result.Error,
+							StartedAt:            result.StartedAt,
+							TestedAt:             result.TestedAt,
 						})
 					}
 				}
@@ -240,12 +242,23 @@ func filterCapabilityProbeModels(probeModels []string, userModels []string) []st
 }
 
 // executeRedirectModelTest 单个重定向模型测试：用 actualModel 构建请求，probeModel 记录到结果
-func executeRedirectModelTest(ctx context.Context, channel *config.UpstreamConfig, protocol, probeModel, actualModel string, timeout time.Duration, jobID string, cfgManager *config.ConfigManager, channelID int, apiKey string, channelLogStore *metrics.ChannelLogStore) RedirectModelResult {
+func executeRedirectModelTest(ctx context.Context, channel *config.UpstreamConfig, channelKind, protocol, probeModel, actualModel string, timeout time.Duration, jobID string, cfgManager *config.ConfigManager, channelID int, apiKey string, channelLogStore *metrics.ChannelLogStore) RedirectModelResult {
 	startedAt := time.Now()
 	result := RedirectModelResult{
 		ProbeModel:  probeModel,
 		ActualModel: actualModel,
 		StartedAt:   startedAt.Format(time.RFC3339Nano),
+	}
+	if shouldProbeCodexImageGeneration(protocol, probeModel) {
+		modelResult := executeCodexImageGenerationCapabilityTest(ctx, channel, probeModel, timeout, cfgManager, channelID, channelKind)
+		result.Success = modelResult.Success
+		result.Latency = modelResult.Latency
+		result.StreamingSupported = modelResult.StreamingSupported
+		result.CodexImageGeneration = modelResult.CodexImageGeneration
+		result.Error = modelResult.Error
+		result.StartedAt = modelResult.StartedAt
+		result.TestedAt = modelResult.TestedAt
+		return result
 	}
 
 	req, err := buildTestRequestWithModel(protocol, channel, actualModel, cfgManager)
@@ -395,6 +408,7 @@ func updateCapabilityJobModelResult(job *CapabilityTestJob, protocol, model stri
 			job.Tests[i].ModelResults[j].Success = result.Success
 			job.Tests[i].ModelResults[j].Latency = result.Latency
 			job.Tests[i].ModelResults[j].StreamingSupported = result.StreamingSupported
+			job.Tests[i].ModelResults[j].CodexImageGeneration = result.CodexImageGeneration
 			job.Tests[i].ModelResults[j].Error = result.Error
 			job.Tests[i].ModelResults[j].StartedAt = result.StartedAt
 			job.Tests[i].ModelResults[j].TestedAt = result.TestedAt

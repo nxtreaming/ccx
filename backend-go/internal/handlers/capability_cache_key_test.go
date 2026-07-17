@@ -1,6 +1,10 @@
 package handlers
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/BenedictKing/ccx/internal/config"
+)
 
 func TestBuildCapabilityCacheKeyIncludesModelsDimension(t *testing.T) {
 	keyA := buildCapabilityCacheKey(
@@ -81,5 +85,39 @@ func TestHashModelMappingStable(t *testing.T) {
 	}
 	if hashModelMapping(map[string]string{}) != "" {
 		t.Fatalf("empty mapping should produce empty hash")
+	}
+}
+
+func TestHashCapabilityProbePoolTracksAllKeysAndBaseURLs(t *testing.T) {
+	single := &config.UpstreamConfig{
+		BaseURL: "https://one.example.com",
+		APIKeys: []string{"sk-one"},
+	}
+	if got := hashCapabilityProbePool(single); got != "" {
+		t.Fatalf("单 Key 单 BaseURL 不应增加缓存维度，got %q", got)
+	}
+
+	multi := &config.UpstreamConfig{
+		BaseURLs: []string{"https://one.example.com", "https://two.example.com"},
+		APIKeys:  []string{"sk-one", "sk-two"},
+	}
+	same := multi.Clone()
+	changedKey := multi.Clone()
+	changedKey.APIKeys[1] = "sk-three"
+	changedURL := multi.Clone()
+	changedURL.BaseURLs[1] = "https://three.example.com"
+
+	baseHash := hashCapabilityProbePool(multi)
+	if baseHash == "" || baseHash != hashCapabilityProbePool(same) {
+		t.Fatalf("多 Key/BaseURL 哈希不稳定: %q vs %q", baseHash, hashCapabilityProbePool(same))
+	}
+	if baseHash == hashCapabilityProbePool(changedKey) {
+		t.Fatal("Key 池变化后缓存哈希未变化")
+	}
+	if baseHash == hashCapabilityProbePool(changedURL) {
+		t.Fatal("BaseURL 池变化后缓存哈希未变化")
+	}
+	if capabilityProbeCacheAPIKey(multi, multi.APIKeys[0]) == multi.APIKeys[0] {
+		t.Fatal("多 Key 探测缓存身份未包含池哈希")
 	}
 }

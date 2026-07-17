@@ -87,11 +87,9 @@ func stripImageGenerationFromChatTools(reqMap map[string]interface{}) {
 	kept := make([]interface{}, 0, len(rawTools))
 	removed := 0
 	for _, item := range rawTools {
-		if tool, ok := item.(map[string]interface{}); ok {
-			if toolType, ok := tool["type"].(string); ok && strings.EqualFold(toolType, "image_generation") {
-				removed++
-				continue
-			}
+		if providers.IsImageGenerationToolEntry(item) {
+			removed++
+			continue
 		}
 		kept = append(kept, item)
 	}
