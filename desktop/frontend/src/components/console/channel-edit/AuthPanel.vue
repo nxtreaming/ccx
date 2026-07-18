@@ -72,7 +72,10 @@ function formatModelsCount(statusCode: string | number, count: number) {
 function getDisabledReasonLabel(reason?: string) {
   const map: Record<string, string> = {
     insufficient_balance: 'channelCard.blacklistReason.insufficient_balance',
+    insufficient_quota: 'channelCard.blacklistReason.insufficient_quota',
     unauthorized: 'channelCard.blacklistReason.authentication_error',
+    authentication_error: 'channelCard.blacklistReason.authentication_error',
+    permission_error: 'channelCard.blacklistReason.permission_error',
     invalid: 'channelCard.blacklistReason.invalid',
   }
   return reason ? tf(map[reason] || 'channelCard.blacklistReason.unknown', reason) : ''

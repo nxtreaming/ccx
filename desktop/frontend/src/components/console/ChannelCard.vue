@@ -7,6 +7,7 @@ import type {
   TimeWindowStats,
 } from '@/services/admin-api'
 import { useLanguage } from '@/composables/useLanguage'
+import { availableChannelApiKeyCount, disabledChannelApiKeyCount } from '@/utils/channelApiKeys'
 import { openExternalLink } from '@/lib/external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -135,8 +136,8 @@ const isPromoted = computed(() => {
   return new Date(props.channel.promotionUntil).getTime() > Date.now()
 })
 
-const keyCount = computed(() => props.channel.apiKeys?.length ?? 0)
-const disabledKeyCount = computed(() => props.channel.disabledApiKeys?.length ?? 0)
+const keyCount = computed(() => availableChannelApiKeyCount(props.channel))
+const disabledKeyCount = computed(() => disabledChannelApiKeyCount(props.channel))
 
 const successRateDisplay = computed(() => {
   const raw = props.metrics?.successRate
