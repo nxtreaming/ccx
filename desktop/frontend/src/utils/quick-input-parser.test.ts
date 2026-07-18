@@ -44,6 +44,13 @@ describe('quick input service type detection', () => {
     expect(result.detectedBaseUrl).toBe('https://relay.example.com/anthropic')
   })
 
+  it('strips third-party dashboard paths such as /api-keys/create back to origin', () => {
+    const result = parseQuickInput('https://aihub.top/api-keys/create sk-key1234567890')
+
+    expect(result.detectedServiceType).toBeNull()
+    expect(result.detectedBaseUrl).toBe('https://aihub.top')
+  })
+
   it('detects built-in preset URLs that do not include protocol keywords', () => {
     expect(parseQuickInput('https://cp.compshare.cn sk-key1234567890').detectedServiceType).toBe('claude')
     expect(parseQuickInput('https://openrouter.ai/api sk-key1234567890').detectedServiceType).toBe('claude')

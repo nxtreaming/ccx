@@ -291,11 +291,17 @@ const detectServiceTypeAndCleanUrl = (
 
     // 剔除常见第三方面板路径，仅保留 origin 作为 baseUrl
     const dashboardPathPrefixes = [
+      '/admin',
       '/console',
       '/dashboard',
       '/keys',
+      '/api-keys',
+      '/apikeys',
       '/panel',
       '/token',
+      '/profile',
+      '/usage',
+      '/wallet',
       '/log',
       '/pricing'
     ]
