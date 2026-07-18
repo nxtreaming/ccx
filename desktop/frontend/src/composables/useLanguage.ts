@@ -15,7 +15,7 @@ let initPromise: Promise<void> | null = null
 export const useLanguage = () => {
   const vueI18n = vueUseI18n()
 
-  const t = (key: string, params?: Record<string, string>) => {
+  const t = (key: string, params?: Record<string, string | number>) => {
     return vueI18n.t(key, params as Record<string, string>) as string
   }
 

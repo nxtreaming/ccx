@@ -45,6 +45,17 @@ function shortenUid(uid?: string): string {
   const stripped = uid.replace(/^ch_/, '')
   return stripped.length > 8 ? `${stripped.slice(0, 8)}...` : stripped
 }
+
+function isComparable(trace: RoutingDecisionTrace): boolean {
+  return trace.mode === 'shadow' && !!trace.shadowChannelUid && !!trace.actualChannelUid
+}
+
+function outcomeClass(outcome?: RoutingDecisionTrace['outcome']): string {
+  if (outcome === 'success') return 'border-emerald-500 text-emerald-600'
+  if (outcome === 'cancelled') return 'border-muted-foreground text-muted-foreground'
+  if (outcome === 'attempt_failed') return 'border-amber-500 text-amber-600'
+  return 'border-red-500 text-red-600'
+}
 </script>
 
 <template>
@@ -82,6 +93,7 @@ function shortenUid(uid?: string): string {
             <TableHead>{{ t('autopilot.traceTable.col.shadowVsActual') }}</TableHead>
             <TableHead>{{ t('autopilot.traceTable.col.match') }}</TableHead>
             <TableHead>{{ t('autopilot.traceTable.col.mode') }}</TableHead>
+            <TableHead class="w-[90px]">{{ t('autopilot.traceTable.col.outcome') }}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -106,16 +118,27 @@ function shortenUid(uid?: string): string {
                 </div>
               </TableCell>
               <TableCell>
-                <Badge :variant="trace.match ? 'default' : 'destructive'">
+                <Badge v-if="isComparable(trace)" :variant="trace.match ? 'default' : 'destructive'">
                   {{ trace.match ? t('autopilot.traceTable.yes') : t('autopilot.traceTable.no') }}
                 </Badge>
+                <span v-else class="text-xs text-muted-foreground">-</span>
               </TableCell>
               <TableCell>
                 <Badge variant="outline">{{ t(`autopilot.mode.${trace.mode}`) || trace.mode }}</Badge>
               </TableCell>
+              <TableCell>
+                <Badge
+                  v-if="trace.outcomeRecorded"
+                  variant="outline"
+                  :class="outcomeClass(trace.outcome)"
+                >
+                  {{ trace.outcome }}
+                </Badge>
+                <span v-else class="text-xs text-muted-foreground">-</span>
+              </TableCell>
             </TableRow>
             <TableRow v-if="expanded[trace.traceUid]">
-              <TableCell colspan="8" class="bg-muted/20 p-4">
+              <TableCell colspan="9" class="bg-muted/20 p-4">
                 <div v-if="trace.candidates && trace.candidates.length > 0" class="mb-3">
                   <div class="mb-2 text-xs font-bold">{{ t('autopilot.traceTable.candidates') }}</div>
                   <Table>

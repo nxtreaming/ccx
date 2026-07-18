@@ -1180,6 +1180,36 @@ export interface SmartRoutingConfig {
   killSwitchActive: boolean
   costPreference: string
   l2ProbeEnabled?: boolean
+  readiness?: AutoReadinessReport
+}
+
+export interface RoutingWindowSummary {
+  requestCount: number
+  successRate: number
+  fallbackRate: number
+  failOpenRate: number
+  p95LatencyMs: number
+  p95FirstByteLatencyMs: number
+}
+
+export interface AutoSafetyEvent {
+  eventUid: string
+  fromMode: string
+  toMode: string
+  reasons: string[]
+  createdAt: string
+}
+
+export interface AutoReadinessReport {
+  ready: boolean
+  requiredSamples: number
+  requiredObservationHours: number
+  observationHours: number
+  blockingReasons: string[]
+  safeModeMetrics: RoutingWindowSummary
+  recentMetrics: RoutingWindowSummary
+  baselineMetrics: RoutingWindowSummary
+  lastRollback?: AutoSafetyEvent
 }
 
 export interface CandidateScore {
@@ -1235,6 +1265,14 @@ export interface RoutingDecisionTrace {
   shadowChannelUid?: string
   actualChannelUid?: string
   match: boolean
+  outcomeRecorded?: boolean
+  outcome?: 'success' | 'upstream_error' | 'exhausted' | 'cancelled' | 'attempt_failed'
+  success?: boolean
+  channelFallback?: boolean
+  statusCode?: number
+  requestDurationMs?: number
+  firstByteLatencyMs?: number
+  completedAt?: string
   mode: 'off' | 'shadow' | 'assist' | 'auto' | 'active' | 'dry_run'
   durationMs: number
   createdAt: string
