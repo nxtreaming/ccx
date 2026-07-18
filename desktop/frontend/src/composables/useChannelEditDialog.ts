@@ -305,7 +305,8 @@ const { t } = useLanguage()
     const firstUrl = detectedBaseUrls.value[0]
     if (!firstUrl) return `channel-${randomSuffix.value}`
     const prefix = extractChannelNamePrefix(firstUrl)
-    return `${prefix}-${randomSuffix.value}`
+    // 解析成功（非 channel 回退）时不附加随机后缀，对齐 web 49f9d42c
+    return prefix === 'channel' ? `channel-${randomSuffix.value}` : prefix
   })
 
   watch(detectedServiceType, (serviceType) => {
