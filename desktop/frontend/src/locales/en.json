@@ -1216,6 +1216,7 @@
   "channelDiscovery.capabilityNotRequired": "not required",
   "channelDiscovery.apply": "Apply recommendation",
   "channelDiscovery.applied": "Discovery recommendation applied. Review and save.",
+  "autopilot.quickAdd.alreadyAdded": "This Base URL is already configured as \"{name}\". New keys will be added to the existing channel.",
   "autopilot.costPreference.balanced": "Balanced",
   "autopilot.costPreference.cost_first": "Cost First",
   "autopilot.costPreference.custom": "Custom",

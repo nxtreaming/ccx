@@ -565,11 +565,19 @@ export interface ChannelDiscoveryRecommendation {
   evidence?: DiscoveryEvidence[]
 }
 
+export interface DiscoveryRateLimitResult {
+  initialRpm: number
+  effectiveRpm: number
+  rateLimited: boolean
+  rateLimitedCount?: number
+}
+
 export interface ChannelDiscoveryResponse {
   models: DiscoveryModelsResult
   protocols: DiscoveryProtocolResult[]
   capabilities: DiscoveryCapabilitiesResult
   recommendation: ChannelDiscoveryRecommendation
+  rateLimit: DiscoveryRateLimitResult
   evidence?: DiscoveryEvidence[]
 }
 

@@ -37,6 +37,7 @@ import { useChannelEditorOptions } from '@/composables/useChannelEditorOptions'
 export interface ChannelEditDialogProps {
   channel?: Channel | null
   channelType: ManagedChannelType
+  existingChannels?: Channel[]
 }
 
 export type ChannelEditDialogEmit = {

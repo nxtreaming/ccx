@@ -790,6 +790,7 @@ onBeforeUnmount(() => {
       :key="`${type}-${editingChannel?.index ?? 'new'}`"
       :channel="editingChannel"
       :channel-type="type"
+      :existing-channels="channels"
       @close="showChannelEditor = false"
       @saved="handleSaved"
       @test-capability="handleEditTestCapability"

@@ -1216,6 +1216,7 @@
   "channelDiscovery.capabilityNotRequired": "不需要",
   "channelDiscovery.apply": "应用推荐",
   "channelDiscovery.applied": "已应用发现推荐，请检查后保存",
+  "autopilot.quickAdd.alreadyAdded": "该 Base URL 已添加为渠道「{name}」，提交后会自动追加新密钥。",
   "autopilot.costPreference.balanced": "均衡",
   "autopilot.costPreference.cost_first": "成本优先",
   "autopilot.costPreference.custom": "自定义",

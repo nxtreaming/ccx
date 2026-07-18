@@ -190,6 +190,7 @@ const embeddingTargetModels = computed(() =>
                   :service-type-options="headerServiceTypeItems"
                   :detected-base-urls="detectedBaseUrls"
                   :detected-api-keys="detectedApiKeys"
+                  :existing-channels="existingChannels"
                   :expected-request-urls="quickExpectedRequestUrls"
                   :generated-channel-name="generatedChannelName"
                   @update:quick-input="quickInput = $event"

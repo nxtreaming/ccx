@@ -5,8 +5,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { AlertCircle, ArrowDownToLine, Bot, CheckCircle2, Code2, Gem, Info, MessageSquare, Sparkles, Tag } from 'lucide-vue-next'
+import { Alert } from '@/components/ui/alert'
 import { useLanguage } from '@/composables/useLanguage'
 import { useChannelPlacementPreference } from '@/composables/useChannelPlacementPreference'
+import { findExistingQuickAddChannel } from '@/utils/quick-add-channel'
+import type { Channel } from '@/services/admin-api'
 
 const props = defineProps<{
   quickInput: string
@@ -16,6 +19,7 @@ const props = defineProps<{
   detectedApiKeys: string[]
   expectedRequestUrls: Array<{ baseUrl: string; expectedUrl: string }>
   generatedChannelName: string
+  existingChannels?: Channel[]
 }>()
 
 const emit = defineEmits<{
@@ -62,6 +66,12 @@ const serviceMetaMap: Record<string, ServiceMeta> = {
 }
 const serviceMeta = computed<ServiceMeta>(() => serviceMetaMap[props.serviceType] || serviceMetaMap.openai)
 const isCopilot = computed(() => props.serviceType === 'copilot')
+
+const duplicateChannel = computed(() =>
+  props.existingChannels?.length
+    ? findExistingQuickAddChannel(props.detectedBaseUrls, props.existingChannels)
+    : null
+)
 </script>
 
 <template>
@@ -98,6 +108,14 @@ const isCopilot = computed(() => props.serviceType === 'copilot')
             {{ t('addChannel.noneDetected') }}
           </p>
         </div>
+
+        <!-- 重复渠道提示 -->
+        <Alert v-if="duplicateChannel" variant="default" class="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+          <AlertCircle class="mr-2 inline size-4" />
+          <p class="inline text-xs">
+            {{ t('autopilot.quickAdd.alreadyAdded', { name: duplicateChannel.channel.name }) }}
+          </p>
+        </Alert>
 
         <!-- 两栏：左（渠道名称+上游类型）右（API Keys） -->
         <div class="grid items-start gap-3 md:grid-cols-12">
