@@ -610,6 +610,17 @@ const { t } = useLanguage()
         detail: capabilities.vision.evidence || capabilities.vision.error || '',
       })
     }
+    if (capabilities.imageGeneration?.tested) {
+      entries.push({
+        key: 'imageGeneration',
+        label: t('channelDiscovery.capabilityImageGeneration'),
+        text: capabilities.imageGeneration.supported
+          ? t('channelDiscovery.capabilitySupported')
+          : t('channelDiscovery.capabilityUnsupported'),
+        tone: capabilities.imageGeneration.supported ? 'success' : 'warning',
+        detail: capabilities.imageGeneration.evidence || capabilities.imageGeneration.error || '',
+      })
+    }
     if (capabilities.thinkingPassback?.tested) {
       entries.push({
         key: 'thinkingPassback',

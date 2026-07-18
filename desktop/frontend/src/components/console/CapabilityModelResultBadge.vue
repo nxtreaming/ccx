@@ -83,6 +83,19 @@ function isModelPending(result: CapabilityModelJobResult) {
   return !isModelCancelledOrSkipped(result) && (result.status === 'running' || result.status === 'queued')
 }
 
+function formatCodexImageGeneration(result: CapabilityModelJobResult): string {
+  const probe = result.codexImageGeneration
+  if (!probe) return '-'
+  const total = probe.supportedKeys + probe.unsupportedKeys + probe.inconclusiveKeys
+  const summary = t('capability.codexImageGenerationSummary', {
+    supported: probe.supportedKeys,
+    total,
+  })
+  return probe.compatibleViaStrip
+    ? `${summary} · ${t('capability.codexImageGenerationStripped')}`
+    : summary
+}
+
 function formatStreaming(result: CapabilityModelJobResult) {
   if (result.streamingSupported === true) return t('capability.supported')
   if (result.streamingSupported === false) return t('capability.unsupported')
@@ -218,6 +231,10 @@ onBeforeUnmount(hideTooltip)
             <div class="model-tooltip-row">
               <span class="model-tooltip-label">{{ t('capability.modelStatus') }}</span>
               <span class="model-tooltip-value">{{ result.status }}</span>
+            </div>
+            <div v-if="result.codexImageGeneration?.tested" class="model-tooltip-row">
+              <span class="model-tooltip-label">{{ t('capability.codexImageGeneration') }}</span>
+              <span class="model-tooltip-value">{{ formatCodexImageGeneration(result) }}</span>
             </div>
             <div v-if="getModelTooltipView(result) === 'failed' && result.error" class="model-tooltip-error">
               {{ result.error }}

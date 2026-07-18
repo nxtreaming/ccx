@@ -315,6 +315,25 @@ export type CapabilityRunMode = 'fresh' | 'reused_running' | 'resumed_cancelled'
 export type CapabilityTestJobStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type CapabilityProtocolJobStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed'
 export type CapabilityModelJobStatus = 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'skipped'
+export type ImageGenerationProbeState = 'supported' | 'unsupported' | 'inconclusive'
+
+export interface CodexImageGenerationKeyProbeResult {
+  keyMask: string
+  hostedTool: ImageGenerationProbeState
+  namespaceTool: ImageGenerationProbeState
+  status: ImageGenerationProbeState
+}
+
+export interface CodexImageGenerationProbeSummary {
+  tested: boolean
+  supported: boolean
+  compatibleViaStrip?: boolean
+  actualModel: string
+  supportedKeys: number
+  unsupportedKeys: number
+  inconclusiveKeys: number
+  keyResults?: CodexImageGenerationKeyProbeResult[]
+}
 
 export interface CapabilityJobProgress {
   totalModels: number
@@ -336,6 +355,7 @@ export interface CapabilityModelJobResult {
   success: boolean
   latency: number
   streamingSupported: boolean
+  codexImageGeneration?: CodexImageGenerationProbeSummary
   error?: string
   startedAt?: string
   testedAt?: string
@@ -396,6 +416,7 @@ export interface RedirectModelResult {
   success: boolean
   latency: number
   streamingSupported?: boolean
+  codexImageGeneration?: CodexImageGenerationProbeSummary
   error?: string
   startedAt?: string
   testedAt: string
@@ -421,6 +442,7 @@ export interface ModelTestResult {
   success: boolean
   latency: number
   streamingSupported: boolean
+  codexImageGeneration?: CodexImageGenerationProbeSummary
   error?: string
   startedAt?: string
   testedAt: string
@@ -515,6 +537,7 @@ export interface DiscoveryCapabilityProbeResult {
 export interface DiscoveryCapabilitiesResult {
   toolCalls: DiscoveryCapabilityProbeResult
   vision: DiscoveryCapabilityProbeResult
+  imageGeneration: DiscoveryCapabilityProbeResult
   thinkingPassback: DiscoveryCapabilityProbeResult
 }
 
