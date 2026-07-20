@@ -167,6 +167,7 @@ var modelIDPrefixRules = []struct {
 	{"qwen3-", ModelFamilyQwen},
 	{"qwen-", ModelFamilyQwen},
 	{"glm-", ModelFamilyGLM},
+	{"kimi-for-coding", ModelFamilyKimi},
 	{"kimi-", ModelFamilyKimi},
 	{"mimo-", ModelFamilyMiMo},
 	{"ernie-", ModelFamilyERNIE},
@@ -203,6 +204,9 @@ func InferModelFamily(modelID, provider string) ModelFamily {
 
 	// 优先级 2：modelID 前缀匹配
 	lowerID := strings.ToLower(strings.TrimSpace(modelID))
+	if lowerID == "k3" || strings.HasPrefix(lowerID, "k3[") {
+		return ModelFamilyKimi
+	}
 	for _, rule := range modelIDPrefixRules {
 		if strings.HasPrefix(lowerID, rule.prefix) {
 			return rule.family
@@ -257,6 +261,12 @@ func ModelProfileQualityTierFromFamily(family ModelFamily, modelID string) Quali
 		return QualityTierNormal
 
 	case ModelFamilyKimi:
+		if lowerID == "k3" || strings.HasPrefix(lowerID, "k3[") {
+			return QualityTierPremium
+		}
+		if strings.Contains(lowerID, "kimi-for-coding") {
+			return QualityTierHigh
+		}
 		if strings.Contains(lowerID, "k2.7") || strings.Contains(lowerID, "k2.6") {
 			return QualityTierHigh
 		}

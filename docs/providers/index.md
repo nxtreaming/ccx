@@ -31,7 +31,7 @@
 | DeepSeek | `openai` / `https://api.deepseek.com` | `claude` / `https://api.deepseek.com/anthropic` | 同时支持两种协议 |
 | 智谱 GLM | `openai` / `https://open.bigmodel.cn/api/paas/v4` | `claude` / `https://open.bigmodel.cn/api/anthropic` | 同时支持两种协议 |
 | MiniMax | `openai` / `https://api.minimax.io/v1` | `claude` / `https://api.minimax.io/anthropic` | 同时支持两种协议 |
-| Kimi | `openai` / `https://api.moonshot.ai/v1` | `claude` / `https://api.kimi.com/coding/` | 编码专用端点 |
+| Kimi / Kimi Code | `openai` / `https://api.moonshot.cn/v1` 或 `https://api.kimi.com/coding/v1` | `claude` / `https://api.kimi.com/coding/` | 按量 API 与 Kimi Code 双入口 |
 | OpenAI GPT | `openai` / `https://api.openai.com/v1` | — | 仅 OpenAI 协议 |
 | 小米 MiMo | `openai` / 见 MiMo 文档 | `claude` / 见 MiMo 文档 | 订阅套餐与余额两种访问方式，Base URL 不同 |
 | Claude | `claude`（协议转换） | `claude` / `https://api.anthropic.com` | 原生 Messages 协议 |

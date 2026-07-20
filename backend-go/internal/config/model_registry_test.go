@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/BenedictKing/ccx/internal/presetstore"
@@ -119,6 +120,34 @@ func TestResolveAgentModelProfile_ClaudeBuiltins(t *testing.T) {
 	}
 }
 
+func TestResolveAgentModelProfile_KimiCodeBuiltins(t *testing.T) {
+	tests := []struct {
+		model      string
+		context    int
+		maxContext int
+		efforts    []string
+	}{
+		{model: "k3", context: 262144, maxContext: 1048576, efforts: []string{"low", "high", "max"}},
+		{model: "k3[1m]", context: 262144, maxContext: 1048576, efforts: []string{"low", "high", "max"}},
+		{model: "kimi-for-coding", context: 262144, maxContext: 0},
+		{model: "kimi-for-coding-highspeed", context: 262144, maxContext: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			resolved := ResolveAgentModelProfile(tt.model, nil)
+			if !resolved.Known || resolved.Source != "builtin" {
+				t.Fatalf("resolved = %+v, want builtin profile", resolved)
+			}
+			if resolved.Profile.ContextWindowTokens != tt.context || resolved.Profile.MaxContextWindowTokens != tt.maxContext {
+				t.Fatalf("profile = %+v, want context=%d maxContext=%d", resolved.Profile, tt.context, tt.maxContext)
+			}
+			if !slices.Equal(resolved.Profile.ReasoningEfforts, tt.efforts) {
+				t.Fatalf("ReasoningEfforts = %v, want %v", resolved.Profile.ReasoningEfforts, tt.efforts)
+			}
+		})
+	}
+}
+
 func TestResolveAgentModelProfile_GlobalOverrideWins(t *testing.T) {
 	profile := ResolveAgentModelProfile("gpt-5.4", map[string]AgentModelProfile{
 		"gpt-5.4": {ContextWindowTokens: 512000},
@@ -200,6 +229,50 @@ func TestResolveUpstreamCapability_KimiK27Builtin(t *testing.T) {
 	}
 	if resolved.Capability.Pricing == nil || resolved.Capability.Pricing.OutputPrice == nil || *resolved.Capability.Pricing.OutputPrice != 4 {
 		t.Fatalf("Pricing.OutputPrice = %#v, want 4", resolved.Capability.Pricing)
+	}
+}
+
+func TestResolveUpstreamCapability_KimiCodeModels(t *testing.T) {
+	tests := []struct {
+		model        string
+		context      int
+		maxOutput    int
+		reasoning    []string
+		displayName  string
+		wantThinking string
+	}{
+		{model: "k3", context: 262144, reasoning: []string{"low", "high", "max"}, displayName: "Kimi K3", wantThinking: "thinking"},
+		{model: "k3[1m]", context: 262144, reasoning: []string{"low", "high", "max"}, displayName: "Kimi K3", wantThinking: "thinking"},
+		{model: "kimi-for-coding", context: 262144, maxOutput: 32768, reasoning: []string{"high"}, displayName: "Kimi K2.7 Code", wantThinking: "thinking"},
+		{model: "kimi-for-coding-highspeed", context: 262144, maxOutput: 32768, reasoning: []string{"high"}, displayName: "Kimi K2.7 Code HighSpeed", wantThinking: "thinking"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			resolved := ResolveUpstreamCapability(tt.model, nil, nil)
+			if !resolved.Known || resolved.Source != "builtin" {
+				t.Fatalf("resolved = %+v, want builtin capability", resolved)
+			}
+			if resolved.Capability.ContextWindowTokens != tt.context {
+				t.Fatalf("ContextWindowTokens = %d, want %d", resolved.Capability.ContextWindowTokens, tt.context)
+			}
+			if resolved.Capability.MaxOutputTokens != tt.maxOutput {
+				t.Fatalf("MaxOutputTokens = %d, want %d", resolved.Capability.MaxOutputTokens, tt.maxOutput)
+			}
+			if resolved.Capability.DisplayName != tt.displayName {
+				t.Fatalf("DisplayName = %q, want %q", resolved.Capability.DisplayName, tt.displayName)
+			}
+			if resolved.Capability.ThinkingMode != tt.wantThinking {
+				t.Fatalf("ThinkingMode = %q, want %q", resolved.Capability.ThinkingMode, tt.wantThinking)
+			}
+			if len(resolved.Capability.ReasoningEfforts) != len(tt.reasoning) {
+				t.Fatalf("ReasoningEfforts = %v, want %v", resolved.Capability.ReasoningEfforts, tt.reasoning)
+			}
+			for i, effort := range tt.reasoning {
+				if resolved.Capability.ReasoningEfforts[i] != effort {
+					t.Fatalf("ReasoningEfforts = %v, want %v", resolved.Capability.ReasoningEfforts, tt.reasoning)
+				}
+			}
+		})
 	}
 }
 

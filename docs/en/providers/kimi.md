@@ -2,57 +2,71 @@
 
 ## Get API Key
 
-1. Visit [Kimi Platform](https://platform.kimi.ai/)
-2. Sign up and log in
-3. Go to "API Key Management" page
-4. Create a new API Key
+Choose the key source for your product:
+
+- Pay-as-you-go API: create a key in [Kimi Open Platform](https://platform.kimi.com/).
+- Kimi Code: create a key in the [Kimi Code console](https://www.kimi.com/code/console). Up to five keys are supported and the full value is shown only once.
+
+## Official Endpoints
+
+Kimi supports both OpenAI and Anthropic protocols. Kimi Code uses the same key for both endpoints, while the model list is filtered by the key's membership entitlement:
+
+| Protocol | Base URL | Common endpoint |
+|---------|----------|-----------------|
+| OpenAI (pay-as-you-go) | `https://api.moonshot.cn/v1` | `https://api.moonshot.cn/v1/chat/completions` |
+| Anthropic (Kimi Code) | `https://api.kimi.com/coding/` | `https://api.kimi.com/coding/v1/messages` |
+| OpenAI (Kimi Code) | `https://api.kimi.com/coding/v1` | `https://api.kimi.com/coding/v1/chat/completions` |
+
+When Kimi is added from CCX's automatic provider flow (also available as `Kimi Code`), CCX validates and binds an endpoint per key. Kimi Code models are discovered with `GET /coding/v1/models`.
+
+## Kimi Code model entitlements
+
+| Membership | Models | Context window |
+|------------|--------|----------------|
+| Andante | `kimi-for-coding` | 256K |
+| Moderato | `k3`, `kimi-for-coding` | 256K |
+| Allegretto and above | `k3`, `kimi-for-coding`, `kimi-for-coding-highspeed` | Up to 1M for K3; 256K for the other models |
+
+`k3` supports `low`, `high`, and `max` reasoning effort. Thinking stays enabled for the K2.7 Code models. Disabling thinking routes K3 and K2.7 Code to K2.6.
+
+The `k3[1m]` form is only a Claude Code environment-variable hint. API requests and CCX model fields use `k3`.
 
 ## Add Channel in CCX
 
-### Option 1: Chat Endpoint (OpenAI Compatible)
+### Automatic Kimi Code setup (recommended)
+
+Select **Kimi** / **Kimi Code** and enter one or more Kimi Code API keys. CCX probes `https://api.kimi.com/coding/v1/models` per key instead of sending a fake inference request, so models outside the membership tier are not listed.
+
+### Option 2: Chat Endpoint (OpenAI Compatible)
 
 | Field | Value |
 |-------|-------|
 | Name | `Kimi` |
 | Service Type | `openai` |
-| Base URL | `https://api.moonshot.ai/v1` |
+| Base URL | `https://api.moonshot.cn/v1` |
 | API Keys | Your Moonshot API Key |
 
-### Option 2: Messages Endpoint (Coding Endpoint)
+### Option 3: Messages Endpoint (Anthropic Compatible)
 
 For Claude Code CLI and other tools using Claude Messages protocol.
 
 | Field | Value |
 |-------|-------|
-| Name | `Kimi Coding` |
+| Name | `Kimi Code` |
 | Service Type | `claude` |
 | Base URL | `https://api.kimi.com/coding/` |
-| API Keys | Your Kimi API Key |
+| API Keys | Your Kimi Code API Key |
 
-#### Model Mapping (Recommended for Messages)
-
-| Request Model | Redirects To |
-|---------------|--------------|
-| `opus` | `kimi-k2.7` |
-| `sonnet` | `kimi-k2.7` |
-| `haiku` | `kimi-k2.7` |
-
-#### Model Mapping (Coding Plan)
-
-Coding Plan endpoint uses `kimi-for-coding` model:
-
-| Request Model | Redirects To |
-|---------------|--------------|
-| `opus` | `kimi-for-coding` |
-| `sonnet` | `kimi-for-coding` |
-| `haiku` | `kimi-for-coding` |
+Kimi Code does not require mapping `opus`, `sonnet`, or `haiku` to a Claude model name. Prefer the model IDs returned by `/coding/v1/models`; configure an explicit CCX mapping when a client sends a generic alias.
 
 ## Available Models
 
 | Model | Description |
 |-------|-------------|
+| `k3` | Kimi K3 flagship coding model; 256K on Moderato and up to 1M on Allegretto+; supports `low` / `high` / `max` |
+| `kimi-for-coding` | Kimi K2.7 Code, available to all Kimi Code memberships with server-side thinking |
+| `kimi-for-coding-highspeed` | Kimi K2.7 Code HighSpeed, about 5-6x faster output with higher usage; Allegretto+ |
 | `kimi-k2.7` | Latest pay-as-you-go model, native multimodal Agentic model |
-| `kimi-for-coding` | Coding Plan specialized model, optimized for programming tasks |
 | `kimi-k2.6` | Multimodal Agentic model, 1T total / 32B active |
 | `kimi-k2.5` | Multimodal Agentic model |
 | `moonshot-v1-auto` | Auto-selects context length (legacy) |
@@ -64,7 +78,8 @@ Coding Plan endpoint uses `kimi-for-coding` model:
 
 ## Notes
 
-- Kimi OpenAI-compatible Base URL is `https://api.moonshot.ai/v1` (note: `moonshot.ai` not `moonshot.cn`)
-- Coding endpoint is `https://api.kimi.com/coding/`, suitable for Claude Code CLI
+- The China pay-as-you-go OpenAI-compatible Base URL is `https://api.moonshot.cn/v1`; CCX also retains compatibility with the global `https://api.moonshot.ai/v1` endpoint
+- Kimi Code Anthropic Base URL is `https://api.kimi.com/coding/`; its OpenAI Base URL is `https://api.kimi.com/coding/v1`
+- Kimi Code `/coding/v1/models` returns the model range for the current key. A 401/403 from that endpoint usually means the key is invalid or unusable; an inference request can also return 401 when its model or context entitlement is unavailable
 - `kimi-k2.7` is the latest pay-as-you-go model with long-context coding support
-- `kimi-for-coding` is the Coding Plan specialized model, optimized for programming tasks
+- `kimi-for-coding` and `kimi-for-coding-highspeed` should only be used with the Kimi Code endpoint

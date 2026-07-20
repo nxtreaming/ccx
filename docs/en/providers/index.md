@@ -29,7 +29,7 @@ This section guides you through configuring various LLM providers in CCX.
 | DeepSeek | `openai` / `https://api.deepseek.com` | `claude` / `https://api.deepseek.com/anthropic` | Both protocols |
 | GLM (Zhipu) | `openai` / `https://open.bigmodel.cn/api/paas/v4` | `claude` / `https://open.bigmodel.cn/api/anthropic` | Both protocols |
 | MiniMax | `openai` / `https://api.minimax.io/v1` | `claude` / `https://api.minimax.io/anthropic` | Both protocols |
-| Kimi | `openai` / `https://api.moonshot.ai/v1` | `claude` / `https://api.kimi.com/coding/` | Coding endpoint |
+| Kimi / Kimi Code | `openai` / `https://api.moonshot.cn/v1` or `https://api.kimi.com/coding/v1` | `claude` / `https://api.kimi.com/coding/` | Pay-as-you-go and Kimi Code endpoints |
 | OpenAI GPT | `openai` / `https://api.openai.com/v1` | — | OpenAI only |
 | Xiaomi MiMo | `openai` / `https://api.siliconflow.cn/v1` | — | Via SiliconFlow |
 | Claude | `claude` (translation) | `claude` / `https://api.anthropic.com` | Native Messages |

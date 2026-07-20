@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -68,6 +69,39 @@ func VerifyOpenAIChatEndpoint(ctx context.Context, baseURL, apiKey, authHeader s
 func VerifyResponsesEndpoint(ctx context.Context, baseURL, apiKey, authHeader string) EndpointVerifyResult {
 	url := buildResponsesProbeURL(baseURL)
 	return verifyJSONPostEndpoint(ctx, url, apiKey, authHeader, nil, minimalResponsesProbeBody)
+}
+
+// VerifyKimiCodeModelsEndpoint 使用 Kimi Code 的模型列表接口验证 Key。
+// Kimi Code 的 /coding/v1/models 会按 Key 返回套餐可用模型，避免用虚构模型
+// 发起推理请求，也不会消耗请求额度。
+func VerifyKimiCodeModelsEndpoint(ctx context.Context, baseURL, apiKey, authHeader string) EndpointVerifyResult {
+	reqCtx, cancel := context.WithTimeout(ctx, verifyEndpointTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, buildKimiCodeModelsURL(baseURL), nil)
+	if err != nil {
+		return EndpointVerifyResult{Err: err, Message: "构建请求失败"}
+	}
+	req.Header.Set("Accept", "application/json")
+	utils.SetAuthenticationHeaderWithOverride(req.Header, apiKey, authHeader)
+
+	client := httpclient.GetManager().GetStandardClient(verifyEndpointTimeout, false)
+	resp, err := client.Do(req)
+	if err != nil {
+		return EndpointVerifyResult{Err: err, Message: "请求失败: " + err.Error()}
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+
+	sc := resp.StatusCode
+	switch {
+	case sc >= 200 && sc < 300:
+		return EndpointVerifyResult{OK: true, StatusCode: sc}
+	case sc == http.StatusUnauthorized || sc == http.StatusForbidden:
+		return EndpointVerifyResult{OK: false, StatusCode: sc, AuthFailed: true, Message: "鉴权失败"}
+	default:
+		return EndpointVerifyResult{OK: false, StatusCode: sc, Message: "端点不可用"}
+	}
 }
 
 func verifyJSONPostEndpoint(ctx context.Context, url, apiKey, authHeader string, prepare func(*http.Request), body []byte) EndpointVerifyResult {
@@ -247,6 +281,9 @@ func verifyProviderCandidateEndpoint(ctx context.Context, providerID string, rou
 	if providerID == "volcengine" {
 		return verifyVolcenginePlanEndpoint(ctx, route, baseURL, apiKey)
 	}
+	if strings.EqualFold(providerID, "kimi") && isKimiCodeBaseURL(baseURL) {
+		return VerifyKimiCodeModelsEndpoint(ctx, baseURL, apiKey, "")
+	}
 	switch route.ServiceType {
 	case "claude":
 		return VerifyClaudeEndpoint(ctx, baseURL, apiKey, "")
@@ -257,6 +294,27 @@ func verifyProviderCandidateEndpoint(ctx context.Context, providerID string, rou
 	default:
 		return EndpointVerifyResult{Message: fmt.Sprintf("不支持的 serviceType: %s", route.ServiceType)}
 	}
+}
+
+func isKimiCodeBaseURL(baseURL string) bool {
+	target, err := url.Parse(strings.TrimSuffix(strings.TrimSpace(baseURL), "#"))
+	if err != nil || !strings.EqualFold(target.Hostname(), "api.kimi.com") {
+		return false
+	}
+	path := strings.TrimRight(target.EscapedPath(), "/")
+	return path == "/coding" || strings.HasPrefix(path, "/coding/")
+}
+
+func buildKimiCodeModelsURL(baseURL string) string {
+	baseURL = strings.TrimSuffix(strings.TrimSpace(baseURL), "#")
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(strings.ToLower(baseURL), "/models") {
+		return baseURL
+	}
+	if strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
+		return baseURL + "/models"
+	}
+	return baseURL + "/v1/models"
 }
 
 func verifyVolcenginePlanEndpoint(ctx context.Context, route config.ProviderRoute, baseURL, apiKey string) EndpointVerifyResult {

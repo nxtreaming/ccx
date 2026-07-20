@@ -11,8 +11,8 @@
     {
       "kind": "modelRegistry",
       "url": "./model-registry.json",
-      "sha256": "bdf5a6be2081942dff959fee3eeb2a149614a223dfc62fd2d9087d78010bdfd9",
-      "sizeBytes": 43720
+      "sha256": "66d231a0a9066dd96b7fa8cba72351a9f336dc15bca3035591830911f7572675",
+      "sizeBytes": 45866
     },
     {
       "kind": "channelPresets",
@@ -23,8 +23,8 @@
     {
       "kind": "builtinManifest",
       "url": "./builtin-manifest.json",
-      "sha256": "fed79848571b0023322b599f23dc81b0084d04ed8cef2e2dfed6c96577d13d78",
-      "sizeBytes": 5863
+      "sha256": "4740ddb91245d3f38ea9f84a8f6a9a712781157f9ad75b4b36c40f35c51558c7",
+      "sizeBytes": 6415
     }
   ]
 }

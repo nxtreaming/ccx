@@ -80,6 +80,9 @@ const modelPriorityPatterns: RegExp[] = [
   /deepseek-v3/i,
 
   // Moonshot Kimi / MiniMax
+  /^k3(?:\[1m\])?$/i,
+  /kimi-for-coding-highspeed/i,
+  /kimi-for-coding/i,
   /kimi-?k2\.7/i,
   /kimi-?k2\.6/i,
   /kimi-?k2\.5/i,

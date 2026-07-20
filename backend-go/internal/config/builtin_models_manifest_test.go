@@ -253,6 +253,40 @@ func TestLookupBuiltinManifest_MiMoOpenAIChatTokenPlan(t *testing.T) {
 	}
 }
 
+func TestLookupBuiltinManifest_KimiCodeUsesPerKeyModelsEndpoint(t *testing.T) {
+	tests := []struct {
+		name        string
+		baseURL     string
+		serviceType string
+	}{
+		{name: "Anthropic 入口", baseURL: "https://api.kimi.com/coding/", serviceType: "messages"},
+		{name: "OpenAI 入口", baseURL: "https://api.kimi.com/coding/v1", serviceType: "openai"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest, found := LookupBuiltinManifest(tt.baseURL, tt.serviceType)
+			if !found {
+				t.Fatalf("Kimi Code 清单未匹配: %s %s", tt.baseURL, tt.serviceType)
+			}
+			if manifest.DisableProbe {
+				t.Fatal("Kimi Code 应允许通过 /coding/v1/models 按 Key 探测")
+			}
+			if manifest.ModelsURL != "https://api.kimi.com/coding/v1/models" {
+				t.Fatalf("ModelsURL = %q", manifest.ModelsURL)
+			}
+			want := []string{"kimi-for-coding"}
+			if len(manifest.ModelIDs) != len(want) {
+				t.Fatalf("ModelIDs = %v, want %v", manifest.ModelIDs, want)
+			}
+			for i := range want {
+				if manifest.ModelIDs[i] != want[i] {
+					t.Fatalf("ModelIDs[%d] = %q, want %q", i, manifest.ModelIDs[i], want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestMatchManifestPattern(t *testing.T) {
 	tests := []struct {
 		name    string

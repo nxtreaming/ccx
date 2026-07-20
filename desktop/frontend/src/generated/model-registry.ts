@@ -1047,10 +1047,69 @@ export const builtinUpstreamModelCapabilities: Record<string, UpstreamModelCapab
       "https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json"
     ]
   },
+  "(?:^|[-/])k3(?:\\[1m\\])?(?=$|@)": {
+    "provider": "moonshot",
+    "displayName": "Kimi K3",
+    "description": "Kimi Code flagship coding model. Moderato supports 256K context; Allegretto and above can unlock up to 1M. CCX uses the 256K entitlement as the conservative routing baseline.",
+    "contextWindowTokens": 262144,
+    "thinkingMode": "thinking",
+    "reasoningEfforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "capabilities": {
+      "toolCalls": true,
+      "contextCaching": true
+    },
+    "sources": [
+      "https://www.kimi.com/code/docs/kimi-code/models.html"
+    ]
+  },
+  "(?:^|[-/])kimi-for-coding(?=$|@)": {
+    "provider": "moonshot",
+    "displayName": "Kimi K2.7 Code",
+    "description": "Kimi Code standard coding model. Thinking is enabled by the service and the model is available to all Kimi Code membership tiers.",
+    "contextWindowTokens": 262144,
+    "maxOutputTokens": 32768,
+    "defaultOutputTokens": 32768,
+    "recommendedOutputTokens": 32768,
+    "thinkingMode": "thinking",
+    "reasoningEfforts": [
+      "high"
+    ],
+    "capabilities": {
+      "toolCalls": true,
+      "contextCaching": true
+    },
+    "sources": [
+      "https://www.kimi.com/code/docs/kimi-code/models.html"
+    ]
+  },
+  "(?:^|[-/])kimi-for-coding-highspeed(?=$|@)": {
+    "provider": "moonshot",
+    "displayName": "Kimi K2.7 Code HighSpeed",
+    "description": "Kimi Code high-speed K2.7 Code variant. It uses the same model capability with approximately 5-6x output speed and higher quota consumption; availability depends on the membership tier.",
+    "contextWindowTokens": 262144,
+    "maxOutputTokens": 32768,
+    "defaultOutputTokens": 32768,
+    "recommendedOutputTokens": 32768,
+    "thinkingMode": "thinking",
+    "reasoningEfforts": [
+      "high"
+    ],
+    "capabilities": {
+      "toolCalls": true,
+      "contextCaching": true
+    },
+    "sources": [
+      "https://www.kimi.com/code/docs/kimi-code/models.html"
+    ]
+  },
   "(?:^|[-/])kimi-k2\\.7(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)": {
     "provider": "moonshot",
     "displayName": "Kimi K2.7 Code",
-    "description": "Kimi coding model with text, image and video input plus thinking mode. kimi-for-coding token plan alias falls back to this model.",
+    "description": "Moonshot Kimi K2.7 coding model with text, image and video input plus thinking mode.",
     "contextWindowTokens": 262144,
     "maxOutputTokens": 32768,
     "defaultOutputTokens": 32768,
@@ -1085,42 +1144,7 @@ export const builtinUpstreamModelCapabilities: Record<string, UpstreamModelCapab
   "(?:^|[-/])kimi-k2\\.7-code(?:-highspeed)?(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)": {
     "provider": "moonshot",
     "displayName": "Kimi K2.7 Code",
-    "description": "Kimi coding model with text, image and video input plus thinking mode. kimi-for-coding token plan alias falls back to this model.",
-    "contextWindowTokens": 262144,
-    "maxOutputTokens": 32768,
-    "defaultOutputTokens": 32768,
-    "recommendedOutputTokens": 32768,
-    "thinkingMode": "thinking",
-    "reasoningEfforts": [
-      "high",
-      "max"
-    ],
-    "capabilities": {
-      "vision": true,
-      "videoInput": true,
-      "toolCalls": true,
-      "jsonMode": true,
-      "partialMode": true,
-      "contextCaching": true
-    },
-    "pricing": {
-      "unit": "per_1m_tokens_usd",
-      "currency": "USD",
-      "inputCacheHitPrice": 0.19,
-      "inputCacheMissPrice": 0.95,
-      "outputPrice": 4
-    },
-    "sources": [
-      "https://platform.kimi.com/docs/pricing/chat-k27-code",
-      "https://platform.kimi.com/docs/guide/kimi-k2-7-code-quickstart",
-      "https://platform.kimi.com/docs/api/models-overview",
-      "https://platform.kimi.com/docs/guide/benchmark-best-practice"
-    ]
-  },
-  "(?:^|[-/])kimi-for-coding(?=$|@)": {
-    "provider": "moonshot",
-    "displayName": "Kimi K2.7 Code",
-    "description": "Kimi coding model with text, image and video input plus thinking mode. kimi-for-coding token plan alias falls back to this model.",
+    "description": "Moonshot Kimi K2.7 coding model with text, image and video input plus thinking mode.",
     "contextWindowTokens": 262144,
     "maxOutputTokens": 32768,
     "defaultOutputTokens": 32768,
@@ -1851,7 +1875,65 @@ export const builtinModelBenchmarkProfiles: Record<string, ModelBenchmarkProfile
     "comparableCategories": 1,
     "totalCategories": 1
   },
+  "(?:^|[-/])kimi-k2\\.7(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)": {
+    "canonicalModel": "kimi-k2.7-code",
+    "benchmarkEvidence": [
+      {
+        "benchmark": "deepswe",
+        "benchmarkVersion": "v1.1",
+        "sourceModel": "kimi-k2.7-code",
+        "domain": "coding",
+        "metric": "pass_at_1",
+        "rawValue": 0.31,
+        "uncertainty": 0.01,
+        "cohortPercentile": 0.13333333333333333,
+        "taskCount": 113,
+        "cohortSize": 16,
+        "effort": "default",
+        "selectionBasis": "published_default",
+        "sourceUrl": "https://deepswe.datacurve.ai/",
+        "capturedAt": "2026-07-18"
+      }
+    ],
+    "sources": [
+      "https://deepswe.datacurve.ai/"
+    ],
+    "verifiedAt": "2026-07-18",
+    "lane": "provisional",
+    "sharedResults": 16,
+    "comparableCategories": 1,
+    "totalCategories": 1
+  },
   "(?:^|[-/])kimi-k2\\.7-code(?:-highspeed)?(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)": {
+    "canonicalModel": "kimi-k2.7-code",
+    "benchmarkEvidence": [
+      {
+        "benchmark": "deepswe",
+        "benchmarkVersion": "v1.1",
+        "sourceModel": "kimi-k2.7-code",
+        "domain": "coding",
+        "metric": "pass_at_1",
+        "rawValue": 0.31,
+        "uncertainty": 0.01,
+        "cohortPercentile": 0.13333333333333333,
+        "taskCount": 113,
+        "cohortSize": 16,
+        "effort": "default",
+        "selectionBasis": "published_default",
+        "sourceUrl": "https://deepswe.datacurve.ai/",
+        "capturedAt": "2026-07-18"
+      }
+    ],
+    "sources": [
+      "https://deepswe.datacurve.ai/"
+    ],
+    "verifiedAt": "2026-07-18",
+    "lane": "provisional",
+    "sharedResults": 16,
+    "comparableCategories": 1,
+    "totalCategories": 1
+  },
+  "(?:^|[-/])kimi-for-coding(?:-highspeed)?(?=$|@)": {
     "canonicalModel": "kimi-k2.7-code",
     "benchmarkEvidence": [
       {

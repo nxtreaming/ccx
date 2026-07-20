@@ -71,6 +71,74 @@ func TestBuildResponsesProbeURL(t *testing.T) {
 	}
 }
 
+func TestBuildKimiCodeModelsURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"Anthropic 入口", "https://api.kimi.com/coding", "https://api.kimi.com/coding/v1/models"},
+		{"OpenAI 入口", "https://api.kimi.com/coding/v1", "https://api.kimi.com/coding/v1/models"},
+		{"尾部斜杠", "https://api.kimi.com/coding/v1/", "https://api.kimi.com/coding/v1/models"},
+		{"已有 models", "https://api.kimi.com/coding/v1/models", "https://api.kimi.com/coding/v1/models"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := buildKimiCodeModelsURL(tc.baseURL); got != tc.want {
+				t.Errorf("buildKimiCodeModelsURL(%q) = %q, want %q", tc.baseURL, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestVerifyKimiCodeModelsEndpoint(t *testing.T) {
+	cases := []struct {
+		name           string
+		statusCode     int
+		wantOK         bool
+		wantAuthFailed bool
+	}{
+		{"200 鉴权通过", http.StatusOK, true, false},
+		{"401 鉴权失败", http.StatusUnauthorized, false, true},
+		{"403 鉴权失败", http.StatusForbidden, false, true},
+		{"500 端点不可用", http.StatusInternalServerError, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var method, path, auth string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				method, path, auth = r.Method, r.URL.Path, r.Header.Get("Authorization")
+				w.WriteHeader(tc.statusCode)
+			}))
+			defer server.Close()
+
+			res := VerifyKimiCodeModelsEndpoint(context.Background(), server.URL+"/coding", "sk-kimi-test", "")
+			if res.OK != tc.wantOK || res.AuthFailed != tc.wantAuthFailed {
+				t.Fatalf("result = %+v, want ok=%v authFailed=%v", res, tc.wantOK, tc.wantAuthFailed)
+			}
+			if method != http.MethodGet || path != "/coding/v1/models" || auth != "Bearer sk-kimi-test" {
+				t.Fatalf("request = method=%q path=%q auth=%q", method, path, auth)
+			}
+		})
+	}
+}
+
+func TestIsKimiCodeBaseURL(t *testing.T) {
+	for _, tc := range []struct {
+		baseURL string
+		want    bool
+	}{
+		{"https://api.kimi.com/coding", true},
+		{"https://api.kimi.com/coding/v1", true},
+		{"https://api.moonshot.ai/v1", false},
+		{"https://api.kimi.com.evil.example/coding", false},
+	} {
+		if got := isKimiCodeBaseURL(tc.baseURL); got != tc.want {
+			t.Errorf("isKimiCodeBaseURL(%q) = %v, want %v", tc.baseURL, got, tc.want)
+		}
+	}
+}
+
 func TestVolcenginePlanProbeModel(t *testing.T) {
 	cases := []struct {
 		name    string

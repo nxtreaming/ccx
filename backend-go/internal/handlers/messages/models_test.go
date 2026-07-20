@@ -1168,8 +1168,8 @@ func TestModelSortKey(t *testing.T) {
 		},
 		{
 			name:     "Kimi 系列按能力排序",
-			models:   []string{"kimi-k2.6", "kimi-for-coding", "kimi-k2.7", "kimi-k2.5"},
-			expected: []string{"kimi-for-coding", "kimi-k2.7", "kimi-k2.6", "kimi-k2.5"},
+			models:   []string{"kimi-k2.6", "kimi-for-coding", "k3", "kimi-k2.7", "kimi-for-coding-highspeed", "kimi-k2.5", "kimi-k2.7-code-highspeed"},
+			expected: []string{"k3", "kimi-for-coding", "kimi-for-coding-highspeed", "kimi-k2.7", "kimi-k2.7-code-highspeed", "kimi-k2.6", "kimi-k2.5"},
 		},
 		{
 			name:     "DeepSeek 系列排序",

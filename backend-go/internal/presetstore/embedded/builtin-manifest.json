@@ -146,6 +146,26 @@
       "disableProbe": false
     },
     {
+      "baseUrlPattern": "api.kimi.com/coding",
+      "serviceType": "messages",
+      "planHint": "kimi_code_anthropic",
+      "modelsUrl": "https://api.kimi.com/coding/v1/models",
+      "modelIds": [
+        "kimi-for-coding"
+      ],
+      "disableProbe": false
+    },
+    {
+      "baseUrlPattern": "api.kimi.com/coding/v1",
+      "serviceType": "openai",
+      "planHint": "kimi_code_openai",
+      "modelsUrl": "https://api.kimi.com/coding/v1/models",
+      "modelIds": [
+        "kimi-for-coding"
+      ],
+      "disableProbe": false
+    },
+    {
       "baseUrlPattern": "ark.cn-beijing.volces.com/api/plan",
       "serviceType": "messages",
       "planHint": "volcengine_plan_anthropic",

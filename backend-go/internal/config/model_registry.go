@@ -307,6 +307,24 @@ func BuiltinAgentModelProfiles() map[string]AgentModelProfile {
 			ContextWindowTokens: 1000000,
 			ReasoningEfforts:    []string{"max"},
 		},
+		// Kimi Code 的 K3 在 Moderato 及以上套餐至少提供 256K，
+		// Allegretto 及以上套餐可扩展到 1M；实际可用范围仍以按 Key 发现结果为准。
+		"k3": {
+			DisplayName:            "Kimi K3",
+			ContextWindowTokens:    262144,
+			MaxContextWindowTokens: 1048576,
+			ReasoningEfforts:       []string{"low", "high", "max"},
+		},
+		"k3[1m]": {
+			DisplayName:            "Kimi K3",
+			ContextWindowTokens:    262144,
+			MaxContextWindowTokens: 1048576,
+			ReasoningEfforts:       []string{"low", "high", "max"},
+		},
+		"kimi-for-coding*": {
+			DisplayName:         "Kimi K2.7 Code",
+			ContextWindowTokens: 262144,
+		},
 		"fable": {
 			DisplayName:         "Claude Fable alias",
 			ContextWindowTokens: 1000000,

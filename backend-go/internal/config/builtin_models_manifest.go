@@ -150,6 +150,25 @@ var builtinModelsManifests = []BuiltinModelsManifest{
 		ExcludeModelPatterns: mimoExcludeModelPatterns(),
 		DisableProbe:         false,
 	},
+	// Kimi Code 官方订阅入口（来源：Kimi Code 模型配置与概览文档）。
+	// /coding/v1/models 会按 API Key 返回当前会员档位可用的模型；
+	// ModelIDs 仅作为 models 端点不可用时的静态回退，只保留所有套餐都可用的基础模型。
+	{
+		BaseURLPattern: "api.kimi.com/coding",
+		ServiceType:    "messages",
+		PlanHint:       "kimi_code_anthropic",
+		ModelsURL:      "https://api.kimi.com/coding/v1/models",
+		ModelIDs:       kimiCodeModelIDs(),
+		DisableProbe:   false,
+	},
+	{
+		BaseURLPattern: "api.kimi.com/coding/v1",
+		ServiceType:    "openai",
+		PlanHint:       "kimi_code_openai",
+		ModelsURL:      "https://api.kimi.com/coding/v1/models",
+		ModelIDs:       kimiCodeModelIDs(),
+		DisableProbe:   false,
+	},
 	// 火山方舟 Agent/Coding Plan 套餐入口（来源：provider_templates.go volcengine 模板）。
 	// 套餐模型发现依赖火山云管控面签名接口，普通推理 Key 无法通过 /v1/models 探测；
 	// 未绑定 Access Key 时用此清单兜底，让渠道立即可用。DisableProbe=true。
@@ -188,6 +207,12 @@ func mimoModelIDs() []string {
 	return []string{
 		"mimo-v2.5-pro",
 		"mimo-v2.5",
+	}
+}
+
+func kimiCodeModelIDs() []string {
+	return []string{
+		"kimi-for-coding",
 	}
 }
 
