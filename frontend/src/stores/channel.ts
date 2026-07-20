@@ -289,6 +289,32 @@ export const useChannelStore = defineStore('channel', () => {
   /**
    * 保存渠道（添加或更新）
    */
+  async function updateChannelByType(
+    channelType: ApiTab,
+    channelId: number,
+    patch: Partial<Channel>,
+  ): Promise<void> {
+    switch (channelType) {
+      case 'chat':
+        await api.updateChatChannel(channelId, patch)
+        break
+      case 'vectors':
+        await api.updateVectorsChannel(channelId, patch)
+        break
+      case 'images':
+        await api.updateImagesChannel(channelId, patch)
+        break
+      case 'gemini':
+        await api.updateGeminiChannel(channelId, patch)
+        break
+      case 'responses':
+        await api.updateResponsesChannel(channelId, patch)
+        break
+      default:
+        await api.updateChannel(channelId, patch)
+    }
+  }
+
   async function saveChannel(
     channel: Omit<Channel, 'index' | 'latency' | 'status'>,
     editingChannelIndex: number | null,
@@ -320,6 +346,13 @@ export const useChannelStore = defineStore('channel', () => {
           }
         } else {
           await api.updateManagedAccount(options.accountUid, { name: channel.name, apiKeys: channel.apiKeys })
+        }
+
+        // 账号接口只负责凭证池；官网地址属于单条协议渠道，需要单独持久化。
+        if (original && (channel.website ?? '').trim() !== (original.website ?? '').trim()) {
+          await updateChannelByType(targetTab, editingChannelIndex, {
+            website: (channel.website ?? '').trim(),
+          })
         }
       } else if (isChat) {
         await api.updateChatChannel(editingChannelIndex, channel)
