@@ -2,6 +2,7 @@ package autopilot
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -296,6 +297,97 @@ func TestVerifyProviderKeys(t *testing.T) {
 		}
 		if len(paths) != 2 || paths[0] != "/api/plan/v3/chat/completions" || paths[1] != "/api/coding/v3/chat/completions" {
 			t.Fatalf("探测路径=%v", paths)
+		}
+	})
+
+	t.Run("火山 Claude 验证使用 Claude Code 请求特征", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/plan/v1/messages" {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Header.Get("Authorization") != "Bearer ark-test" ||
+				!strings.HasPrefix(r.Header.Get("User-Agent"), "claude-cli/") ||
+				r.Header.Get("X-App") != "cli" ||
+				r.Header.Get("anthropic-beta") == "" ||
+				r.Header.Get("anthropic-dangerous-direct-browser-access") != "true" {
+				http.Error(w, "Claude Code request fingerprint required", http.StatusForbidden)
+				return
+			}
+
+			var body struct {
+				Model  string `json:"model"`
+				System []struct {
+					Text string `json:"text"`
+				} `json:"system"`
+				Metadata struct {
+					UserID string `json:"user_id"`
+				} `json:"metadata"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid body", http.StatusBadRequest)
+				return
+			}
+			if body.Model != "ark-code-latest" || len(body.System) < 2 ||
+				!strings.HasPrefix(body.System[0].Text, "x-anthropic-billing-header") ||
+				!strings.HasPrefix(body.System[1].Text, "You are Claude Code,") {
+				http.Error(w, "Claude Code identity required", http.StatusForbidden)
+				return
+			}
+			var userID struct {
+				SessionID string `json:"session_id"`
+			}
+			if err := json.Unmarshal([]byte(body.Metadata.UserID), &userID); err != nil || userID.SessionID == "" ||
+				r.Header.Get("X-Claude-Code-Session-Id") != userID.SessionID {
+				http.Error(w, "invalid Claude Code session", http.StatusForbidden)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		tmpl := &config.ProviderTemplate{ProviderID: "volcengine"}
+		route := config.ProviderRoute{
+			ChannelKind: "messages",
+			ServiceType: "claude",
+			Candidates:  []config.ProviderCandidate{{BaseURL: server.URL + "/api/plan"}},
+		}
+		configs, _, err := verifyProviderRouteKeys(context.Background(), tmpl, route, []string{"ark-test"})
+		if err != nil {
+			t.Fatalf("火山 Agent Plan 验证应使用兼容请求特征: %v", err)
+		}
+		if len(configs) != 1 || configs[0].BaseURL != server.URL+"/api/plan" {
+			t.Fatalf("验证绑定结果=%+v", configs)
+		}
+	})
+
+	t.Run("混合失败不误报所有候选均鉴权失败", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/api/plan/") {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		tmpl := &config.ProviderTemplate{ProviderID: "volcengine"}
+		route := config.ProviderRoute{
+			ChannelKind: "chat",
+			ServiceType: "openai",
+			Candidates: []config.ProviderCandidate{
+				{BaseURL: server.URL + "/api/plan/v3"},
+				{BaseURL: server.URL + "/api/coding/v3"},
+			},
+		}
+		_, _, err := verifyProviderRouteKeys(context.Background(), tmpl, route, []string{"ark-test"})
+		if err == nil {
+			t.Fatal("混合失败时应返回错误")
+		}
+		if strings.Contains(err.Error(), "所有候选端点均返回 401/403") ||
+			!strings.Contains(err.Error(), "候选 1: HTTP 403") ||
+			!strings.Contains(err.Error(), "候选 2: HTTP 404") {
+			t.Fatalf("错误诊断=%q", err)
 		}
 	})
 

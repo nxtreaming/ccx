@@ -149,8 +149,8 @@ func buildVersionedProbeURL(baseURL, endpoint string) string {
 //   - 每个 key 按 CandidatesForKey 得到的顺序探测（前缀命中的 plan 候选优先，其余回退在后）
 //   - 命中首个 OK 端点即绑定，停止该 key 的后续探测
 //   - 若某 key 遍历完所有候选：
-//     · 存在鉴权失败（401/403）→ 该 key 无效
-//     · 仅端点不可达/网络错误 → 该 key 无可用端点
+//     · 全部为鉴权失败（401/403）→ 该 key 无效
+//     · 存在其他失败类型 → 返回逐候选状态，避免把端点或协议问题误报为鉴权失败
 //
 // 返回：
 //   - keyConfigs：与 apiKeys 一一对应、且 BaseURL 已绑定的 APIKeyConfig 列表
@@ -189,32 +189,29 @@ func verifyProviderRouteKeys(ctx context.Context, tmpl *config.ProviderTemplate,
 		}
 
 		var (
-			boundURL   string
-			authFailed bool
-			lastMsg    string
+			boundURL        string
+			authFailedCount int
+			diagnostics     []string
 		)
-		for _, cand := range candidates {
+		for candidateIndex, cand := range candidates {
 			res := verifyProviderCandidateEndpoint(ctx, tmpl.ProviderID, route, cand.BaseURL, apiKey)
 			if res.OK {
 				boundURL = cand.BaseURL
 				break
 			}
 			if res.AuthFailed {
-				authFailed = true
+				authFailedCount++
 			}
-			if res.Message != "" {
-				lastMsg = res.Message
-			} else if res.Err != nil {
-				lastMsg = res.Err.Error()
-			}
+			diagnostics = append(diagnostics, verifyCandidateDiagnostic(candidateIndex+1, res))
 		}
 
 		if boundURL == "" {
 			mask := utils.MaskAPIKey(apiKey)
-			if authFailed {
-				return nil, nil, fmt.Errorf("Key %s 鉴权失败：所有候选端点均返回 401/403", mask)
+			summary := strings.Join(diagnostics, "；")
+			if authFailedCount == len(candidates) {
+				return nil, nil, fmt.Errorf("Key %s 鉴权失败：所有候选端点均返回 401/403（%s）", mask, summary)
 			}
-			return nil, nil, fmt.Errorf("Key %s 无可用端点：所有候选均不可达（%s）", mask, lastMsg)
+			return nil, nil, fmt.Errorf("Key %s 无可用候选端点（%s）", mask, summary)
 		}
 
 		keyConfigs = append(keyConfigs, config.APIKeyConfig{
@@ -228,6 +225,22 @@ func verifyProviderRouteKeys(ctx context.Context, tmpl *config.ProviderTemplate,
 	}
 
 	return keyConfigs, baseURLs, nil
+}
+
+func verifyCandidateDiagnostic(index int, result EndpointVerifyResult) string {
+	if result.StatusCode > 0 {
+		if result.Message != "" {
+			return fmt.Sprintf("候选 %d: HTTP %d（%s）", index, result.StatusCode, result.Message)
+		}
+		return fmt.Sprintf("候选 %d: HTTP %d", index, result.StatusCode)
+	}
+	if result.Message != "" {
+		return fmt.Sprintf("候选 %d: %s", index, result.Message)
+	}
+	if result.Err != nil {
+		return fmt.Sprintf("候选 %d: %v", index, result.Err)
+	}
+	return fmt.Sprintf("候选 %d: 未知错误", index)
 }
 
 func verifyProviderCandidateEndpoint(ctx context.Context, providerID string, route config.ProviderRoute, baseURL, apiKey string) EndpointVerifyResult {
@@ -251,8 +264,9 @@ func verifyVolcenginePlanEndpoint(ctx context.Context, route config.ProviderRout
 	switch route.ServiceType {
 	case "claude":
 		body := []byte(`{"model":"` + model + `","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}`)
+		body, sessionID := utils.EnsureClaudeCodeProbeBody(body)
 		return verifyJSONPostEndpointWithPolicy(ctx, buildClaudeProbeURL(baseURL), apiKey, "", func(req *http.Request) {
-			req.Header.Set("anthropic-version", "2023-06-01")
+			utils.ApplyClaudeCodeProbeHeaders(req.Header, sessionID)
 		}, body, false)
 	case "openai":
 		body := []byte(`{"model":"` + model + `","messages":[{"role":"user","content":"ping"}],"max_tokens":1}`)
