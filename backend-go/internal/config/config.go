@@ -155,10 +155,11 @@ type ManagedAccountConfig struct {
 }
 
 type ManagedAccountCredential struct {
-	CredentialUID       string                   `json:"credentialUid"`
-	APIKey              string                   `json:"apiKey"`
-	VolcengineAccessKey *VolcengineAccessKeyPair `json:"volcengineAccessKey,omitempty"`
-	MiMoConsole         *MiMoConsoleCredential   `json:"mimoConsole,omitempty"`
+	CredentialUID       string                      `json:"credentialUid"`
+	APIKey              string                      `json:"apiKey"`
+	VolcengineAccessKey *VolcengineAccessKeyPair    `json:"volcengineAccessKey,omitempty"`
+	MiMoConsole         *MiMoConsoleCredential      `json:"mimoConsole,omitempty"`
+	CompshareConsole    *CompshareConsoleCredential `json:"compshareConsole,omitempty"`
 }
 
 // VolcengineAccessKeyPair 是火山云管控面签名凭证，用于 Agent/Coding Plan 识别与模型发现。
@@ -210,6 +211,31 @@ type MiMoTokenPlanUsageQuota struct {
 	Used        int64   `json:"used"`
 	Limit       int64   `json:"limit"`
 	UsedPercent float64 `json:"usedPercent"`
+}
+
+// CompshareConsoleCredential 保存优云智算控制台登录态与最近一次套餐用量快照。
+// Cookie 属于敏感凭证，只能持久化，管理 API 不得回显。
+type CompshareConsoleCredential struct {
+	Cookie           string                   `json:"cookie"`
+	UserPlanCode     string                   `json:"userPlanCode,omitempty"`
+	PlanCode         string                   `json:"planCode,omitempty"`
+	PlanName         string                   `json:"planName,omitempty"`
+	DisplayName      string                   `json:"displayName,omitempty"`
+	Status           int                      `json:"status"`
+	ConcurrencyLimit int64                    `json:"concurrencyLimit,omitempty"`
+	IsTeam           bool                     `json:"isTeam,omitempty"`
+	ExpireAt         int64                    `json:"expireAt,omitempty"`
+	FiveHourUsage    CompsharePlanUsageWindow `json:"fiveHourUsage"`
+	WeeklyUsage      CompsharePlanUsageWindow `json:"weeklyUsage"`
+	MonthlyUsage     CompsharePlanUsageWindow `json:"monthlyUsage"`
+	ValidatedAt      time.Time                `json:"validatedAt"`
+}
+
+type CompsharePlanUsageWindow struct {
+	Used        int64 `json:"used"`
+	Limit       int64 `json:"limit"`
+	UpdatedAt   int64 `json:"updatedAt,omitempty"`
+	NextResetAt int64 `json:"nextResetAt,omitempty"`
 }
 
 // CredentialUIDForKey 返回账号内 API Key 的稳定凭证身份。
@@ -797,6 +823,10 @@ func (cm *ConfigManager) GetConfig() Config {
 				if credential.MiMoConsole != nil {
 					console := *credential.MiMoConsole
 					cloned.ManagedAccounts[i].Credentials[j].MiMoConsole = &console
+				}
+				if credential.CompshareConsole != nil {
+					console := *credential.CompshareConsole
+					cloned.ManagedAccounts[i].Credentials[j].CompshareConsole = &console
 				}
 			}
 		}

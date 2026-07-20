@@ -37,7 +37,7 @@ import { useEditChannelOptions } from '../utils/editChannelOptions'
 import { isValidUrl, normalizeModelCapabilities } from '../utils/editChannelHelpers'
 import { createHandleTestCapability } from '../utils/editChannelPayload'
 import { isAutoManagedAccountChannel } from '../utils/providerDisplay'
-import { getVolcenginePlanWebsiteLinks } from '../utils/channelWebsite'
+import { getManagedProviderWebsiteLinks } from '../utils/channelWebsite'
 
 export interface EditChannelModalProps {
   show: boolean
@@ -921,8 +921,8 @@ export function useEditChannelModal(props: ResolvedEditChannelModalProps, emit: 
     form.authHeader = channel.authHeader || 'auto'
     form.baseUrl = channel.baseUrl
     form.baseUrls = channel.baseUrls || []
-    const planWebsiteLinks = getVolcenginePlanWebsiteLinks(channel)
-    form.website = channel.website || (planWebsiteLinks.length === 1 ? planWebsiteLinks[0].url : '')
+    const providerWebsiteLinks = getManagedProviderWebsiteLinks(channel)
+    form.website = channel.website || (providerWebsiteLinks.length === 1 ? providerWebsiteLinks[0].url : '')
     form.insecureSkipVerify = !!channel.insecureSkipVerify
     form.lowQuality = !!channel.lowQuality
     form.injectDummyThoughtSignature = !!channel.injectDummyThoughtSignature

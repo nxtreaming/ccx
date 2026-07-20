@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  COMPSHARE_CONSOLE_URL,
   getChannelWebsiteLinks,
+  getManagedProviderWebsiteLinks,
   getVolcenginePlanWebsiteLinks,
   VOLCENGINE_AGENT_PLAN_CONSOLE_URL,
   VOLCENGINE_CODING_PLAN_CONSOLE_URL,
@@ -54,6 +56,30 @@ describe('channelWebsite', () => {
       baseUrl: 'https://ark.cn-beijing.volces.com/api/plan',
       apiKeyConfigs: [],
     })).toEqual([{ kind: 'custom', url: 'https://example.com/account' }])
+  })
+
+  it('为优云智算托管渠道提供模型管理控制台', () => {
+    const channel = {
+      providerId: 'compshare',
+      baseUrl: 'https://cp.compshare.cn',
+      apiKeyConfigs: [],
+    }
+
+    expect(getManagedProviderWebsiteLinks(channel)).toEqual([
+      { kind: 'provider_console', url: COMPSHARE_CONSOLE_URL },
+    ])
+    expect(getChannelWebsiteLinks(channel)).toEqual([
+      { kind: 'provider_console', url: COMPSHARE_CONSOLE_URL },
+    ])
+  })
+
+  it('优云智算渠道仍允许覆盖自定义官网', () => {
+    expect(getChannelWebsiteLinks({
+      providerId: 'compshare',
+      website: 'https://example.com/compshare-account',
+      baseUrl: 'https://cp.compshare.cn',
+      apiKeyConfigs: [],
+    })).toEqual([{ kind: 'custom', url: 'https://example.com/compshare-account' }])
   })
 
   it('普通渠道继续回退到上游域名', () => {

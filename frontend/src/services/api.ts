@@ -59,6 +59,7 @@ import type {
   ManagedAccountsResponse,
   DeepSeekAccountBalancesResponse,
   MiMoConsoleCookieResponse,
+  CompshareConsoleCookieResponse,
   VolcengineAccessKeyResponse,
   VolcenginePlanUsageRefreshResponse,
   ChannelAutoStatusResponse,
@@ -1465,6 +1466,32 @@ export class ApiService {
 
   async clearMiMoConsoleCookie(accountUid: string, credentialUid: string): Promise<void> {
     await this.request(`/accounts/${encodeURIComponent(accountUid)}/credentials/${encodeURIComponent(credentialUid)}/mimo-console-cookie`, {
+      method: 'DELETE',
+    })
+  }
+
+  async setCompshareConsoleCookie(
+    accountUid: string,
+    credentialUid: string,
+    cookie: string
+  ): Promise<CompshareConsoleCookieResponse> {
+    return this.request(`/accounts/${encodeURIComponent(accountUid)}/credentials/${encodeURIComponent(credentialUid)}/compshare-console-cookie`, {
+      method: 'PUT',
+      body: JSON.stringify({ cookie }),
+    })
+  }
+
+  async refreshCompshareConsoleCookie(
+    accountUid: string,
+    credentialUid: string
+  ): Promise<{ plan: CompshareConsoleCookieResponse['plan'] }> {
+    return this.request(`/accounts/${encodeURIComponent(accountUid)}/credentials/${encodeURIComponent(credentialUid)}/compshare-console-cookie/refresh`, {
+      method: 'POST',
+    })
+  }
+
+  async clearCompshareConsoleCookie(accountUid: string, credentialUid: string): Promise<void> {
+    await this.request(`/accounts/${encodeURIComponent(accountUid)}/credentials/${encodeURIComponent(credentialUid)}/compshare-console-cookie`, {
       method: 'DELETE',
     })
   }

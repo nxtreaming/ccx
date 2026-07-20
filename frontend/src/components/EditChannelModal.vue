@@ -55,7 +55,7 @@
                 :managed-account="isAutoManagedChannel"
                 :provider-name="managedProviderName"
                 :official-provider="isOfficialManagedProvider"
-                :website-links="managedPlanWebsiteLinks"
+                :website-links="managedProviderWebsiteLinks"
                 :errors="errors"
                 :rules="rules"
                 @update:form="updateForm"
@@ -441,8 +441,8 @@ import RateLimitGroup from './edit-channel/RateLimitGroup.vue'
 import { useEditChannelModal, type EditChannelModalEmits, type EditChannelModalProps } from '../composables/useEditChannelModal'
 import { ApiService } from '../services/api'
 import type { ManagedAccountChannel } from '../services/api-types'
-import { buildNativeProtocolModelRoutes } from '../utils/channelModelAvailability'
-import { getVolcenginePlanWebsiteLinks } from '../utils/channelWebsite'
+import { buildNativeProtocolModelRoutes, loadLegacyManagedModelAvailability } from '../utils/channelModelAvailability'
+import { getManagedProviderWebsiteLinks } from '../utils/channelWebsite'
 import { isManagedProviderChannel, isOfficialProviderChannel, providerDisplayName } from '../utils/providerDisplay'
 
 const props = withDefaults(defineProps<EditChannelModalProps>(), {
@@ -453,7 +453,7 @@ const emit = defineEmits<EditChannelModalEmits>()
 const managedProviderName = computed(() => providerDisplayName(props.channel?.providerId))
 const isManagedProvider = computed(() => isManagedProviderChannel(props.channel))
 const isOfficialManagedProvider = computed(() => isOfficialProviderChannel(props.channel))
-const managedPlanWebsiteLinks = computed(() => props.channel ? getVolcenginePlanWebsiteLinks(props.channel) : [])
+const managedProviderWebsiteLinks = computed(() => props.channel ? getManagedProviderWebsiteLinks(props.channel) : [])
 const managedAccountChannels = ref<ManagedAccountChannel[]>([])
 const managedModelsLoading = ref(false)
 const managedAccountsApi = new ApiService()
@@ -475,11 +475,20 @@ watch(
 
     managedModelsLoading.value = true
     try {
-      const response = await managedAccountsApi.getManagedAccounts()
+      let accountChannels: ManagedAccountChannel[] = []
+      try {
+        const response = await managedAccountsApi.getManagedAccounts()
+        accountChannels = response.accounts.find(account => account.accountUid === accountUid)?.channels ?? []
+      } catch {
+        // 旧后端或账号接口暂时失败时，继续尝试渠道 models API。
+      }
       if (requestId !== managedModelsRequestId) return
-      managedAccountChannels.value = response.accounts.find(account => account.accountUid === accountUid)?.channels ?? []
-    } catch {
-      if (requestId === managedModelsRequestId) managedAccountChannels.value = []
+      accountChannels = await loadLegacyManagedModelAvailability(
+        managedAccountsApi,
+        props.channel?.protocolRoutes,
+        accountChannels,
+      )
+      if (requestId === managedModelsRequestId) managedAccountChannels.value = accountChannels
     } finally {
       if (requestId === managedModelsRequestId) managedModelsLoading.value = false
     }

@@ -2,8 +2,9 @@ import type { Channel } from '@/services/api'
 
 export const VOLCENGINE_AGENT_PLAN_CONSOLE_URL = 'https://console.volcengine.com/ark/region:cn-beijing/subscription/agent-plan'
 export const VOLCENGINE_CODING_PLAN_CONSOLE_URL = 'https://console.volcengine.com/ark/region:cn-beijing/subscription/coding-plan'
+export const COMPSHARE_CONSOLE_URL = 'https://console.compshare.cn/light-gpu/model-manage'
 
-export type ChannelWebsiteKind = 'custom' | 'agent_plan' | 'coding_plan' | 'upstream'
+export type ChannelWebsiteKind = 'custom' | 'agent_plan' | 'coding_plan' | 'provider_console' | 'upstream'
 
 export interface ChannelWebsiteLink {
   kind: ChannelWebsiteKind
@@ -45,6 +46,11 @@ const knownVolcengineConsoleKind = (value: string): 'agent_plan' | 'coding_plan'
   return null
 }
 
+const isKnownProviderConsole = (value: string): boolean => {
+  const normalized = normalizeURL(value).replace(/\/+$/, '')
+  return knownVolcengineConsoleKind(normalized) !== null || normalized === COMPSHARE_CONSOLE_URL
+}
+
 export function getVolcenginePlanWebsiteLinks(channel: WebsiteChannel): ChannelWebsiteLink[] {
   const providerId = channel.providerId?.trim().toLowerCase()
   if (providerId !== 'volcengine' && providerId !== 'volc-ark') return []
@@ -68,13 +74,23 @@ export function getVolcenginePlanWebsiteLinks(channel: WebsiteChannel): ChannelW
     .map(plan => ({ kind: plan, url: VOLCENGINE_CONSOLE_URLS[plan] }))
 }
 
-export function getChannelWebsiteLinks(channel: WebsiteChannel): ChannelWebsiteLink[] {
+export function getManagedProviderWebsiteLinks(channel: WebsiteChannel): ChannelWebsiteLink[] {
   const volcengineLinks = getVolcenginePlanWebsiteLinks(channel)
+  if (volcengineLinks.length > 0) return volcengineLinks
+
+  if (channel.providerId?.trim().toLowerCase() === 'compshare') {
+    return [{ kind: 'provider_console', url: COMPSHARE_CONSOLE_URL }]
+  }
+  return []
+}
+
+export function getChannelWebsiteLinks(channel: WebsiteChannel): ChannelWebsiteLink[] {
+  const managedProviderLinks = getManagedProviderWebsiteLinks(channel)
   const customWebsite = normalizeURL(channel.website)
-  if (customWebsite && !knownVolcengineConsoleKind(customWebsite)) {
+  if (customWebsite && !isKnownProviderConsole(customWebsite)) {
     return [{ kind: 'custom', url: customWebsite }]
   }
-  if (volcengineLinks.length > 0) return volcengineLinks
+  if (managedProviderLinks.length > 0) return managedProviderLinks
   if (customWebsite) return [{ kind: 'custom', url: customWebsite }]
 
   const upstreamURL = normalizeURL(channel.baseUrl) || normalizeURL(channel.baseUrls?.[0])

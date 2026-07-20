@@ -70,6 +70,10 @@ func (cm *ConfigManager) GetManagedAccountCredential(accountUID, credentialUID s
 					console := *credential.MiMoConsole
 					credential.MiMoConsole = &console
 				}
+				if credential.CompshareConsole != nil {
+					console := *credential.CompshareConsole
+					credential.CompshareConsole = &console
+				}
 				return credential, true
 			}
 		}
@@ -167,6 +171,53 @@ func (cm *ConfigManager) ClearManagedAccountMiMoConsole(accountUID, credentialUI
 		for j := range account.Credentials {
 			if account.Credentials[j].CredentialUID == credentialUID {
 				account.Credentials[j].MiMoConsole = nil
+				return cm.saveConfigLocked(cm.config)
+			}
+		}
+		return fmt.Errorf("凭证 %s 不存在", credentialUID)
+	}
+	return fmt.Errorf("账号 %s 不存在", accountUID)
+}
+
+// BindManagedAccountCompshareConsole 为优云智算托管凭证保存控制台 Cookie 和套餐快照。
+func (cm *ConfigManager) BindManagedAccountCompshareConsole(accountUID, credentialUID string, console CompshareConsoleCredential) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	for i := range cm.config.ManagedAccounts {
+		account := &cm.config.ManagedAccounts[i]
+		if account.AccountUID != accountUID {
+			continue
+		}
+		if account.ProviderID != "compshare" {
+			return fmt.Errorf("仅优云智算自动托管账号支持绑定控制台 Cookie")
+		}
+		for j := range account.Credentials {
+			if account.Credentials[j].CredentialUID != credentialUID {
+				continue
+			}
+			console.Cookie = strings.TrimSpace(console.Cookie)
+			account.Credentials[j].CompshareConsole = &console
+			return cm.saveConfigLocked(cm.config)
+		}
+		return fmt.Errorf("凭证 %s 不存在", credentialUID)
+	}
+	return fmt.Errorf("账号 %s 不存在", accountUID)
+}
+
+func (cm *ConfigManager) ClearManagedAccountCompshareConsole(accountUID, credentialUID string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	for i := range cm.config.ManagedAccounts {
+		account := &cm.config.ManagedAccounts[i]
+		if account.AccountUID != accountUID {
+			continue
+		}
+		if account.ProviderID != "compshare" {
+			return fmt.Errorf("仅优云智算自动托管账号支持绑定控制台 Cookie")
+		}
+		for j := range account.Credentials {
+			if account.Credentials[j].CredentialUID == credentialUID {
+				account.Credentials[j].CompshareConsole = nil
 				return cm.saveConfigLocked(cm.config)
 			}
 		}

@@ -776,6 +776,7 @@ export interface ModelsResponse {
 export interface ChannelModelsRequest {
   key: string
   baseUrl?: string
+  serviceType?: Channel['serviceType']
   proxyUrl?: string
   insecureSkipVerify?: boolean
   customHeaders?: Record<string, string>
@@ -1545,6 +1546,8 @@ export interface ManagedAccountCredential {
   volcenginePlanUsage?: VolcenginePlanUsage
   hasMiMoConsoleCookie?: boolean
   mimoTokenPlan?: MiMoTokenPlanSnapshot
+  hasCompshareConsoleCookie?: boolean
+  compsharePlan?: CompsharePlanSnapshot
 }
 
 export interface DeepSeekBalanceInfo {
@@ -1619,6 +1622,33 @@ export interface MiMoConsoleCookieResponse {
   adoptedApiKey?: string
   tokenPlan: MiMoTokenPlanSnapshot
   discoveryStarted: number
+}
+
+export interface CompsharePlanUsageWindow {
+  used: number
+  limit: number
+  updatedAt?: number
+  nextResetAt?: number
+}
+
+export interface CompsharePlanSnapshot {
+  planCode: string
+  planName: string
+  displayName: string
+  status: number
+  concurrencyLimit: number
+  isTeam: boolean
+  expireAt: number
+  fiveHourUsage: CompsharePlanUsageWindow
+  weeklyUsage: CompsharePlanUsageWindow
+  monthlyUsage: CompsharePlanUsageWindow
+  validatedAt: string
+}
+
+export interface CompshareConsoleCookieResponse {
+  accountUid: string
+  credentialUid: string
+  plan: CompsharePlanSnapshot
 }
 
 export interface VolcengineAccessKeyResponse {

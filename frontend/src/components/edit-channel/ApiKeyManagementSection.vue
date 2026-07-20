@@ -555,6 +555,11 @@
           </div>
         </div>
 
+        <CompsharePlanSection
+          v-if="providerId === 'compshare' && accountUid"
+          :account-uid="accountUid"
+        />
+
         <!-- 添加新密钥 -->
         <div class="d-flex align-start ga-3">
           <v-text-field
@@ -767,6 +772,7 @@ import type {
 import { maskApiKey } from '../../utils/apiKeyMask'
 import { buildChannelApiKeyRows } from '../../utils/channelApiKeys'
 import { getVolcenginePlanConsoleURL } from '../../utils/channelWebsite'
+import CompsharePlanSection from './CompsharePlanSection.vue'
 
 interface KeyModelsStatus {
   loading?: boolean

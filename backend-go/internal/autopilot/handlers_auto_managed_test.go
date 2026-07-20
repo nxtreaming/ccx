@@ -907,6 +907,73 @@ func TestSetMiMoConsoleCookieRequiresConfirmationBeforeAdoptingKey(t *testing.T)
 	}
 }
 
+func TestCompshareConsoleCookieBindingDoesNotExposeSecrets(t *testing.T) {
+	const currentKey = "sk-cp-test-current"
+	console := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != testCompshareCookie {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+  "RetCode": 0,
+  "UserPlans": [{
+    "Code": "cppkg-test", "PlanCode": "cp-plan-test", "PlanName": "Pro", "DisplayName": "Pro 增强版",
+    "LimitPer5h": 3000, "LimitPerWeek": 7500, "LimitPerMonth": 19000,
+    "UsagePer5h": 0, "UsagePerWeek": 100, "UsagePerMonth": 6496,
+    "ConcurrencyLimit": 10, "Status": 1, "ExpireAt": 1785037981,
+    "Keys": [{"APIKey": "` + currentKey + `"}]
+  }]
+}`))
+	}))
+	defer console.Close()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	data := `{
+  "managedAccounts":[{"accountUid":"acct_compshare","providerId":"compshare","name":"compshare","credentials":[{"credentialUid":"cred_compshare","apiKey":"` + currentKey + `"}]}],
+  "upstream":[{"accountUid":"acct_compshare","channelUid":"ch_compshare","providerId":"compshare","name":"compshare","serviceType":"claude","autoManaged":true,"baseUrl":"https://api.compshare.cn/anthropic","apiKeyConfigs":[{"credentialUid":"cred_compshare","baseUrl":"https://api.compshare.cn/anthropic"}]}],
+  "chatUpstream":[],"responsesUpstream":[],"geminiUpstream":[],"imagesUpstream":[],"vectorsUpstream":[]
+}`
+	if err := os.WriteFile(configPath, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := config.NewConfigManager(configPath, filepath.Join(dir, "backups"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	router := setupAutoManagedRouter(&AutoManagedDeps{
+		CfgManager:             manager,
+		CompshareConsoleClient: &CompshareConsoleClient{HTTPClient: console.Client(), BaseURL: console.URL},
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/api/accounts/acct_compshare/credentials/cred_compshare/compshare-console-cookie", bytes.NewBufferString(`{"cookie":"`+testCompshareCookie+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"displayName":"Pro 增强版"`) {
+		t.Fatalf("绑定失败: status=%d body=%s", w.Code, w.Body.String())
+	}
+	credential, ok := manager.GetManagedAccountCredential("acct_compshare", "cred_compshare")
+	if !ok || credential.CompshareConsole == nil || credential.CompshareConsole.Cookie != testCompshareCookie {
+		t.Fatalf("控制台套餐未持久化: %+v", credential)
+	}
+
+	list := httptest.NewRecorder()
+	router.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/accounts", nil))
+	response := list.Body.String()
+	for _, secret := range []string{"U_JWT_TOKEN", "test-session", "test_user@console.compshare.cn", "org-test", currentKey, "cppkg-test"} {
+		if strings.Contains(response, secret) {
+			t.Fatalf("账号列表泄漏敏感字段 %q: %s", secret, response)
+		}
+	}
+	for _, expected := range []string{`"hasCompshareConsoleCookie":true`, `"planCode":"cp-plan-test"`, `"monthlyUsage":{"used":6496,"limit":19000`} {
+		if !strings.Contains(response, expected) {
+			t.Fatalf("账号列表缺少套餐字段 %s: %s", expected, response)
+		}
+	}
+}
+
 func TestProviderAutoAddReusesExistingAccount(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")

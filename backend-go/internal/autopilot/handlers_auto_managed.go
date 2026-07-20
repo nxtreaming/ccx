@@ -97,11 +97,12 @@ type EndpointDiscoveryInfo struct {
 
 // AutoManagedDeps 自动托管路由的依赖注入。
 type AutoManagedDeps struct {
-	CfgManager          *config.ConfigManager
-	Runner              *AutoDiscoveryRunner
-	RateLimitDiscoverer *RateLimitDiscoverer
-	MiMoConsoleClient   *MiMoConsoleClient
-	DeepSeekClient      *DeepSeekClient
+	CfgManager             *config.ConfigManager
+	Runner                 *AutoDiscoveryRunner
+	RateLimitDiscoverer    *RateLimitDiscoverer
+	MiMoConsoleClient      *MiMoConsoleClient
+	CompshareConsoleClient *CompshareConsoleClient
+	DeepSeekClient         *DeepSeekClient
 }
 
 // RegisterAutoManagedRoutes 注册自动托管 API 路由。
@@ -123,6 +124,9 @@ func RegisterAutoManagedRoutes(apiGroup *gin.RouterGroup, deps *AutoManagedDeps)
 	apiGroup.PUT("/accounts/:accountUid/credentials/:credentialUid/mimo-console-cookie", handleSetMiMoConsoleCookie(deps))
 	apiGroup.POST("/accounts/:accountUid/credentials/:credentialUid/mimo-console-cookie/refresh", handleRefreshMiMoConsoleCookie(deps))
 	apiGroup.DELETE("/accounts/:accountUid/credentials/:credentialUid/mimo-console-cookie", handleClearMiMoConsoleCookie(deps))
+	apiGroup.PUT("/accounts/:accountUid/credentials/:credentialUid/compshare-console-cookie", handleSetCompshareConsoleCookie(deps))
+	apiGroup.POST("/accounts/:accountUid/credentials/:credentialUid/compshare-console-cookie/refresh", handleRefreshCompshareConsoleCookie(deps))
+	apiGroup.DELETE("/accounts/:accountUid/credentials/:credentialUid/compshare-console-cookie", handleClearCompshareConsoleCookie(deps))
 	apiGroup.GET("/accounts/:accountUid/deepseek-balance", handleDeepSeekBalance(deps))
 	kinds := []string{"messages", "chat", "responses", "gemini", "images", "vectors"}
 	for _, kind := range kinds {
@@ -242,6 +246,8 @@ type managedAccountCredentialView struct {
 	VolcenginePlanUsage       *config.VolcenginePlanUsage `json:"volcenginePlanUsage,omitempty"`
 	HasMiMoConsoleCookie      bool                        `json:"hasMiMoConsoleCookie,omitempty"`
 	MiMoTokenPlan             *managedMiMoTokenPlanView   `json:"mimoTokenPlan,omitempty"`
+	HasCompshareConsoleCookie bool                        `json:"hasCompshareConsoleCookie,omitempty"`
+	CompsharePlan             *managedCompsharePlanView   `json:"compsharePlan,omitempty"`
 }
 
 type managedMiMoTokenPlanView struct {
@@ -252,6 +258,20 @@ type managedMiMoTokenPlanView struct {
 	MonthUsage       config.MiMoTokenPlanUsageQuota `json:"monthUsage"`
 	CurrentUsage     config.MiMoTokenPlanUsageQuota `json:"currentUsage"`
 	ValidatedAt      time.Time                      `json:"validatedAt"`
+}
+
+type managedCompsharePlanView struct {
+	PlanCode         string                          `json:"planCode"`
+	PlanName         string                          `json:"planName"`
+	DisplayName      string                          `json:"displayName"`
+	Status           int                             `json:"status"`
+	ConcurrencyLimit int64                           `json:"concurrencyLimit"`
+	IsTeam           bool                            `json:"isTeam"`
+	ExpireAt         int64                           `json:"expireAt"`
+	FiveHourUsage    config.CompsharePlanUsageWindow `json:"fiveHourUsage"`
+	WeeklyUsage      config.CompsharePlanUsageWindow `json:"weeklyUsage"`
+	MonthlyUsage     config.CompsharePlanUsageWindow `json:"monthlyUsage"`
+	ValidatedAt      time.Time                       `json:"validatedAt"`
 }
 
 type managedAccountChannelView struct {
@@ -312,6 +332,10 @@ func handleListAccounts(deps *AutoManagedDeps) gin.HandlerFunc {
 				if credential.MiMoConsole != nil {
 					credentialView.HasMiMoConsoleCookie = true
 					credentialView.MiMoTokenPlan = mimoTokenPlanView(credential.MiMoConsole)
+				}
+				if credential.CompshareConsole != nil {
+					credentialView.HasCompshareConsoleCookie = true
+					credentialView.CompsharePlan = compsharePlanView(credential.CompshareConsole)
 				}
 				view.Credentials = append(view.Credentials, credentialView)
 			}
@@ -442,6 +466,18 @@ func mimoTokenPlanView(source *config.MiMoConsoleCredential) *managedMiMoTokenPl
 	}
 }
 
+func compsharePlanView(source *config.CompshareConsoleCredential) *managedCompsharePlanView {
+	if source == nil {
+		return nil
+	}
+	return &managedCompsharePlanView{
+		PlanCode: source.PlanCode, PlanName: source.PlanName, DisplayName: source.DisplayName,
+		Status: source.Status, ConcurrencyLimit: source.ConcurrencyLimit, IsTeam: source.IsTeam,
+		ExpireAt: source.ExpireAt, FiveHourUsage: source.FiveHourUsage, WeeklyUsage: source.WeeklyUsage,
+		MonthlyUsage: source.MonthlyUsage, ValidatedAt: source.ValidatedAt,
+	}
+}
+
 func handleSetMiMoConsoleCookie(deps *AutoManagedDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
@@ -472,7 +508,7 @@ func handleSetMiMoConsoleCookie(deps *AutoManagedDeps) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		matches := mimoKeysEqual(credential.APIKey, verification.APIKey)
+		matches := apiKeysEqual(credential.APIKey, verification.APIKey)
 		if !matches && !req.AdoptCookieKey {
 			c.JSON(http.StatusConflict, gin.H{
 				"error": "Cookie 所属 Token Plan Key 与当前渠道 Key 不一致",
@@ -526,7 +562,7 @@ func handleRefreshMiMoConsoleCookie(deps *AutoManagedDeps) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if !mimoKeysEqual(credential.APIKey, verification.APIKey) {
+		if !apiKeysEqual(credential.APIKey, verification.APIKey) {
 			c.JSON(http.StatusConflict, gin.H{"error": "Cookie 所属 Key 已变化，请重新绑定并确认是否采用新 Key", "code": "mimo_cookie_key_mismatch"})
 			return
 		}
@@ -559,10 +595,95 @@ func mimoConsoleClient(deps *AutoManagedDeps) *MiMoConsoleClient {
 	return &MiMoConsoleClient{HTTPClient: &http.Client{Timeout: 10 * time.Second}}
 }
 
-func mimoKeysEqual(left, right string) bool {
+func apiKeysEqual(left, right string) bool {
 	leftHash := sha256.Sum256([]byte(left))
 	rightHash := sha256.Sum256([]byte(right))
 	return subtle.ConstantTimeCompare(leftHash[:], rightHash[:]) == 1
+}
+
+func handleSetCompshareConsoleCookie(deps *AutoManagedDeps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Cookie string `json:"cookie"`
+		}
+		if deps == nil || deps.CfgManager == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "配置管理器不可用"})
+			return
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+			return
+		}
+		accountUID, credentialUID := strings.TrimSpace(c.Param("accountUid")), strings.TrimSpace(c.Param("credentialUid"))
+		credential, ok := deps.CfgManager.GetManagedAccountCredential(accountUID, credentialUID)
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "推理 Key 凭证不存在"})
+			return
+		}
+		channels := deps.CfgManager.GetAccountChannels(accountUID)
+		if len(channels) == 0 || channels[0].Upstream.ProviderID != "compshare" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仅优云智算自动托管账号支持绑定控制台 Cookie"})
+			return
+		}
+		snapshot, err := compshareConsoleClient(deps).Verify(c.Request.Context(), req.Cookie, credential.APIKey)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := deps.CfgManager.BindManagedAccountCompshareConsole(accountUID, credentialUID, *snapshot); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"accountUid": accountUID, "credentialUid": credentialUID, "plan": compsharePlanView(snapshot),
+		})
+	}
+}
+
+func handleRefreshCompshareConsoleCookie(deps *AutoManagedDeps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if deps == nil || deps.CfgManager == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "配置管理器不可用"})
+			return
+		}
+		accountUID, credentialUID := strings.TrimSpace(c.Param("accountUid")), strings.TrimSpace(c.Param("credentialUid"))
+		credential, ok := deps.CfgManager.GetManagedAccountCredential(accountUID, credentialUID)
+		if !ok || credential.CompshareConsole == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未绑定优云智算控制台 Cookie"})
+			return
+		}
+		snapshot, err := compshareConsoleClient(deps).Verify(c.Request.Context(), credential.CompshareConsole.Cookie, credential.APIKey)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := deps.CfgManager.BindManagedAccountCompshareConsole(accountUID, credentialUID, *snapshot); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"plan": compsharePlanView(snapshot)})
+	}
+}
+
+func handleClearCompshareConsoleCookie(deps *AutoManagedDeps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if deps == nil || deps.CfgManager == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "配置管理器不可用"})
+			return
+		}
+		if err := deps.CfgManager.ClearManagedAccountCompshareConsole(strings.TrimSpace(c.Param("accountUid")), strings.TrimSpace(c.Param("credentialUid"))); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+func compshareConsoleClient(deps *AutoManagedDeps) *CompshareConsoleClient {
+	if deps != nil && deps.CompshareConsoleClient != nil {
+		return deps.CompshareConsoleClient
+	}
+	return &CompshareConsoleClient{HTTPClient: &http.Client{Timeout: 10 * time.Second}}
 }
 
 func handleSetVolcengineAccessKey(deps *AutoManagedDeps) gin.HandlerFunc {

@@ -186,7 +186,7 @@ interface Props {
   }
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
   'update:form': [Partial<FormData>]
@@ -203,6 +203,9 @@ const updateField = (field: keyof FormData, value: unknown) => {
 const websiteLinkLabel = (kind: ChannelWebsiteKind): string => {
   if (kind === 'agent_plan') return t('volcengineAccessKey.agentPlanConsole')
   if (kind === 'coding_plan') return t('volcengineAccessKey.codingPlanConsole')
+  if (kind === 'provider_console') {
+    return t('channelEditor.basic.website.providerConsole', { provider: props.providerName || '' })
+  }
   return t('channelCard.openWebsite')
 }
 
