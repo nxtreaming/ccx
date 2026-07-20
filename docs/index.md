@@ -33,4 +33,13 @@ features:
 
 ## 致谢
 
-> Windows 代码签名由 [SignPath.io](https://signpath.io/) 免费提供，证书由 [SignPath Foundation](https://signpath.org/foundation) 签发。
+<table>
+  <tr>
+    <td align="center" width="40">
+      <img src="https://signpath.org/assets/favicon-50x50.png" width="24" alt="SignPath Logo" />
+    </td>
+    <td>
+      Windows 代码签名由 <a href="https://signpath.io/">SignPath.io</a> 免费提供，证书由 <a href="https://signpath.org/foundation">SignPath Foundation</a> 签发。
+    </td>
+  </tr>
+</table>

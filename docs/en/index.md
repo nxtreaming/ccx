@@ -33,4 +33,13 @@ features:
 
 ## Acknowledgments
 
-> Free code signing on Windows provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/foundation).
+<table>
+  <tr>
+    <td align="center" width="40">
+      <img src="https://signpath.org/assets/favicon-50x50.png" width="24" alt="SignPath Logo" />
+    </td>
+    <td>
+      Free code signing on Windows provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/foundation">SignPath Foundation</a>.
+    </td>
+  </tr>
+</table>
