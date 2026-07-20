@@ -234,6 +234,19 @@ make dev
 
 [![Star History Chart](https://api.star-history.com/svg?repos=BenedictKing/ccx&type=Date)](https://www.star-history.com/#BenedictKing/ccx&Date)
 
+## 致谢
+
+<table>
+  <tr>
+    <td align="center" width="40">
+      <img src="https://signpath.org/img/logo-icon.svg" width="24" alt="SignPath Logo" />
+    </td>
+    <td>
+      Windows 代码签名由 <a href="https://signpath.io/">SignPath.io</a> 免费提供，证书由 <a href="https://signpath.org/foundation">SignPath Foundation</a> 签发。
+    </td>
+  </tr>
+</table>
+
 ## 许可证
 
 MIT

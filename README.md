@@ -236,6 +236,19 @@ Join the QQ group for discussion: **642217364**
 
 [![Star History Chart](https://api.star-history.com/svg?repos=BenedictKing/ccx&type=Date)](https://www.star-history.com/#BenedictKing/ccx&Date)
 
+## Acknowledgments
+
+<table>
+  <tr>
+    <td align="center" width="40">
+      <img src="https://signpath.org/img/logo-icon.svg" width="24" alt="SignPath Logo" />
+    </td>
+    <td>
+      Free code signing on Windows provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/foundation">SignPath Foundation</a>
+    </td>
+  </tr>
+</table>
+
 ## License
 
 MIT
