@@ -114,6 +114,9 @@ type KeyMetrics struct {
 	recentResults []bool // true=success, false=failure
 	// breaker 滑动窗口（仅记录成功和可重试失败）
 	breakerResults []bool
+	// breaker 窗口内失败涉及的模型集合（用于模型多样性门槛：
+	// 仅当失败跨多个不同模型时才允许熔断整个 Key，避免单一模型故障拖垮 Key）
+	breakerFailureModels map[string]struct{}
 	// 带时间戳的请求记录（用于分时段统计，保留24小时）
 	requestHistory []RequestRecord
 	// 进行中请求在 requestHistory 中的索引（用于“连接即计数”，结束后回写成功/失败与 token）
@@ -527,6 +530,14 @@ func (m *MetricsManager) mergeKeyMetricsLocked(dst, src *KeyMetrics) {
 		dst.breakerResults = append(dst.breakerResults, src.breakerResults...)
 		if len(dst.breakerResults) > m.windowSize {
 			dst.breakerResults = dst.breakerResults[len(dst.breakerResults)-m.windowSize:]
+		}
+	}
+	if len(src.breakerFailureModels) > 0 {
+		if dst.breakerFailureModels == nil {
+			dst.breakerFailureModels = make(map[string]struct{}, len(src.breakerFailureModels))
+		}
+		for model := range src.breakerFailureModels {
+			dst.breakerFailureModels[model] = struct{}{}
 		}
 	}
 	if len(src.requestHistory) > 0 {

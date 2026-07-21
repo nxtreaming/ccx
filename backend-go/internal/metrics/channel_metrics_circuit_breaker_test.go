@@ -61,14 +61,16 @@ func TestMoveKeyToHalfOpenKeepsBreakerHistory(t *testing.T) {
 	}
 }
 
-func TestOverloadedFailureClassOpensCircuitImmediately(t *testing.T) {
+// 单一已知模型的过载不再立即熔断 Key：失败明确归因到单个模型时，
+// 仅累计窗口与连续计数，不触发 Key 级熔断，避免殃及同 Key 下其他健康模型。
+func TestOverloadedFailureClassSingleModelDoesNotOpenCircuit(t *testing.T) {
 	m := NewMetricsManager()
 	defer m.Stop()
 
-	m.RecordFailureWithClass("https://example.com", "sk-test", "claude", FailureClassOverloaded)
+	recordModelFailure(m, "https://example.com", "sk-test", "claude", "gpt-5.6-luna", FailureClassOverloaded)
 
-	if got := m.GetKeyCircuitState("https://example.com", "sk-test", "claude"); got != CircuitStateOpen {
-		t.Fatalf("circuit state = %v, want %v", got, CircuitStateOpen)
+	if got := m.GetKeyCircuitState("https://example.com", "sk-test", "claude"); got != CircuitStateClosed {
+		t.Fatalf("circuit state = %v, want %v (single-model overload must not open circuit)", got, CircuitStateClosed)
 	}
 
 	metricsKey := GenerateMetricsIdentityKey("https://example.com", "sk-test", "claude")
@@ -78,11 +80,97 @@ func TestOverloadedFailureClassOpensCircuitImmediately(t *testing.T) {
 	if keyMetrics == nil {
 		t.Fatal("metrics should be created")
 	}
-	if keyMetrics.NextRetryAt == nil {
-		t.Fatal("NextRetryAt should be set")
-	}
 	if keyMetrics.ConsecutiveFailures != 1 {
 		t.Fatalf("ConsecutiveFailures = %d, want 1", keyMetrics.ConsecutiveFailures)
+	}
+}
+
+// seedModelFailures 向 Key 历史写入指定模型的失败记录，用于触发模型多样性熔断判定。
+func seedModelFailures(m *MetricsManager, baseURL, apiKey, serviceType string, failures map[string]int, failureClass FailureClass) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	metrics := m.getOrCreateKey(baseURL, apiKey, serviceType)
+	now := time.Now()
+	for model, count := range failures {
+		for i := 0; i < count; i++ {
+			metrics.requestHistory = append(metrics.requestHistory, RequestRecord{
+				Model:        model,
+				Timestamp:    now,
+				Success:      false,
+				FailureClass: failureClass,
+			})
+			metrics.FailureCount++
+			metrics.RequestCount++
+		}
+	}
+	metrics.LastFailureAt = &now
+}
+
+// recordModelFailure 通过连接+回写路径记录一次带模型名的失败，驱动熔断状态机评估。
+func recordModelFailure(m *MetricsManager, baseURL, apiKey, serviceType, model string, failureClass FailureClass) {
+	reqID := m.RecordRequestConnected(baseURL, apiKey, serviceType, model)
+	m.RecordRequestFinalizeFailureWithClass(baseURL, apiKey, serviceType, reqID, failureClass)
+}
+
+func TestKeyCircuitBreakerModelDiversityGate(t *testing.T) {
+	tests := []struct {
+		name         string
+		failures     map[string]int // model -> 连续失败次数
+		driverModel  string         // 驱动状态机的本次失败所用模型
+		failureClass FailureClass
+		wantState    CircuitState
+	}{
+		{
+			name:         "单模型过载达到连续阈值不熔断",
+			failures:     map[string]int{"gpt-5.6-luna": 6},
+			driverModel:  "gpt-5.6-luna",
+			failureClass: FailureClassOverloaded,
+			wantState:    CircuitStateClosed,
+		},
+		{
+			name:         "单模型可重试失败达到连续阈值不熔断",
+			failures:     map[string]int{"gpt-5.6-luna": 6},
+			driverModel:  "gpt-5.6-luna",
+			failureClass: FailureClassRetryable,
+			wantState:    CircuitStateClosed,
+		},
+		{
+			name:         "跨两模型可重试失败达到阈值熔断",
+			failures:     map[string]int{"gpt-5.6-luna": 3, "claude-opus": 3},
+			driverModel:  "claude-opus",
+			failureClass: FailureClassRetryable,
+			wantState:    CircuitStateOpen,
+		},
+		{
+			name:         "跨两模型过载立即熔断",
+			failures:     map[string]int{"gpt-5.6-luna": 1, "claude-opus": 1},
+			driverModel:  "claude-opus",
+			failureClass: FailureClassOverloaded,
+			wantState:    CircuitStateOpen,
+		},
+		{
+			name:         "未知模型（空桶）失败达到连续阈值仍熔断",
+			failures:     map[string]int{"": 6},
+			driverModel:  "",
+			failureClass: FailureClassRetryable,
+			wantState:    CircuitStateOpen,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewMetricsManager()
+			defer m.Stop()
+
+			seedModelFailures(m, "https://example.com", "sk-test", "claude", tt.failures, tt.failureClass)
+
+			// 通过一次带模型名的失败驱动熔断状态机评估
+			recordModelFailure(m, "https://example.com", "sk-test", "claude", tt.driverModel, tt.failureClass)
+
+			if got := m.GetKeyCircuitState("https://example.com", "sk-test", "claude"); got != tt.wantState {
+				t.Fatalf("circuit state = %v, want %v", got, tt.wantState)
+			}
+		})
 	}
 }
 

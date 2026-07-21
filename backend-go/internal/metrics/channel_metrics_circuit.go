@@ -20,6 +20,7 @@ func (m *MetricsManager) refreshBreakerWindowsLocked(metrics *KeyMetrics, now ti
 		pendingIndexes[idx] = struct{}{}
 	}
 	var consecutiveRetryable int64
+	failureModels := make(map[string]struct{})
 	for idx, record := range metrics.requestHistory {
 		if _, pending := pendingIndexes[idx]; pending {
 			continue
@@ -28,6 +29,9 @@ func (m *MetricsManager) refreshBreakerWindowsLocked(metrics *KeyMetrics, now ti
 			recentRecords = append(recentRecords, record.Success)
 			if isBreakerRelevantFailure(record.Success, record.FailureClass) {
 				breakerRecords = append(breakerRecords, record.Success)
+				if !record.Success {
+					failureModels[record.Model] = struct{}{}
+				}
 			}
 			if record.Success {
 				consecutiveRetryable = 0
@@ -46,6 +50,7 @@ func (m *MetricsManager) refreshBreakerWindowsLocked(metrics *KeyMetrics, now ti
 
 	metrics.recentResults = append(metrics.recentResults[:0], recentRecords...)
 	metrics.breakerResults = append(metrics.breakerResults[:0], breakerRecords...)
+	metrics.breakerFailureModels = failureModels
 	metrics.ConsecutiveFailures = consecutiveRetryable
 }
 
@@ -200,6 +205,12 @@ func (m *MetricsManager) handleBreakerFailureLocked(metrics *KeyMetrics, failure
 		m.moveCircuitToOpenLocked(metrics, now, true)
 		log.Printf("[Metrics-Circuit] Key [%s] (%s) half-open 探针失败，重新进入 open（失败率: %.1f%%）", metrics.KeyMask, metrics.BaseURL, m.calculateKeyBreakerFailureRateInternal(metrics)*100)
 	case CircuitStateClosed:
+		// 模型多样性门槛：失败能明确归因到单一模型时不熔断整个 Key，
+		// 避免单个模型故障（如某模型 503）殃及同 Key 下其他健康模型。
+		// 无法归因（模型名缺失）时不拦截，回退到原始阈值判定。
+		if m.isSingleModelFailureLocked(metrics) {
+			return
+		}
 		if failureClass.OpensCircuitImmediately() {
 			m.moveCircuitToOpenLocked(metrics, now, false)
 			log.Printf("[Metrics-Circuit] Key [%s] (%s) 因上游临时过载进入熔断状态（失败率: %.1f%%）", metrics.KeyMask, metrics.BaseURL, m.calculateKeyBreakerFailureRateInternal(metrics)*100)
@@ -229,6 +240,20 @@ func (m *MetricsManager) isKeyCircuitBroken(metrics *KeyMetrics) bool {
 		return false
 	}
 	return m.calculateKeyBreakerFailureRateInternal(metrics) >= m.failureThreshold
+}
+
+// isSingleModelFailureLocked 判断 breaker 窗口内的失败是否能明确归因到单一模型。
+// 用于模型多样性门槛：当失败全部来自同一个已知模型时返回 true（不熔断 Key），
+// 避免单一模型故障（如某模型临时 503）导致同 Key 下其他健康模型不可用。
+// 模型名缺失（空桶）视为无法归因，返回 false，使熔断回退到原始阈值判定。
+func (m *MetricsManager) isSingleModelFailureLocked(metrics *KeyMetrics) bool {
+	if metrics == nil || len(metrics.breakerFailureModels) != 1 {
+		return false
+	}
+	for model := range metrics.breakerFailureModels {
+		return model != ""
+	}
+	return false
 }
 
 // calculateKeyFailureRateInternal 计算 Key 综合失败率（内部方法，调用前需持有锁）

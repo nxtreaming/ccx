@@ -369,7 +369,7 @@ func TestTryUpstreamWithAllKeysRejectsOversizedVisionFallback(t *testing.T) {
 	}
 }
 
-func TestTryUpstreamWithAllKeysOverloadedOpensCircuitAndCooldown(t *testing.T) {
+func TestTryUpstreamWithAllKeysOverloadedCooldownSingleModelNoCircuit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
@@ -453,11 +453,14 @@ func TestTryUpstreamWithAllKeysOverloadedOpensCircuitAndCooldown(t *testing.T) {
 			defer rateLimitManager.Stop()
 			channelScheduler.SetRateLimitManager(rateLimitManager)
 
+			upstream := &cfg.Upstream[0]
+
+			// 单一模型过载：触发渠道 cooldown 与 failover，但不熔断整个 Key
+			//（模型多样性门槛要求失败跨多个模型才熔断 Key）。
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5.5"}`))
 
-			upstream := &cfg.Upstream[0]
 			handled, successKey, _, failoverErr, _, lastErr := TryUpstreamWithAllKeys(
 				c,
 				config.NewEnvConfig(),
@@ -506,9 +509,10 @@ func TestTryUpstreamWithAllKeysOverloadedOpensCircuitAndCooldown(t *testing.T) {
 				t.Fatal("lastErr should record upstream 503")
 			}
 
+			// 单一模型过载不熔断 Key，但渠道进入 cooldown
 			serviceType := scheduler.NormalizedMetricsServiceType(scheduler.ChannelKindMessages, upstream.ServiceType)
-			if got := messagesMetrics.GetKeyCircuitState(upstream.BaseURL, upstream.APIKeys[0], serviceType); got != metrics.CircuitStateOpen {
-				t.Fatalf("circuit state = %v, want %v", got, metrics.CircuitStateOpen)
+			if got := messagesMetrics.GetKeyCircuitState(upstream.BaseURL, upstream.APIKeys[0], serviceType); got != metrics.CircuitStateClosed {
+				t.Fatalf("circuit state = %v, want %v (single-model overload must not open circuit)", got, metrics.CircuitStateClosed)
 			}
 			if deferred, _, cooldown := channelScheduler.ShouldDeferForRateLimit(scheduler.ChannelKindMessages, 0, "", ratelimit.Config{}, time.Now()); !deferred || !cooldown {
 				t.Fatalf("channel cooldown deferred=%v cooldown=%v, want both true", deferred, cooldown)
