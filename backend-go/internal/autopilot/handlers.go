@@ -44,7 +44,8 @@ type EndpointDetailItem struct {
 	ChannelUID            string  `json:"channelUid"`
 	ChannelKind           string  `json:"channelKind"`
 	BaseURL               string  `json:"baseUrl"`
-	KeyHash               string  `json:"keyHash"` // SHA256 前 16 位，绝不返回明文
+	KeyHash               string  `json:"keyHash"` // SHA256 前 16 位，用于稳定关联
+	KeyMask               string  `json:"keyMask"` // 脱敏后的 Key，仅用于展示
 	HealthState           string  `json:"healthState"`
 	HealthConfidence      float64 `json:"healthConfidence"`
 	HealthEvidence        string  `json:"healthEvidence,omitempty"`
@@ -198,7 +199,8 @@ func handleEndpoints(mgr *Manager) gin.HandlerFunc {
 				ChannelUID:            p.ChannelUID,
 				ChannelKind:           p.ChannelKind,
 				BaseURL:               p.BaseURL,
-				KeyHash:               p.KeyMask, // KeyMask 已脱敏，绝不返回明文 key
+				KeyHash:               keyHash,
+				KeyMask:               p.KeyMask,
 				HealthState:           string(p.HealthState),
 				HealthConfidence:      p.HealthConfidence,
 				HealthEvidence:        strings.Join(p.HealthEvidence, "; "),

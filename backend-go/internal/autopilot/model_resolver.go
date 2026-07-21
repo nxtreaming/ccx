@@ -10,28 +10,41 @@ import (
 
 // ── CapabilityFloor 能力下界 ──
 
-// CapabilityFloor 描述请求对候选模型的最低能力要求。
-// 由 RequestProfile 推导，用于 ModelResolver 的硬过滤阶段。
-// 低于任一维度的候选模型将被剔除。
+// CapabilityFloor 描述请求对候选模型的能力要求。
+// 上下文、推理、视觉和工具调用是硬约束；质量档是优先目标，
+// 仅在没有满足目标质量的模型时允许降档兜底。
 type CapabilityFloor struct {
 	MinContextTokens int         // 最小上下文窗口（0=不限）
 	NeedsReasoning   bool        // 必须支持推理
 	NeedsVision      bool        // 必须支持视觉
 	NeedsToolCalls   bool        // 必须支持工具调用
-	MinQualityTier   QualityTier // 最低质量档
+	MinQualityTier   QualityTier // 目标质量档（无同档候选时允许降档）
 }
 
 // BuildCapabilityFloorFromRequestProfile 从 RequestProfile 推导能力下界。
 // 复用 RequestProfile 已有的 QualityNeed/ContextNeed/VisionNeed/ToolUseNeed/ReasoningNeed，
 // 零额外计算。
 func BuildCapabilityFloorFromRequestProfile(profile *RequestProfile) CapabilityFloor {
+	if profile == nil {
+		return CapabilityFloor{}
+	}
 	return CapabilityFloor{
 		MinContextTokens: profile.ContextNeed,
 		NeedsReasoning:   profile.ReasoningNeed,
 		NeedsVision:      profile.VisionNeed,
 		NeedsToolCalls:   profile.ToolUseNeed,
-		MinQualityTier:   profile.QualityNeed,
+		MinQualityTier:   requestQualityTarget(profile),
 	}
+}
+
+func requestQualityTarget(profile *RequestProfile) QualityTier {
+	if profile == nil {
+		return ""
+	}
+	if profile.QualityTarget != "" {
+		return profile.QualityTarget
+	}
+	return ResolveQualityTarget(profile)
 }
 
 // ── ModelResolver 模型自动映射器 ──
@@ -100,27 +113,25 @@ func (r *ModelResolver) ResolveModel(
 	}
 	candidates = r.refreshAutoDiscoveryCapabilities(candidates, channelUID, channelKind)
 
-	// Step 4: 硬过滤——只保留满足能力下界的模型。
+	// Step 4: 能力过滤——上下文、推理、视觉、工具调用仍是硬约束；
+	// 质量档作为首选条件，只有更高质量候选完全不存在时才允许降档，
+	// 避免“没有 Opus 等价模型就整条请求不可用”。
+	qualityFallback := false
 	// CapabilityFloorEnabled=false 时跳过硬过滤（紧急逃生口，所有候选均可参与排序）。
 	if r.cfgManager != nil {
 		routingCfg := r.cfgManager.GetAutopilotRouting()
 		if !routingCfg.ModelMapping.CapabilityFloorEnabled {
-			// 仅过滤掉未验证的模型，不做能力下界检查
-			var probeEligible []ModelProfile
-			for _, p := range candidates {
-				if p.ProbeSuccess {
-					probeEligible = append(probeEligible, p)
-				}
-			}
+			// 仅过滤掉未验证的模型，不做能力下界检查。
+			probeEligible := filterProbedModelProfiles(candidates)
 			if len(probeEligible) == 0 {
 				return requestModel, false, "no_probed_model"
 			}
 			candidates = probeEligible
 		} else {
-			candidates = filterByCapabilityFloor(candidates, floor)
+			candidates, qualityFallback = filterByCapabilityFloorWithQualityFallback(candidates, floor)
 		}
 	} else {
-		candidates = filterByCapabilityFloor(candidates, floor)
+		candidates, qualityFallback = filterByCapabilityFloorWithQualityFallback(candidates, floor)
 	}
 	if len(candidates) == 0 {
 		return requestModel, false, "no_capable_model"
@@ -128,10 +139,10 @@ func (r *ModelResolver) ResolveModel(
 
 	// Step 5: 精确模型始终优先；非自适应入口不得跨模型替代。
 	if exact, found := findExactModelProfile(candidates, requestModel); found {
-		return exact.ModelID, true, "found_exact_model_in_profile"
+		return exact.ModelID, true, modelResolutionReason("found_exact_model_in_profile", qualityFallback)
 	}
 	if equivalent, found := findEquivalentModelProfile(candidates, requestModel); found {
-		return equivalent.ModelID, true, "found_equivalent_model_in_profile"
+		return equivalent.ModelID, true, modelResolutionReason("found_equivalent_model_in_profile", qualityFallback)
 	}
 	intent := ClassifyModelRoutingIntent(channelKind, requestModel)
 	if !intent.AllowsSubstitution() {
@@ -140,8 +151,9 @@ func (r *ModelResolver) ResolveModel(
 
 	// Step 6: 自适应入口在满足下界的候选中选最佳匹配。
 	best := rankBySimilarity(candidates, requestModel, floor)
-	return best.ModelID, true, fmt.Sprintf("mapped %s->%s (intent:%s, family:%s, quality:%s)",
+	baseReason := fmt.Sprintf("mapped %s->%s (intent:%s, family:%s, quality:%s)",
 		requestModel, best.ModelID, intent, best.ModelFamily, best.QualityTier)
+	return best.ModelID, true, modelResolutionReason(baseReason, qualityFallback)
 }
 
 // ResolveModelAnyEndpoint 在渠道的所有 endpoint 中判断 requestModel 是否可由自动映射支持。
@@ -194,22 +206,23 @@ func (r *ModelResolver) resolveModelAnyEndpoint(
 	}
 	candidates = r.refreshAutoDiscoveryCapabilities(candidates, channelUID, channelKind)
 
+	qualityFallback := false
 	if r.cfgManager != nil {
 		routingCfg := r.cfgManager.GetAutopilotRouting()
 		if routingCfg.ModelMapping.CapabilityFloorEnabled {
-			candidates = filterByCapabilityFloor(candidates, floor)
+			candidates, qualityFallback = filterByCapabilityFloorWithQualityFallback(candidates, floor)
 		}
 	} else {
-		candidates = filterByCapabilityFloor(candidates, floor)
+		candidates, qualityFallback = filterByCapabilityFloorWithQualityFallback(candidates, floor)
 	}
 	if len(candidates) == 0 {
 		return requestModel, false, "no_capable_model"
 	}
 	if exact, found := findExactModelProfile(candidates, requestModel); found {
-		return exact.ModelID, true, "found_exact_model_in_profile"
+		return exact.ModelID, true, modelResolutionReason("found_exact_model_in_profile", qualityFallback)
 	}
 	if equivalent, found := findEquivalentModelProfile(candidates, requestModel); found {
-		return equivalent.ModelID, true, "found_equivalent_model_in_profile"
+		return equivalent.ModelID, true, modelResolutionReason("found_equivalent_model_in_profile", qualityFallback)
 	}
 	intent := ClassifyModelRoutingIntent(channelKind, requestModel)
 	if !intent.AllowsSubstitution() {
@@ -217,8 +230,9 @@ func (r *ModelResolver) resolveModelAnyEndpoint(
 	}
 
 	best := rankBySimilarity(candidates, requestModel, floor)
-	return best.ModelID, true, fmt.Sprintf("mapped_any_endpoint %s->%s (intent:%s)",
+	baseReason := fmt.Sprintf("mapped_any_endpoint %s->%s (intent:%s)",
 		requestModel, best.ModelID, intent)
+	return best.ModelID, true, modelResolutionReason(baseReason, qualityFallback)
 }
 
 // ── 过滤与排序 ──
@@ -227,6 +241,37 @@ func (r *ModelResolver) resolveModelAnyEndpoint(
 // 与 capability_floor.go 的 CapabilityFloorReasons 逻辑一致，
 // 但作用于 ModelProfile（而非 CandidateCapabilities），并额外检查 QualityTier。
 func filterByCapabilityFloor(profiles []ModelProfile, floor CapabilityFloor) []ModelProfile {
+	return filterByCapabilityFloorInternal(profiles, floor, true)
+}
+
+// filterByCapabilityFloorWithoutQuality 保留所有真实能力约束，仅跳过质量档约束。
+// 用于“高档候选不存在时”的用户体验兜底；不会放行上下文或工具能力不足的模型。
+func filterByCapabilityFloorWithoutQuality(profiles []ModelProfile, floor CapabilityFloor) []ModelProfile {
+	return filterByCapabilityFloorInternal(profiles, floor, false)
+}
+
+// filterByCapabilityFloorWithQualityFallback 先按完整能力目标筛选；若仅质量档
+// 导致无候选，则保留所有真实能力硬约束并允许质量降档。
+func filterByCapabilityFloorWithQualityFallback(profiles []ModelProfile, floor CapabilityFloor) ([]ModelProfile, bool) {
+	eligible := filterByCapabilityFloor(profiles, floor)
+	if len(eligible) > 0 || floor.MinQualityTier == "" {
+		return eligible, false
+	}
+	fallback := filterByCapabilityFloorWithoutQuality(profiles, floor)
+	return fallback, len(fallback) > 0
+}
+
+func filterProbedModelProfiles(profiles []ModelProfile) []ModelProfile {
+	eligible := make([]ModelProfile, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile.ProbeSuccess {
+			eligible = append(eligible, profile)
+		}
+	}
+	return eligible
+}
+
+func filterByCapabilityFloorInternal(profiles []ModelProfile, floor CapabilityFloor, enforceQuality bool) []ModelProfile {
 	var eligible []ModelProfile
 	for _, p := range profiles {
 		// 未验证通过的模型不参与自动映射
@@ -245,7 +290,7 @@ func filterByCapabilityFloor(profiles []ModelProfile, floor CapabilityFloor) []M
 		if floor.NeedsToolCalls && !p.SupportsToolCalls {
 			continue
 		}
-		if qualityTierRank(p.QualityTier) < qualityTierRank(floor.MinQualityTier) {
+		if enforceQuality && qualityTierRank(p.QualityTier) < qualityTierRank(floor.MinQualityTier) {
 			continue
 		}
 		eligible = append(eligible, p)
@@ -253,65 +298,73 @@ func filterByCapabilityFloor(profiles []ModelProfile, floor CapabilityFloor) []M
 	return eligible
 }
 
+// modelResolutionReason 标记发生了质量降档，但不改变现有调用方的映射结果。
+func modelResolutionReason(reason string, qualityFallback bool) string {
+	if !qualityFallback {
+		return reason
+	}
+	return "quality_fallback: " + reason
+}
+
 // rankBySimilarity 在满足下界的候选中选择最佳匹配。
 //
 // 匹配优先级（高→低）：
-//  1. 同模型族（claude→claude, openai→openai）
-//  2. 同质量档（premium→premium, high→high）
+//  1. 与当前任务质量目标的档位距离最近
+//  2. 同模型族（claude→claude, openai→openai）
 //  3. 上下文窗口最接近请求下界（不浪费也不至于不够）
 //  4. 探测延迟最低
 func rankBySimilarity(eligible []ModelProfile, requestModel string, floor CapabilityFloor) ModelProfile {
 	reqFamily := InferModelFamily(requestModel, "")
+	hasQualityTarget := floor.MinQualityTier != ""
 	reqTierRank := qualityTierRank(floor.MinQualityTier)
 
 	type scored struct {
-		profile ModelProfile
-		score   int // 越大越好
-		latency int64
-		ctxDist int
-		candID  string
+		profile         ModelProfile
+		qualityDistance int
+		sameFamily      bool
+		latency         int64
+		ctxDist         int
+		candID          string
 	}
 
 	scoredList := make([]scored, 0, len(eligible))
 	for _, p := range eligible {
-		s := scored{profile: p, latency: p.ProbeLatencyMs, candID: strings.ToLower(p.ModelID)}
-
-		// 派系匹配：+1000
-		if p.ModelFamily == reqFamily {
-			s.score += 1000
+		s := scored{
+			profile:    p,
+			sameFamily: p.ModelFamily == reqFamily,
+			latency:    p.ProbeLatencyMs,
+			candID:     strings.ToLower(p.ModelID),
+		}
+		if hasQualityTarget {
+			s.qualityDistance = absInt(qualityTierRank(p.QualityTier) - reqTierRank)
 		}
 
-		// 质量档匹配：+100
-		if qualityTierRank(p.QualityTier) == reqTierRank {
-			s.score += 100
-		}
-
-		// 上下文窗口距离：越接近下界越好（归一化到 0-100 分）
+		// 上下文窗口距离：越接近下界越好（不浪费也不至于不够）。
 		ctxDist := p.ContextTokens - floor.MinContextTokens
 		if ctxDist < 0 {
 			ctxDist = -ctxDist
 		}
 		s.ctxDist = ctxDist
-		if floor.MinContextTokens > 0 && ctxDist <= floor.MinContextTokens/10 {
-			s.score += 50 // 差距在 10% 以内加分
-		}
-
 		scoredList = append(scoredList, s)
 	}
 
-	// 排序：score 降序 → latency 升序 → ctxDist 升序 → modelID 字典序
+	// 排序：质量距离升序 → 同派系 → 上下文距离升序 → 延迟升序 → modelID 字典序。
 	bestIdx := 0
 	for i := 1; i < len(scoredList); i++ {
 		a, b := scoredList[bestIdx], scoredList[i]
-		if b.score > a.score {
+		if hasQualityTarget && b.qualityDistance < a.qualityDistance {
 			bestIdx = i
-		} else if b.score == a.score {
-			if b.latency < a.latency {
+		} else if (!hasQualityTarget || b.qualityDistance == a.qualityDistance) && b.sameFamily != a.sameFamily {
+			if b.sameFamily {
 				bestIdx = i
-			} else if b.latency == a.latency {
-				if b.ctxDist < a.ctxDist {
+			}
+		} else if (!hasQualityTarget || b.qualityDistance == a.qualityDistance) && b.sameFamily == a.sameFamily {
+			if b.ctxDist < a.ctxDist {
+				bestIdx = i
+			} else if b.ctxDist == a.ctxDist {
+				if b.latency < a.latency {
 					bestIdx = i
-				} else if b.ctxDist == a.ctxDist && b.candID < a.candID {
+				} else if b.latency == a.latency && b.candID < a.candID {
 					bestIdx = i
 				}
 			}
@@ -319,6 +372,13 @@ func rankBySimilarity(eligible []ModelProfile, requestModel string, floor Capabi
 	}
 
 	return scoredList[bestIdx].profile
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 // refreshAutoDiscoveryCapabilities 兼容由旧版本写入的自动发现画像。

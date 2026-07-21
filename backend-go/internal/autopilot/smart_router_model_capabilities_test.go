@@ -71,6 +71,36 @@ func TestBuildChannelEntryUsesRegistryCapabilities(t *testing.T) {
 	}
 }
 
+func TestBuildChannelEntryUsesMappedModelQualityTier(t *testing.T) {
+	modelStore := newModelPreviewStore(t,
+		ModelProfile{
+			ChannelUID: "ch_kimi", ChannelKind: "messages", MetricsKey: "k3-endpoint",
+			ModelID: "k3", ModelFamily: ModelFamilyUnknown, QualityTier: QualityTierLow,
+			Source:       "auto_discovery",
+			ProbeSuccess: true,
+		},
+		ModelProfile{
+			ChannelUID: "ch_kimi", ChannelKind: "messages", MetricsKey: "coding-endpoint",
+			ModelID: "kimi-for-coding", ModelFamily: ModelFamilyKimi, QualityTier: QualityTierNormal,
+			Source:       "auto_discovery",
+			ProbeSuccess: true,
+		},
+	)
+	router := NewSmartRouter(nil, nil, nil, nil)
+	router.SetModelProfileStore(modelStore)
+	upstream := &config.UpstreamConfig{ChannelUID: "ch_kimi"}
+	channel := scheduler.ChannelInfo{Index: 0, Name: "kimi", Status: "active"}
+
+	k3Entry := router.buildChannelEntry(channel, upstream, "messages", "k3", nil)
+	codingEntry := router.buildChannelEntry(channel, upstream, "messages", "kimi-for-coding", nil)
+	if k3Entry.ScoringCandidate.QualityTier != QualityTierPremium {
+		t.Fatalf("K3 quality tier = %q, want premium", k3Entry.ScoringCandidate.QualityTier)
+	}
+	if codingEntry.ScoringCandidate.QualityTier != QualityTierHigh {
+		t.Fatalf("kimi-for-coding quality tier = %q, want high", codingEntry.ScoringCandidate.QualityTier)
+	}
+}
+
 func TestBuildChannelEntryAppliesProviderTimePricingAfterActivation(t *testing.T) {
 	manager, cleanup := createTestConfigManager(t, config.Config{AutopilotRouting: config.DefaultAutopilotRoutingConfig()})
 	defer cleanup()

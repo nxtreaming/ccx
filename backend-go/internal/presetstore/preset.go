@@ -2,7 +2,8 @@
 //
 // 预置数据（订阅来源分类、模型注册表、渠道预置、内置模型清单）原先散落在
 // 编译期常量里，每次微调都要发版。presetstore 把它们抽成统一的 PresetBundle，
-// 支持三层优先级：编译期内置（embedded）< 磁盘缓存（cache）< 远程覆盖（remote）。
+// 支持按数据版本选择：编译期内置（embedded）、磁盘缓存（cache）和远程覆盖（remote）
+// 中仅允许较新版本替换当前快照，避免旧缓存使新二进制能力回退。
 //
 // 本文件只定义数据契约与订阅来源预置；远程拉取/校验/缓存在 Phase 2 补充。
 package presetstore
@@ -17,8 +18,7 @@ const CurrentSchemaVersion = 1
 type PresetBundle struct {
 	// SchemaVersion 结构版本；仅在字段不兼容变更时递增。
 	SchemaVersion int `json:"schemaVersion"`
-	// DataVersion 数据版本，单调递增字符串序比较（如 "2026.07.10-1"）。
-	// embedded 默认为空串，任何非空远程版本都视为更新。
+	// DataVersion 数据版本，按数字段进行单调递增比较（如 "v2.9.37+20260721"）。
 	DataVersion string `json:"dataVersion,omitempty"`
 
 	// Subscription 订阅来源预置。

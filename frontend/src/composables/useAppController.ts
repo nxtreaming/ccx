@@ -30,19 +30,19 @@ export function useAppController() {
   // 注意：as any 是 Pinia 3.x + Vue 3.5 + TS 6.x 兼容补丁——
   // Vue 3.5 将 Ref<T> 改为 Ref<T, S>，Pinia 的 UnwrapRef<Ref<infer V, unknown>> 模式失效，
   // 导致模板中访问 store 属性时类型未被自动解包。运行时行为正常。
-  const authStore = useAuthStore() as any
+  const authStore = useAuthStore()
 
   // 渠道 Store
-  const channelStore = useChannelStore() as any
+  const channelStore = useChannelStore()
 
   // 偏好设置 Store
-  const preferencesStore = usePreferencesStore() as any
+  const preferencesStore = usePreferencesStore()
 
   // 对话框 Store
-  const dialogStore = useDialogStore() as any
+  const dialogStore = useDialogStore()
 
   // 系统状态 Store
-  const systemStore = useSystemStore() as any
+  const systemStore = useSystemStore()
   const { locale, t, setLocale } = useI18n()
 
   const languageOptions: Array<{ value: SupportedLocale, label: string, shortLabel: string }> = [

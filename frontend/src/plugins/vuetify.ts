@@ -170,6 +170,7 @@ import {
   mdiShieldRefresh,
   mdiShieldOffOutline,
   mdiAlertCircleOutline,
+  mdiChartDonut,
   mdiChartLineVariant,
   mdiChartTimelineVariant,
   mdiFlaskOutline,
@@ -423,6 +424,7 @@ const iconMap: Record<string, string> = {
   'circle': mdiCircle,
 
   // 图表与数据
+  'chart-donut': mdiChartDonut,
   'chart-timeline-variant': mdiChartTimelineVariant,
   'flask-outline': mdiFlaskOutline,
   'chart-areaspline': mdiChartAreaspline,

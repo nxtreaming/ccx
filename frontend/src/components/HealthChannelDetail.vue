@@ -38,7 +38,7 @@
               </v-chip>
             </td>
             <td class="text-caption" style="max-width: 220px; word-break: break-all;">{{ ep.baseUrl }}</td>
-            <td class="font-monospace text-caption">{{ ep.keyHash }}</td>
+            <td class="font-monospace text-caption">{{ ep.keyMask || ep.keyHash }}</td>
             <td>{{ formatPercent(ep.healthConfidence) }}</td>
             <td>
               <v-chip v-if="ep.qualityTier" size="x-small" variant="outlined">{{ ep.qualityTier }}</v-chip>
@@ -70,11 +70,11 @@
         <v-expansion-panel v-for="ep in endpointWithEvidence" :key="'evidence-' + ep.endpointUid">
           <v-expansion-panel-title class="text-caption">
             <v-icon size="16" class="mr-2" :color="stateColor(ep.healthState)">{{ stateIcon(ep.healthState) }}</v-icon>
-            {{ ep.keyHash }} -- {{ ep.healthState }}
+            {{ ep.keyMask || ep.keyHash }} -- {{ ep.healthState }}
             <v-chip v-if="ep.tokenPlanUsageSupported" size="x-small" color="primary" variant="tonal" class="ml-2">Token Plan</v-chip>
           </v-expansion-panel-title>
           <v-expansion-panel-text>
-            <div v-if="ep.miniMaxTokenPlanUsage?.models.length" class="mb-3">
+            <div v-if="ep.miniMaxTokenPlanUsage?.models.length && !ep.miniMaxTokenPlanUsageError" class="mb-3">
               <div class="text-caption font-weight-bold mb-1">{{ t('healthCenter.detail.tokenPlanUsage') }}</div>
               <v-table density="compact">
                 <thead>

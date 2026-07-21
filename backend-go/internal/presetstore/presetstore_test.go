@@ -31,8 +31,8 @@ func TestEmbeddedBundleValid(t *testing.T) {
 	if err := Validate(b); err != nil {
 		t.Fatalf("内置 bundle 应通过校验，得到: %v", err)
 	}
-	if b.DataVersion != "" {
-		t.Errorf("内置 bundle DataVersion 应为空串，得到 %q", b.DataVersion)
+	if b.DataVersion == "" {
+		t.Error("内置 bundle DataVersion 不能为空")
 	}
 }
 
@@ -194,8 +194,8 @@ func TestSupportsAutoRefresh(t *testing.T) {
 
 func TestStoreSwapAndObserver(t *testing.T) {
 	s := NewPresetStore(nil) // 回退内置
-	if s.DataVersion() != "" {
-		t.Errorf("初始应为内置（DataVersion 空），得到 %q", s.DataVersion())
+	if s.DataVersion() != EmbeddedBundle().DataVersion {
+		t.Errorf("初始版本=%q，期望内置版本 %q", s.DataVersion(), EmbeddedBundle().DataVersion)
 	}
 
 	var mu sync.Mutex

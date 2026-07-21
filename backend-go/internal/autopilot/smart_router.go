@@ -110,8 +110,9 @@ func (r *SmartRouter) SetLocalRuntimeStore(store *LocalRuntimeStore) {
 	r.localRuntimeStore = store
 }
 
-// SetModelResolver 设置 dry-run 使用的自动模型映射器。
-// 该依赖只扩展诊断计划，不会向真实 scheduler 注入额外候选。
+// SetModelResolver 设置请求级自动模型映射器。
+// 真实路由只解析 scheduler 已提供的候选，不会额外扩展候选集合；
+// dry-run 则用同一解析逻辑预览可承接请求的自动托管渠道。
 func (r *SmartRouter) SetModelResolver(resolver *ModelResolver) {
 	r.modelResolver = resolver
 }
@@ -207,10 +208,11 @@ func (r *SmartRouter) BuildPlan(profile *RequestProfile) *RoutingPlan {
 	savingsMap := NormalizeSavingsScore(costs)
 
 	ctx := ScoringContext{
-		TaskClass:   profile.TaskClass,
-		TaskDomain:  profile.TaskDomain,
-		FamilyPrefs: familyPrefs,
-		Weights:     weights,
+		TaskClass:         profile.TaskClass,
+		TaskDomain:        profile.TaskDomain,
+		TargetQualityTier: requestQualityTarget(profile),
+		FamilyPrefs:       familyPrefs,
+		Weights:           weights,
 	}
 
 	scoredEntries := make([]scoredChannelEntry, 0, len(entries))
@@ -445,10 +447,11 @@ func (r *SmartRouter) executeFilter(
 
 	// 构建评分上下文
 	scoringCtx := ScoringContext{
-		TaskClass:   profile.TaskClass,
-		TaskDomain:  profile.TaskDomain,
-		FamilyPrefs: familyPrefs,
-		Weights:     weights,
+		TaskClass:         profile.TaskClass,
+		TaskDomain:        profile.TaskDomain,
+		TargetQualityTier: requestQualityTarget(profile),
+		FamilyPrefs:       familyPrefs,
+		Weights:           weights,
 	}
 
 	// 收集所有候选的估算成本用于归一化
@@ -476,13 +479,18 @@ func (r *SmartRouter) executeFilter(
 			}
 			continue
 		}
+		modelResolution := r.resolveChannelModel(profile, upstream, upstreamModelCapabilities)
 		entry := r.buildChannelEntry(
 			ch,
 			upstream,
 			profile.ChannelKind,
-			profile.Model,
+			modelResolution.ActualModel,
 			upstreamModelCapabilities,
 		)
+		entry.MappedModel = modelResolution.MappedModel
+		entry.MappingSource = modelResolution.MappingSource
+		entry.MappingReason = modelResolution.MappingReason
+		r.applyModelQualityTier(&entry)
 		entries = append(entries, entry)
 		costMap[entry.ChannelUID] = entry.EstimatedCost
 	}
@@ -513,15 +521,16 @@ func (r *SmartRouter) executeFilter(
 
 			// 从 RequestProfile 构建 AdvisorInput
 			advisorInput := AdvisorInput{
-				RequestKind:      profile.ChannelKind,
-				Operation:        profile.Operation,
-				RequestedModel:   profile.Model,
-				AgentRole:        profile.AgentRole,
-				InputTokenBucket: classifyTokenBucket(profile.EstTokens),
-				HasImage:         profile.HasImage,
-				NeedsToolUse:     profile.ToolUseNeed,
-				NeedsReasoning:   profile.ReasoningNeed,
-				NeedsLongContext: profile.ContextNeed > 50000,
+				RequestKind:          profile.ChannelKind,
+				Operation:            profile.Operation,
+				RequestedModel:       profile.Model,
+				AgentRole:            profile.AgentRole,
+				InputTokenBucket:     classifyTokenBucket(profile.EstTokens),
+				HasImage:             profile.HasImage,
+				NeedsToolUse:         profile.ToolUseNeed,
+				NeedsReasoning:       profile.ReasoningNeed,
+				NeedsLongContext:     profile.ContextNeed >= 50_000,
+				CandidateTaskClasses: []TaskClass{profile.TaskClass},
 			}
 			hint, _ := r.advisor.EvaluateShadow(advisorInput)
 
@@ -700,6 +709,9 @@ func (r *SmartRouter) executeFilter(
 			OriginTier:     string(e.OriginTier),
 			ChannelKind:    e.ChannelKind,
 			HealthState:    string(e.HealthState),
+			MappedModel:    e.MappedModel,
+			MappingSource:  e.MappingSource,
+			MappingReason:  e.MappingReason,
 			TotalScore:     sc.Score,
 			DomainEvidence: sc.DomainEvidence,
 			Scores: []CandidateScore{
@@ -974,6 +986,71 @@ func resolvedCandidateModel(requestModel, mappedModel string) string {
 	return requestModel
 }
 
+type channelModelResolution struct {
+	ActualModel   string
+	MappedModel   string
+	MappingSource string
+	MappingReason string
+	Supported     bool
+}
+
+// resolveChannelModel 在构建渠道能力条目前解析该渠道实际承接请求的模型。
+// 真实路由与 dry-run 共用此逻辑，避免拿原始 Claude/OpenAI 模型名去判断
+// GLM、Kimi 等自动映射模型的工具调用、推理和上下文能力。
+func (r *SmartRouter) resolveChannelModel(
+	profile *RequestProfile,
+	upstream *config.UpstreamConfig,
+	upstreamModelCapabilities map[string]config.UpstreamModelCapability,
+) channelModelResolution {
+	resolution := channelModelResolution{}
+	if profile == nil || upstream == nil {
+		return resolution
+	}
+
+	requestModel := profile.Model
+	resolution.ActualModel = requestModel
+	if requestModel == "" {
+		resolution.Supported = true
+		return resolution
+	}
+
+	supported, _ := upstream.ExplainModelSupport(requestModel)
+	hasExplicitModelRules := len(upstream.SupportedModels) > 0
+	if supported && (!upstream.AutoManaged || hasExplicitModelRules) {
+		resolved := config.ResolveUpstreamCapability(requestModel, upstream, upstreamModelCapabilities)
+		if resolved.ActualModel != "" {
+			resolution.ActualModel = resolved.ActualModel
+		}
+		resolution.Supported = true
+		if normalizeRoutingModelID(resolution.ActualModel) != normalizeRoutingModelID(requestModel) {
+			resolution.MappedModel = resolution.ActualModel
+			resolution.MappingSource = "explicit_mapping"
+			resolution.MappingReason = "matched configured model mapping"
+		}
+		return resolution
+	}
+
+	if upstream.AutoManaged && r.modelResolver != nil {
+		mapped, found, reason := r.modelResolver.ResolveModelAnyEndpointWithFloor(
+			requestModel,
+			upstream.ChannelUID,
+			profile.ChannelKind,
+			BuildCapabilityFloorFromRequestProfile(profile),
+		)
+		if found && mapped != "" {
+			resolution.ActualModel = mapped
+			resolution.Supported = true
+			if normalizeRoutingModelID(mapped) != normalizeRoutingModelID(requestModel) {
+				resolution.MappedModel = mapped
+				resolution.MappingSource = "auto_resolve"
+				resolution.MappingReason = reason
+			}
+		}
+	}
+
+	return resolution
+}
+
 // buildChannelEntry 从 ChannelInfo + UpstreamConfig 构建评分输入。
 // 无画像时使用中性默认值（不惩罚）。
 func (r *SmartRouter) buildChannelEntry(
@@ -1081,6 +1158,7 @@ func (r *SmartRouter) buildChannelEntry(
 				SavingsScore:              0.5,
 				DomainStrengthScore:       0.5,
 			}
+			r.applyModelQualityTier(&entry)
 			r.attachDomainProfiles(&entry, modelProvider)
 			return entry
 		}
@@ -1100,8 +1178,50 @@ func (r *SmartRouter) buildChannelEntry(
 		SavingsScore:              0.5,
 		DomainStrengthScore:       0.5,
 	}
+	r.applyModelQualityTier(&entry)
 	r.attachDomainProfiles(&entry, modelProvider)
 	return entry
+}
+
+// applyModelQualityTier 用实际映射模型的质量档覆盖渠道聚合档位。
+// 一个渠道可能同时挂载 K3 和 kimi-for-coding；只使用渠道最佳 endpoint
+// 的聚合档位会把前者的 Premium 错投给后者，导致轻量/worker 请求持续选择 K3。
+// 优先使用精确模型画像；自动发现的旧画像若模型族尚未补齐，则回退到当前
+// 模型注册表推导；只有发生实际映射时才用注册表结果覆盖聚合档位。
+func (r *SmartRouter) applyModelQualityTier(entry *channelScoreEntry) {
+	if entry == nil || entry.ModelID == "" {
+		return
+	}
+
+	quality := QualityTier("")
+	if r.modelProfileStore != nil && entry.ChannelUID != "" {
+		for _, profile := range r.modelProfileStore.ListActiveByChannel(entry.ChannelUID) {
+			if profile.ChannelKind != entry.ChannelKind ||
+				!strings.EqualFold(profile.ModelID, entry.ModelID) || profile.QualityTier == "" {
+				continue
+			}
+			// auto_discovery 旧版本可能把 K3 写成 unknown/low；注册表是这类
+			// 模型的能力事实源，避免陈旧画像继续把 K3 当成低档模型。
+			if profile.Source == "auto_discovery" {
+				family := InferModelFamily(profile.ModelID, "")
+				if family != ModelFamilyUnknown {
+					profile.QualityTier = ModelProfileQualityTierFromFamily(family, profile.ModelID)
+				}
+			}
+			if quality == "" || qualityTierRank(profile.QualityTier) > qualityTierRank(quality) {
+				quality = profile.QualityTier
+			}
+		}
+	}
+	if quality == "" && entry.MappedModel != "" {
+		modelFamily := entry.ScoringCandidate.ModelFamily
+		if modelFamily != ModelFamilyUnknown && modelFamily != "" {
+			quality = ModelProfileQualityTierFromFamily(modelFamily, entry.ModelID)
+		}
+	}
+	if quality != "" {
+		entry.ScoringCandidate.QualityTier = quality
+	}
 }
 
 func (r *SmartRouter) currentTime() time.Time {
@@ -1264,44 +1384,9 @@ func (r *SmartRouter) collectChannelEntries(profile *RequestProfile) []channelSc
 		if status != "active" || len(upstream.APIKeys) == 0 {
 			continue
 		}
-		entryModel := model
-		mappedModel := ""
-		mappingSource := ""
-		mappingReason := ""
-
-		// 模型过滤；诊断模式允许预览 autoManaged 渠道的 request-scoped 自动映射。
-		// 自动托管渠道的空 SupportedModels 不代表支持全部，实际模型以 endpoint profile 为准。
-		if model != "" {
-			supported, _ := upstream.ExplainModelSupport(model)
-			hasExplicitModelRules := len(upstream.SupportedModels) > 0
-			if supported && (!upstream.AutoManaged || hasExplicitModelRules) {
-				resolved := config.ResolveUpstreamCapability(model, &upstream, cfg.UpstreamModelCapabilities)
-				if resolved.ActualModel != "" && resolved.ActualModel != model {
-					entryModel = resolved.ActualModel
-					mappedModel = resolved.ActualModel
-					mappingSource = "explicit_mapping"
-					mappingReason = "matched configured model mapping"
-				}
-			} else {
-				if !upstream.AutoManaged || r.modelResolver == nil {
-					continue
-				}
-				mapped, found, reason := r.modelResolver.ResolveModelAnyEndpointWithFloor(
-					model,
-					upstream.ChannelUID,
-					channelKind,
-					BuildCapabilityFloorFromRequestProfile(profile),
-				)
-				if !found || mapped == "" {
-					continue
-				}
-				entryModel = mapped
-				if normalizeRoutingModelID(mapped) != normalizeRoutingModelID(model) {
-					mappedModel = mapped
-					mappingSource = "auto_resolve_preview"
-					mappingReason = reason
-				}
-			}
+		modelResolution := r.resolveChannelModel(profile, &upstream, cfg.UpstreamModelCapabilities)
+		if model != "" && !modelResolution.Supported {
+			continue
 		}
 		ch := scheduler.ChannelInfo{
 			Index:    i,
@@ -1309,10 +1394,14 @@ func (r *SmartRouter) collectChannelEntries(profile *RequestProfile) []channelSc
 			Priority: upstream.Priority,
 			Status:   status,
 		}
-		entry := r.buildChannelEntry(ch, &upstream, channelKind, entryModel, cfg.UpstreamModelCapabilities)
-		entry.MappedModel = mappedModel
-		entry.MappingSource = mappingSource
-		entry.MappingReason = mappingReason
+		entry := r.buildChannelEntry(ch, &upstream, channelKind, modelResolution.ActualModel, cfg.UpstreamModelCapabilities)
+		entry.MappedModel = modelResolution.MappedModel
+		entry.MappingSource = modelResolution.MappingSource
+		if entry.MappingSource == "auto_resolve" {
+			entry.MappingSource = "auto_resolve_preview"
+		}
+		entry.MappingReason = modelResolution.MappingReason
+		r.applyModelQualityTier(&entry)
 		entries = append(entries, entry)
 	}
 	return entries

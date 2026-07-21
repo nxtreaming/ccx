@@ -351,8 +351,6 @@ const visibleSubagents = computed(() => subagents.value.slice(0, props.expanded 
 const hasOverride = computed(() => props.override?.hasMainSequence === true)
 const kindLabel = computed(() => props.conversation.kind.toUpperCase())
 
-
-
 function subagentStatusColor(status: ConversationInfo['status']): string {
   switch (status) {
     case 'streaming': return 'error'
@@ -698,7 +696,6 @@ function shortId(value: string): string {
   return `${value.slice(0, 8)}...${value.slice(-4)}`
 }
 
-
 </script>
 
 <style scoped>
@@ -877,7 +874,6 @@ function shortId(value: string): string {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 
 .main-conversation-detail {
   margin-top: 10px;

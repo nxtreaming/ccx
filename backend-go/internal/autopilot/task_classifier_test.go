@@ -152,20 +152,22 @@ func TestClassify_Lightweight(t *testing.T) {
 			input: ClassifierInput{ChannelKind: "messages", Operation: "translation"},
 		},
 		{
-			name: "低 token + 无特殊需求",
+			name: "低 token + 明确 trivial",
 			input: ClassifierInput{
 				ChannelKind: "messages", Operation: "completion",
 				EstTokens: 5000, HasImage: false, ToolUseNeed: false,
 				ReasoningNeed: false, ContextNeed: 0, VisionNeed: false,
 				ImageGenNeed: false, EmbeddingNeed: false, AgentType: "",
+				Complexity: TaskComplexityTrivial,
 			},
 		},
 		{
-			name: "正好 9999 token + 无特殊需求",
+			name: "正好 9999 token + 明确 trivial",
 			input: ClassifierInput{
 				ChannelKind: "messages", Operation: "completion",
 				EstTokens: 9999, HasImage: false, ToolUseNeed: false,
 				ReasoningNeed: false, ContextNeed: 0, VisionNeed: false,
+				Complexity: TaskComplexityTrivial,
 			},
 		},
 	}
@@ -305,12 +307,12 @@ func TestClassify_EdgeCases(t *testing.T) {
 			expected: TaskClassSupervisor,
 		},
 		{
-			name: "EstTokens 9999（触发 lightweight 硬条件）",
+			name: "EstTokens 9999 但正文难度未知（不降级）",
 			input: ClassifierInput{
 				ChannelKind: "messages", Operation: "completion",
 				EstTokens: 9999, AgentRole: "main",
 			},
-			expected: TaskClassLightweight,
+			expected: TaskClassSupervisor,
 		},
 		{
 			name: "有图片但无 VisionNeed（不触发 vision，回退到其他规则）",
@@ -509,40 +511,40 @@ func TestIsLightweightRequest(t *testing.T) {
 		{"translation 白名单", ClassifierInput{Operation: "translation"}, true},
 
 		// 硬条件全满足
-		{"低 token 无特殊需求", ClassifierInput{
-			Operation: "completion", EstTokens: 5000,
+		{"低 token + trivial", ClassifierInput{
+			Operation: "completion", EstTokens: 5000, Complexity: TaskComplexityTrivial,
 		}, true},
-		{"正好 9999", ClassifierInput{
-			Operation: "completion", EstTokens: 9999,
+		{"正好 9999 + trivial", ClassifierInput{
+			Operation: "completion", EstTokens: 9999, Complexity: TaskComplexityTrivial,
 		}, true},
 
 		// 硬条件不满足
 		{"10000 token 不满足", ClassifierInput{
-			Operation: "completion", EstTokens: 10_000,
+			Operation: "completion", EstTokens: 10_000, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"有图片", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, HasImage: true,
+			Operation: "completion", EstTokens: 5000, HasImage: true, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"有工具", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, ToolUseNeed: true,
+			Operation: "completion", EstTokens: 5000, ToolUseNeed: true, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"有推理", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, ReasoningNeed: true,
+			Operation: "completion", EstTokens: 5000, ReasoningNeed: true, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"需要识图", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, VisionNeed: true,
+			Operation: "completion", EstTokens: 5000, VisionNeed: true, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"需要生图", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, ImageGenNeed: true,
+			Operation: "completion", EstTokens: 5000, ImageGenNeed: true, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"需要 embedding", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, EmbeddingNeed: true,
+			Operation: "completion", EstTokens: 5000, EmbeddingNeed: true, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"长上下文", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, ContextNeed: 250_000,
+			Operation: "completion", EstTokens: 5000, ContextNeed: 250_000, Complexity: TaskComplexityTrivial,
 		}, false},
 		{"有 AgentType", ClassifierInput{
-			Operation: "completion", EstTokens: 5000, AgentType: "codex_subagent",
+			Operation: "completion", EstTokens: 5000, AgentType: "codex_subagent", Complexity: TaskComplexityTrivial,
 		}, false},
 	}
 	for _, tt := range tests {

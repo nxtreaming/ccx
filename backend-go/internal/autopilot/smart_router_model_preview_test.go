@@ -1,6 +1,7 @@
 package autopilot
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/BenedictKing/ccx/internal/config"
@@ -103,6 +104,77 @@ func TestBuildPlanAutoResolvePreviewRespectsCapabilityFloor(t *testing.T) {
 	}
 }
 
+func TestSmartRouterUsesAutoResolvedModelForHardConstraints(t *testing.T) {
+	cfgManager, cleanup := createTestConfigManager(t, modelPreviewConfig("auto"))
+	defer cleanup()
+	modelStore := newModelPreviewStore(t, glmPreviewProfile())
+	traceStore := createTestTraceStore(t)
+	profileStore := &ProfileStore{
+		cache: map[string]*KeyEndpointProfile{
+			"ep_glm": {
+				EndpointUID:       "ep_glm",
+				ChannelUID:        "ch_glm_auto",
+				ChannelKind:       "messages",
+				MetricsKey:        "metrics_glm",
+				HealthState:       HealthStateHealthy,
+				QualityTier:       QualityTierHigh,
+				StabilityTier:     StabilityTierStable,
+				SpeedTier:         SpeedTierNormal,
+				CostTier:          CostTierNormal,
+				SupportsToolCalls: false,
+				SupportsReasoning: false,
+			},
+		},
+		dirtyKeys: make(map[string]struct{}),
+	}
+	router := NewSmartRouter(profileStore, nil, traceStore, cfgManager)
+	router.SetModelResolver(NewModelResolver(modelStore, cfgManager))
+
+	profile := BuildRequestProfile(RequestProfileFeatures{
+		Model: "claude-opus-4-8", ChannelKind: "messages", Operation: "completion",
+		EstTokens: 17_906, ToolUseNeed: true, ReasoningNeed: true,
+	})
+	cfg := cfgManager.GetConfig()
+	upstream := cfg.Upstream[0]
+	resolution := router.resolveChannelModel(&profile, &upstream, cfg.UpstreamModelCapabilities)
+	if !resolution.Supported || resolution.ActualModel != "glm-5.2" || resolution.MappedModel != "glm-5.2" {
+		t.Fatalf("model resolution = %+v, want supported glm-5.2 mapping", resolution)
+	}
+	if resolution.MappingSource != "auto_resolve" || strings.HasPrefix(resolution.MappingReason, "quality_fallback:") {
+		t.Fatalf("mapping metadata = %q/%q, want task-aware high-tier auto-resolve",
+			resolution.MappingSource, resolution.MappingReason)
+	}
+
+	filter := router.CandidateFilterFor(&profile)
+	if filter == nil {
+		t.Fatal("auto mode filter should not be nil")
+	}
+	channels := []scheduler.ChannelInfo{{Index: 0, Name: upstream.Name, Status: "active"}}
+	result, err := filter(
+		channels,
+		func(scheduler.ChannelInfo) *config.UpstreamConfig { return &upstream },
+		func(scheduler.ChannelInfo, *config.UpstreamConfig) bool { return true },
+	)
+	if err != nil {
+		t.Fatalf("CandidateFilterFor() error = %v", err)
+	}
+	if len(result) != 1 || result[0].Index != 0 {
+		t.Fatalf("filtered channels = %+v, want GLM channel retained", result)
+	}
+
+	traces := traceStore.ListRecent(1)
+	if len(traces) != 1 || len(traces[0].Candidates) != 1 {
+		t.Fatalf("routing traces = %+v, want one candidate", traces)
+	}
+	candidate := traces[0].Candidates[0]
+	if !candidate.Selected {
+		t.Fatalf("candidate filtered unexpectedly: %+v", candidate.FilterReasons)
+	}
+	if containsString(candidate.FilterReasons, "工具调用能力不满足") {
+		t.Fatalf("mapped GLM capability was evaluated as original Opus: %+v", candidate.FilterReasons)
+	}
+}
+
 func TestBuildPlanAutoManagedEmptyModelsUsesProfilePolicy(t *testing.T) {
 	cfg := modelPreviewConfig("assist")
 	cfg.Upstream[0].SupportedModels = nil
@@ -151,7 +223,7 @@ func TestResolveModelSupportAutoManagedEmptyModelsUsesProfilePolicy(t *testing.T
 	}
 }
 
-func TestResolveModelSupportWithFloorRejectsIncapableAutoMapping(t *testing.T) {
+func TestResolveModelSupportWithFloorFallsBackBelowQualityTarget(t *testing.T) {
 	cfg := modelPreviewConfig("assist")
 	cfg.Upstream[0].SupportedModels = nil
 	cfgManager, cleanup := createTestConfigManager(t, cfg)
@@ -166,8 +238,31 @@ func TestResolveModelSupportWithFloorRejectsIncapableAutoMapping(t *testing.T) {
 		"claude-opus-4-8",
 		CapabilityFloor{MinQualityTier: QualityTierPremium},
 	)
-	if supported || mapped != "" || source != scheduler.ModelSupportSourceAuthoritativeDeny || reason != "no_capable_model" {
+	if !supported || mapped != "glm-5.2" || source != "auto_resolve" || !strings.HasPrefix(reason, "quality_fallback:") {
 		t.Fatalf("premium floor support = %v mapped=%q source=%q reason=%q",
+			supported, mapped, source, reason)
+	}
+}
+
+func TestResolveModelSupportWithFloorRejectsMissingHardCapability(t *testing.T) {
+	cfg := modelPreviewConfig("assist")
+	cfg.Upstream[0].SupportedModels = nil
+	cfgManager, cleanup := createTestConfigManager(t, cfg)
+	defer cleanup()
+	profile := glmPreviewProfile()
+	profile.SupportsToolCalls = false
+	resolver := NewModelResolver(newModelPreviewStore(t, profile), cfgManager)
+	manager := &Manager{cfgManager: cfgManager, modelResolver: resolver}
+	upstream := cfgManager.GetConfig().Upstream[0]
+
+	supported, mapped, source, reason := manager.ResolveModelSupportWithFloor(
+		"messages",
+		&upstream,
+		"claude-opus-4-8",
+		CapabilityFloor{MinQualityTier: QualityTierPremium, NeedsToolCalls: true},
+	)
+	if supported || mapped != "" || source != scheduler.ModelSupportSourceAuthoritativeDeny || reason != "no_capable_model" {
+		t.Fatalf("hard capability support = %v mapped=%q source=%q reason=%q",
 			supported, mapped, source, reason)
 	}
 }

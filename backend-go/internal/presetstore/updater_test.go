@@ -73,8 +73,8 @@ func TestPresetUpdaterCheckOnceRejectsTamperedShard(t *testing.T) {
 	if err := updater.CheckOnce(context.Background()); err == nil {
 		t.Fatal("CheckOnce() error = nil, want hash mismatch")
 	}
-	if store.DataVersion() != "" {
-		t.Fatalf("store version = %q, want embedded empty version", store.DataVersion())
+	if store.DataVersion() != EmbeddedBundle().DataVersion {
+		t.Fatalf("store version = %q, want embedded version %q", store.DataVersion(), EmbeddedBundle().DataVersion)
 	}
 }
 
@@ -170,8 +170,8 @@ func TestPresetUpdaterCheckOnceRejectsLegacySubscriptionOnlyIndex(t *testing.T) 
 	if err := updater.CheckOnce(context.Background()); err == nil {
 		t.Fatal("CheckOnce() error = nil, want legacy subscription rejection")
 	}
-	if store.DataVersion() != "" {
-		t.Fatalf("store version = %q, want embedded empty version", store.DataVersion())
+	if store.DataVersion() != EmbeddedBundle().DataVersion {
+		t.Fatalf("store version = %q, want embedded version %q", store.DataVersion(), EmbeddedBundle().DataVersion)
 	}
 }
 
@@ -216,8 +216,8 @@ func TestPresetUpdaterLoadCacheAtStartupFallbackOnCorruption(t *testing.T) {
 	if updater.Status().CacheValid {
 		t.Fatal("CacheValid = true, want false")
 	}
-	if store.DataVersion() != "" {
-		t.Fatalf("store version = %q, want embedded version", store.DataVersion())
+	if store.DataVersion() != EmbeddedBundle().DataVersion {
+		t.Fatalf("store version = %q, want embedded version %q", store.DataVersion(), EmbeddedBundle().DataVersion)
 	}
 }
 
@@ -491,6 +491,8 @@ func TestCompareDataVersion(t *testing.T) {
 		{name: "older", a: "2026.07.10-0", b: "2026.07.10-1", want: -1},
 		{name: "semantic numeric", a: "2.10.0", b: "2.9.37", want: 1},
 		{name: "semantic reverse", a: "2.9.37", b: "2.10.0", want: -1},
+		{name: "generated data version", a: "v2.9.37+20260721", b: "v2.9.37+20260718", want: 1},
+		{name: "generated minor version", a: "v2.10.0+20260701", b: "v2.9.37+20260721", want: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -498,6 +500,29 @@ func TestCompareDataVersion(t *testing.T) {
 				t.Fatalf("compareDataVersion(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPresetUpdaterLoadCacheAtStartupKeepsNewerEmbeddedBundle(t *testing.T) {
+	cacheDir := t.TempDir()
+	bundle := validBundle()
+	bundle.DataVersion = "v0.0.1+19700101"
+	if err := SaveCache(cacheDir, bundle); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+
+	store := NewPresetStore(nil)
+	embeddedVersion := store.DataVersion()
+	updater := NewPresetUpdater(store, UpdaterConfig{CacheDir: cacheDir})
+	if err := updater.LoadCacheAtStartup(); err != nil {
+		t.Fatalf("LoadCacheAtStartup() error = %v", err)
+	}
+	if store.DataVersion() != embeddedVersion {
+		t.Fatalf("store version = %q, want newer embedded version %q", store.DataVersion(), embeddedVersion)
+	}
+	status := updater.Status()
+	if status.Source != "embedded" || !status.CacheValid {
+		t.Fatalf("status = %+v, want embedded source with valid stale cache", status)
 	}
 }
 

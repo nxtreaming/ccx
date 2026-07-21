@@ -111,7 +111,6 @@ function removeListener(intervalMs: number, listener: () => void | Promise<void>
 
 export interface GlobalTickHandle {
   /** 注册一个 tick 回调（自动在组件 unmount 时退订） */
-  // eslint-disable-next-line no-unused-vars
   onTick: (fn: () => void | Promise<void>) => void
   /** 手动暂停本组件的 tick（可选，visibility 自动管理） */
   pause: () => void

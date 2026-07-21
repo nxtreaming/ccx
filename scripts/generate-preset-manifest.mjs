@@ -49,6 +49,7 @@ function main() {
   const indexContent = formatJson(index)
 
   writeArtifact(docsOutputDir, 'index.json', indexContent)
+  writeArtifact(embeddedOutputDir, 'index.json', indexContent)
 
   for (const shard of renderedShards) {
     writeArtifact(docsOutputDir, shard.fileName, shard.content)

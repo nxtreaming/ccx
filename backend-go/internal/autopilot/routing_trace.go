@@ -34,11 +34,14 @@ type CandidateScore struct {
 
 // RoutingCandidate 路由候选渠道信息（已脱敏）。
 type RoutingCandidate struct {
-	ChannelUID  string `json:"channelUid"`
-	MetricsKey  string `json:"metricsKey,omitempty"` // 已脱敏：不含 key 明文
-	OriginTier  string `json:"originTier,omitempty"`
-	ChannelKind string `json:"channelKind,omitempty"`
-	HealthState string `json:"healthState,omitempty"`
+	ChannelUID    string `json:"channelUid"`
+	MetricsKey    string `json:"metricsKey,omitempty"` // 已脱敏：不含 key 明文
+	OriginTier    string `json:"originTier,omitempty"`
+	ChannelKind   string `json:"channelKind,omitempty"`
+	HealthState   string `json:"healthState,omitempty"`
+	MappedModel   string `json:"mappedModel,omitempty"`
+	MappingSource string `json:"mappingSource,omitempty"`
+	MappingReason string `json:"mappingReason,omitempty"`
 
 	// 分数明细
 	TotalScore float64          `json:"totalScore"`

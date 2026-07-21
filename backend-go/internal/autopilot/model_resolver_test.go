@@ -110,6 +110,50 @@ func TestBuildCapabilityFloorFromRequestProfile(t *testing.T) {
 	}
 }
 
+func TestQualityTargetFromRequestProfileUsesTaskClass(t *testing.T) {
+	tests := []struct {
+		name       string
+		taskClass  TaskClass
+		quality    QualityTier
+		context    int
+		tool       bool
+		reasoning  bool
+		complexity TaskComplexity
+		wantTarget QualityTier
+	}{
+		{name: "lightweight opus 降到 low", taskClass: TaskClassLightweight, quality: QualityTierPremium, wantTarget: QualityTierLow},
+		{name: "worker opus 使用 normal", taskClass: TaskClassWorker, quality: QualityTierPremium, wantTarget: QualityTierNormal},
+		{name: "worker 工具请求至少 normal", taskClass: TaskClassWorker, quality: QualityTierPremium, tool: true, wantTarget: QualityTierNormal},
+		{name: "supervisor 保持 high", taskClass: TaskClassSupervisor, quality: QualityTierPremium, wantTarget: QualityTierHigh},
+		{name: "复杂 supervisor 保持 premium", taskClass: TaskClassSupervisor, quality: QualityTierPremium, complexity: TaskComplexityComplex, wantTarget: QualityTierPremium},
+		{name: "复杂 worker 提升到 high", taskClass: TaskClassWorker, quality: QualityTierPremium, complexity: TaskComplexityComplex, wantTarget: QualityTierHigh},
+		{name: "常规 supervisor 使用 normal", taskClass: TaskClassSupervisor, quality: QualityTierPremium, complexity: TaskComplexityRoutine, wantTarget: QualityTierNormal},
+		{name: "长上下文至少 high", taskClass: TaskClassWorker, quality: QualityTierPremium, context: 50_000, wantTarget: QualityTierHigh},
+		{name: "低档请求不被升级", taskClass: TaskClassSupervisor, quality: QualityTierNormal, wantTarget: QualityTierNormal},
+		{name: "未知分类保持原档位", taskClass: TaskClass("unknown"), quality: QualityTierPremium, wantTarget: QualityTierPremium},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profile := &RequestProfile{
+				TaskClass:     tt.taskClass,
+				QualityNeed:   tt.quality,
+				ContextNeed:   tt.context,
+				ToolUseNeed:   tt.tool,
+				ReasoningNeed: tt.reasoning,
+				Complexity:    tt.complexity,
+			}
+			if got := ResolveQualityTarget(profile); got != tt.wantTarget {
+				t.Fatalf("ResolveQualityTarget() = %q, want %q", got, tt.wantTarget)
+			}
+			floor := BuildCapabilityFloorFromRequestProfile(profile)
+			if floor.MinQualityTier != tt.wantTarget {
+				t.Fatalf("floor.MinQualityTier = %q, want %q", floor.MinQualityTier, tt.wantTarget)
+			}
+		})
+	}
+}
+
 // ── filterByCapabilityFloor 测试 ──
 
 func TestFilterByCapabilityFloor_DropsUnderQualified(t *testing.T) {
@@ -190,6 +234,75 @@ func TestRankBySimilarity_PrefersSameQualityTier(t *testing.T) {
 	best := rankBySimilarity(eligible, "gpt-5.5", floor)
 	if best.ModelID != "gpt-5.4" {
 		t.Errorf("expected gpt-5.4 (same quality tier), got %s", best.ModelID)
+	}
+}
+
+func TestRankBySimilarity_PrefersClosestQualityTarget(t *testing.T) {
+	floor := CapabilityFloor{MinQualityTier: QualityTierHigh}
+	eligible := []ModelProfile{
+		makeModelProfile("k3", ModelFamilyKimi, QualityTierPremium, 200000,
+			true, false, true, true, 1),
+		makeModelProfile("kimi-for-coding", ModelFamilyKimi, QualityTierHigh, 200000,
+			true, false, true, true, 100),
+	}
+
+	best := rankBySimilarity(eligible, "claude-opus-4-8", floor)
+	if best.ModelID != "kimi-for-coding" {
+		t.Errorf("expected closest high-tier model kimi-for-coding, got %s", best.ModelID)
+	}
+}
+
+func TestResolveModel_UsesTaskQualityTarget(t *testing.T) {
+	profiles := []ModelProfile{
+		makeModelProfile("k3", ModelFamilyKimi, QualityTierPremium, 1_048_576,
+			true, true, true, true, 10),
+		makeModelProfile("kimi-for-coding", ModelFamilyKimi, QualityTierHigh, 262_144,
+			true, true, true, true, 100),
+		makeModelProfile("kimi-v2", ModelFamilyKimi, QualityTierNormal, 128_000,
+			false, false, true, true, 50),
+	}
+	resolver := newTestResolver(t, profiles)
+
+	tests := []struct {
+		name      string
+		profile   RequestProfile
+		wantModel string
+	}{
+		{
+			name: "lightweight 选择最接近的标准模型",
+			profile: RequestProfile{
+				Model: "claude-opus-4-8", ChannelKind: "messages", QualityNeed: QualityTierPremium,
+				TaskClass: TaskClassLightweight, ContextNeed: 1000,
+			},
+			wantModel: "kimi-v2",
+		},
+		{
+			name: "supervisor 选择 high 而不是 premium K3",
+			profile: RequestProfile{
+				Model: "claude-opus-4-8", ChannelKind: "messages", QualityNeed: QualityTierPremium,
+				TaskClass: TaskClassSupervisor, ContextNeed: 1000,
+			},
+			wantModel: "kimi-for-coding",
+		},
+		{
+			name: "大上下文硬约束保留 K3",
+			profile: RequestProfile{
+				Model: "claude-opus-4-8", ChannelKind: "messages", QualityNeed: QualityTierPremium,
+				TaskClass: TaskClassSupervisor, ContextNeed: 500_000,
+			},
+			wantModel: "k3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			floor := BuildCapabilityFloorFromRequestProfile(&tt.profile)
+			mapped, resolved, reason := resolver.ResolveModel(
+				tt.profile.Model, "ch_test", "messages", "metrics_test", floor)
+			if !resolved || mapped != tt.wantModel {
+				t.Fatalf("ResolveModel() = (%q, %v, %q), want %q", mapped, resolved, reason, tt.wantModel)
+			}
+		})
 	}
 }
 

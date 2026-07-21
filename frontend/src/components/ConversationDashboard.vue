@@ -88,8 +88,8 @@
             <div
               v-for="item in column.items"
               :key="item.conversation.id"
-              class="cockpit-board-card"
               :ref="el => setConversationCardRef(item.conversation.id, el as Element | null)"
+              class="cockpit-board-card"
             >
               <ConversationCard
                 :conversation="item.conversation"

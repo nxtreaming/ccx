@@ -50,6 +50,130 @@
           {{ volcengineCredentialsError }}
         </v-alert>
 
+        <div v-if="providerId === 'kimi' && accountUid" class="d-flex align-center justify-space-between ga-3 flex-wrap mb-2">
+          <div class="d-flex align-center ga-2">
+            <v-icon color="primary" size="small">mdi-chart-donut</v-icon>
+            <span class="text-body-2 font-weight-medium">{{ t('kimiConsoleToken.title') }}</span>
+          </div>
+          <v-btn
+            size="small"
+            variant="text"
+            color="primary"
+            href="https://www.kimi.com/code/console"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <v-icon start size="small">mdi-open-in-new</v-icon>
+            {{ t('kimiConsoleToken.openConsole') }}
+          </v-btn>
+        </div>
+        <div v-if="providerId === 'kimi' && accountUid" class="text-caption text-medium-emphasis mb-3">
+          {{ t('kimiConsoleToken.hint') }}
+        </div>
+        <v-progress-linear
+          v-if="providerId === 'kimi' && kimiCredentialsLoading"
+          indeterminate
+          color="primary"
+          class="mb-3"
+        />
+        <v-alert
+          v-if="providerId === 'kimi' && kimiCredentialsError"
+          color="error"
+          variant="tonal"
+          density="compact"
+          class="mb-3"
+        >
+          {{ kimiCredentialsError }}
+        </v-alert>
+
+        <div v-if="providerId === 'mimo' && accountUid" class="d-flex align-center justify-space-between ga-3 flex-wrap mb-2">
+          <div class="d-flex align-center ga-2">
+            <v-icon color="primary" size="small">mdi-cookie-cog-outline</v-icon>
+            <span class="text-body-2 font-weight-medium">{{ t('mimoConsoleCookie.title') }}</span>
+          </div>
+          <v-btn
+            size="small"
+            variant="text"
+            color="primary"
+            href="https://platform.xiaomimimo.com/console/plan-manage"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <v-icon start size="small">mdi-open-in-new</v-icon>
+            {{ t('mimoConsoleCookie.openConsole') }}
+          </v-btn>
+        </div>
+        <div v-if="providerId === 'mimo' && accountUid" class="text-caption text-medium-emphasis mb-3">
+          {{ t('mimoConsoleCookie.hint') }}
+        </div>
+        <v-progress-linear
+          v-if="providerId === 'mimo' && mimoCredentialsLoading"
+          indeterminate
+          color="primary"
+          class="mb-3"
+        />
+        <v-alert
+          v-if="providerId === 'mimo' && mimoCredentialsError"
+          color="error"
+          variant="tonal"
+          density="compact"
+          class="mb-3"
+        >
+          {{ mimoCredentialsError }}
+        </v-alert>
+
+        <div v-if="providerId === 'compshare' && accountUid" class="d-flex align-center justify-space-between ga-3 flex-wrap mb-2">
+          <div class="d-flex align-center ga-2">
+            <v-icon color="primary" size="small">mdi-gauge</v-icon>
+            <span class="text-body-2 font-weight-medium">{{ t('compshareConsoleCookie.title') }}</span>
+          </div>
+          <v-btn
+            size="small"
+            variant="text"
+            color="primary"
+            href="https://console.compshare.cn/light-gpu/model-manage"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <v-icon start size="small">mdi-open-in-new</v-icon>
+            {{ t('compshareConsoleCookie.openConsole') }}
+          </v-btn>
+        </div>
+        <div v-if="providerId === 'compshare' && accountUid" class="text-caption text-medium-emphasis mb-3">
+          {{ t('compshareConsoleCookie.hint') }}
+        </div>
+        <v-progress-linear
+          v-if="providerId === 'compshare' && compshareCredentialsLoading"
+          indeterminate
+          color="primary"
+          class="mb-3"
+        />
+        <v-alert
+          v-if="providerId === 'compshare' && compshareCredentialsError"
+          color="error"
+          variant="tonal"
+          density="compact"
+          class="mb-3"
+        >
+          {{ compshareCredentialsError }}
+        </v-alert>
+
+        <v-progress-linear
+          v-if="providerId === 'minimax' && minimaxEndpointsLoading"
+          indeterminate
+          color="primary"
+          class="mb-3"
+        />
+        <v-alert
+          v-if="providerId === 'minimax' && minimaxEndpointsError"
+          color="error"
+          variant="tonal"
+          density="compact"
+          class="mb-3"
+        >
+          {{ minimaxEndpointsError }}
+        </v-alert>
+
         <!-- 现有密钥列表（拉黑状态与 provider 用量均归并到对应 Key） -->
         <div v-if="keyRows.length" class="mb-4">
           <v-list density="compact" class="bg-transparent">
@@ -60,9 +184,9 @@
                 :color="row.disabled ? 'warning' : duplicateKeyIndex === row.activeIndex ? 'error' : 'surface-variant'"
                 :class="{
                   'animate-pulse': duplicateKeyIndex === row.activeIndex,
-                  'volcengine-key-row': !!row.volcengineCredential,
+                  'volcengine-key-row': !!(row.planCredential || row.minimaxEndpoint),
                 }"
-                @click="row.volcengineCredential && toggleVolcengineKey(row.key)"
+                @click="(row.planCredential || row.minimaxEndpoint) && toggleCredentialKey(row.key)"
               >
                 <template #prepend>
                   <v-icon
@@ -135,6 +259,22 @@
                   <v-icon size="12" class="mr-1">mdi-chart-timeline-variant</v-icon>
                   {{ volcengineUsageSummary(row.volcengineCredential) }}
                 </v-list-item-subtitle>
+                <v-list-item-subtitle v-if="row.kimiCredential" class="mt-1 text-caption">
+                  <v-icon size="12" class="mr-1">mdi-chart-donut</v-icon>
+                  {{ kimiUsageSummary(row.kimiCredential) }}
+                </v-list-item-subtitle>
+                <v-list-item-subtitle v-if="row.mimoCredential" class="mt-1 text-caption">
+                  <v-icon size="12" class="mr-1">mdi-cookie-cog-outline</v-icon>
+                  {{ mimoUsageSummary(row.mimoCredential) }}
+                </v-list-item-subtitle>
+                <v-list-item-subtitle v-if="row.compshareCredential" class="mt-1 text-caption">
+                  <v-icon size="12" class="mr-1">mdi-gauge</v-icon>
+                  {{ compshareUsageSummary(row.compshareCredential) }}
+                </v-list-item-subtitle>
+                <v-list-item-subtitle v-if="row.minimaxEndpoint" class="mt-1 text-caption">
+                  <v-icon size="12" class="mr-1">mdi-lightning-bolt-outline</v-icon>
+                  {{ minimaxUsageSummary(row.minimaxEndpoint) }}
+                </v-list-item-subtitle>
 
                 <template #append>
                   <div class="d-flex align-center ga-1" @click.stop>
@@ -151,16 +291,16 @@
                       {{ t('channelCard.restoreKey') }}
                     </v-btn>
                     <v-btn
-                      v-if="row.volcengineCredential"
+                      v-if="row.planCredential || row.minimaxEndpoint"
                       size="small"
                       color="primary"
                       icon
                       variant="text"
-                      :aria-label="t('volcengineAccessKey.usageTitle')"
-                      @click="toggleVolcengineKey(row.key)"
+                      :aria-label="planRowTitle()"
+                      @click="toggleCredentialKey(row.key)"
                     >
                       <v-icon size="small">
-                        {{ expandedVolcengineKey === row.key ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
+                        {{ expandedCredentialKey === row.key ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
                       </v-icon>
                     </v-btn>
                     <template v-if="!row.disabled && row.activeIndex >= 0">
@@ -249,7 +389,7 @@
 
               <v-expand-transition>
                 <div
-                  v-if="row.volcengineCredential && expandedVolcengineKey === row.key"
+                  v-if="row.volcengineCredential && expandedCredentialKey === row.key"
                   class="volcengine-key-detail px-4 pt-3 pb-4"
                 >
                   <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-3">
@@ -377,6 +517,429 @@
                   </div>
                 </div>
               </v-expand-transition>
+
+              <v-expand-transition>
+                <div
+                  v-if="row.kimiCredential && expandedCredentialKey === row.key"
+                  class="volcengine-key-detail px-4 pt-3 pb-4"
+                >
+                  <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-3">
+                    <v-chip
+                      :color="row.kimiCredential.hasKimiConsoleToken ? 'info' : 'warning'"
+                      size="x-small"
+                      variant="tonal"
+                    >
+                      {{ row.kimiCredential.hasKimiConsoleToken
+                        ? t('kimiConsoleToken.configured')
+                        : t('kimiConsoleToken.notConfigured') }}
+                    </v-chip>
+                    <v-btn
+                      v-if="row.kimiCredential.hasKimiConsoleToken"
+                      icon
+                      size="x-small"
+                      variant="text"
+                      :loading="kimiForms[row.kimiCredential.credentialUid]?.refreshing"
+                      :title="t('kimiConsoleToken.refresh')"
+                      @click="refreshKimiToken(row.kimiCredential)"
+                    >
+                      <v-icon size="small">mdi-refresh</v-icon>
+                    </v-btn>
+                  </div>
+
+                  <template v-if="row.kimiCredential.kimiCodeUsage">
+                    <div class="kimi-quota-grid mb-3">
+                      <div
+                        v-for="item in kimiQuotaItems(row.kimiCredential.kimiCodeUsage)"
+                        :key="item.label"
+                        class="kimi-quota-item"
+                      >
+                        <div class="text-caption text-medium-emphasis">{{ item.label }}</div>
+                        <div class="text-body-2 font-weight-medium">{{ kimiFormatQuota(item.window) }}</div>
+                        <v-progress-linear
+                          :model-value="kimiQuotaUsedPercent(item.window)"
+                          :color="kimiUsageColor(kimiQuotaUsedPercent(item.window))"
+                          height="4"
+                          rounded
+                          class="my-2"
+                        />
+                        <div class="text-caption text-disabled">
+                          {{ t('kimiConsoleToken.resetAt') }} {{ kimiFormatDateTime(item.window.resetTime) }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="kimi-balance-grid mb-2">
+                      <div v-if="row.kimiCredential.kimiCodeUsage.subscriptionBalance">
+                        <div class="text-caption text-medium-emphasis">{{ t('kimiConsoleToken.subscriptionRemaining') }}</div>
+                        <div class="text-body-2 font-weight-medium">
+                          {{ kimiFormatRemainingRatio(row.kimiCredential.kimiCodeUsage.subscriptionBalance.amountUsedRatio) }}
+                        </div>
+                        <div class="text-caption text-disabled">
+                          {{ t('kimiConsoleToken.codeUsed') }}
+                          {{ kimiFormatUsedRatio(row.kimiCredential.kimiCodeUsage.subscriptionBalance.kimiCodeUsedRatio) }}
+                        </div>
+                      </div>
+                      <div v-if="row.kimiCredential.kimiCodeUsage.codeSevenDay?.enabled">
+                        <div class="text-caption text-medium-emphasis">{{ t('kimiConsoleToken.sevenDayRemaining') }}</div>
+                        <div class="text-body-2 font-weight-medium">
+                          {{ kimiFormatRemainingRatio(row.kimiCredential.kimiCodeUsage.codeSevenDay.ratio) }}
+                        </div>
+                        <div class="text-caption text-disabled">
+                          {{ t('kimiConsoleToken.resetAt') }} {{ kimiFormatDateTime(row.kimiCredential.kimiCodeUsage.codeSevenDay.resetTime) }}
+                        </div>
+                      </div>
+                      <div v-if="row.kimiCredential.kimiCodeUsage.subscriptionBalance?.expireTime">
+                        <div class="text-caption text-medium-emphasis">{{ t('kimiConsoleToken.expiresAt') }}</div>
+                        <div class="text-body-2 font-weight-medium">
+                          {{ kimiFormatDateTime(row.kimiCredential.kimiCodeUsage.subscriptionBalance.expireTime) }}
+                        </div>
+                      </div>
+                      <div
+                        v-for="(gift, index) in kimiVisibleGifts(row.kimiCredential.kimiCodeUsage)"
+                        :key="`${gift.type}-${gift.expireTime}-${index}`"
+                      >
+                        <div class="text-caption text-medium-emphasis">{{ t('kimiConsoleToken.giftBalance') }}</div>
+                        <div class="text-body-2 font-weight-medium">
+                          {{ kimiFormatRemainingRatio(gift.amountUsedRatio) }}
+                        </div>
+                        <div class="text-caption text-disabled">
+                          {{ t('kimiConsoleToken.codeUsed') }} {{ kimiFormatUsedRatio(gift.kimiCodeUsedRatio) }}
+                        </div>
+                        <div class="text-caption text-disabled">
+                          {{ t('kimiConsoleToken.expiresAt') }} {{ kimiFormatDateTime(gift.expireTime) }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-caption text-disabled mb-3">
+                      {{ t('kimiConsoleToken.validatedAt') }} {{ kimiFormatDateTime(row.kimiCredential.kimiCodeUsage.validatedAt) }}
+                    </div>
+                  </template>
+                  <div v-else class="text-caption text-disabled mb-3">{{ t('kimiConsoleToken.noUsageData') }}</div>
+
+                  <div v-if="kimiForms[row.kimiCredential.credentialUid]" class="d-flex flex-column ga-2">
+                    <v-text-field
+                      v-model="kimiForms[row.kimiCredential.credentialUid].accessToken"
+                      :label="t('kimiConsoleToken.token')"
+                      :placeholder="t('kimiConsoleToken.tokenPlaceholder')"
+                      type="password"
+                      variant="outlined"
+                      density="compact"
+                      autocomplete="new-password"
+                      hide-details
+                    />
+                    <v-alert
+                      v-if="kimiForms[row.kimiCredential.credentialUid].error"
+                      color="error"
+                      variant="tonal"
+                      density="compact"
+                    >
+                      {{ kimiForms[row.kimiCredential.credentialUid].error }}
+                    </v-alert>
+                    <div class="d-flex align-center justify-end ga-2 flex-wrap">
+                      <v-btn
+                        v-if="row.kimiCredential.hasKimiConsoleToken"
+                        size="small"
+                        variant="text"
+                        color="error"
+                        :loading="kimiForms[row.kimiCredential.credentialUid].clearing"
+                        @click="clearKimiToken(row.kimiCredential)"
+                      >
+                        <v-icon start size="small">mdi-delete-outline</v-icon>
+                        {{ t('kimiConsoleToken.clear') }}
+                      </v-btn>
+                      <v-btn
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                        :loading="kimiForms[row.kimiCredential.credentialUid].saving"
+                        :disabled="!kimiForms[row.kimiCredential.credentialUid].accessToken.trim()"
+                        @click="saveKimiToken(row.kimiCredential)"
+                      >
+                        <v-icon start size="small">mdi-check-decagram-outline</v-icon>
+                        {{ t('kimiConsoleToken.verifyAndSave') }}
+                      </v-btn>
+                    </div>
+                  </div>
+                </div>
+              </v-expand-transition>
+
+              <v-expand-transition>
+                <div
+                  v-if="row.mimoCredential && expandedCredentialKey === row.key"
+                  class="volcengine-key-detail px-4 pt-3 pb-4"
+                >
+                  <div class="d-flex align-center ga-2 flex-wrap mb-3">
+                    <v-chip v-if="row.mimoCredential.mimoTokenPlan" size="x-small" color="success" variant="tonal">
+                      {{ row.mimoCredential.mimoTokenPlan.planName }}
+                    </v-chip>
+                    <v-chip
+                      :color="row.mimoCredential.hasMiMoConsoleCookie ? 'info' : 'warning'"
+                      size="x-small"
+                      variant="tonal"
+                    >
+                      {{ row.mimoCredential.hasMiMoConsoleCookie
+                        ? t('mimoConsoleCookie.configured')
+                        : t('mimoConsoleCookie.notConfigured') }}
+                    </v-chip>
+                  </div>
+                  <div v-if="row.mimoCredential.mimoTokenPlan" class="mimo-usage-grid mb-3">
+                    <div>
+                      <div class="text-caption text-medium-emphasis">{{ t('mimoConsoleCookie.currentRemaining') }}</div>
+                      <div class="text-body-2 font-weight-medium">{{ formatMiMoQuota(row.mimoCredential.mimoTokenPlan.currentUsage) }}</div>
+                    </div>
+                    <div>
+                      <div class="text-caption text-medium-emphasis">{{ t('mimoConsoleCookie.monthRemaining') }}</div>
+                      <div class="text-body-2 font-weight-medium">{{ formatMiMoQuota(row.mimoCredential.mimoTokenPlan.monthUsage) }}</div>
+                    </div>
+                    <div>
+                      <div class="text-caption text-medium-emphasis">{{ t('mimoConsoleCookie.expiresAt') }}</div>
+                      <div class="text-body-2 font-weight-medium">{{ row.mimoCredential.mimoTokenPlan.currentPeriodEnd }}</div>
+                    </div>
+                  </div>
+                  <div v-else class="text-caption text-disabled mb-3">{{ t('mimoConsoleCookie.noUsageData') }}</div>
+                  <div v-if="mimoForms[row.mimoCredential.credentialUid]" class="d-flex flex-column ga-2">
+                    <v-text-field
+                      v-model="mimoForms[row.mimoCredential.credentialUid].cookie"
+                      :label="t('mimoConsoleCookie.cookie')"
+                      :placeholder="t('mimoConsoleCookie.cookiePlaceholder')"
+                      type="password"
+                      variant="outlined"
+                      density="compact"
+                      autocomplete="new-password"
+                      hide-details
+                    />
+                    <v-alert
+                      v-if="mimoForms[row.mimoCredential.credentialUid].error"
+                      color="error"
+                      variant="tonal"
+                      density="compact"
+                    >
+                      {{ mimoForms[row.mimoCredential.credentialUid].error }}
+                    </v-alert>
+                    <div class="d-flex align-center justify-end ga-2 flex-wrap">
+                      <v-btn
+                        v-if="row.mimoCredential.hasMiMoConsoleCookie"
+                        size="small"
+                        variant="text"
+                        color="secondary"
+                        :loading="mimoForms[row.mimoCredential.credentialUid].refreshing"
+                        @click="refreshMiMoConsoleCookie(row.mimoCredential)"
+                      >
+                        <v-icon start size="small">mdi-refresh</v-icon>
+                        {{ t('mimoConsoleCookie.refresh') }}
+                      </v-btn>
+                      <v-btn
+                        v-if="row.mimoCredential.hasMiMoConsoleCookie"
+                        size="small"
+                        variant="text"
+                        color="error"
+                        :loading="mimoForms[row.mimoCredential.credentialUid].clearing"
+                        @click="clearMiMoConsoleCookie(row.mimoCredential)"
+                      >
+                        <v-icon start size="small">mdi-delete-outline</v-icon>
+                        {{ t('mimoConsoleCookie.clear') }}
+                      </v-btn>
+                      <v-btn
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                        :loading="mimoForms[row.mimoCredential.credentialUid].saving"
+                        :disabled="!mimoForms[row.mimoCredential.credentialUid].cookie.trim()"
+                        @click="saveMiMoConsoleCookie(row.mimoCredential)"
+                      >
+                        <v-icon start size="small">mdi-check-decagram-outline</v-icon>
+                        {{ t('mimoConsoleCookie.verifyAndSave') }}
+                      </v-btn>
+                    </div>
+                  </div>
+                </div>
+              </v-expand-transition>
+
+              <v-expand-transition>
+                <div
+                  v-if="row.compshareCredential && expandedCredentialKey === row.key"
+                  class="volcengine-key-detail px-4 pt-3 pb-4"
+                >
+                  <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-3">
+                    <div class="d-flex align-center ga-2 flex-wrap">
+                      <v-chip
+                        v-if="row.compshareCredential.compsharePlan"
+                        :color="row.compshareCredential.compsharePlan.status === 1 ? 'success' : 'error'"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        {{ compsharePlanDisplayName(row.compshareCredential.compsharePlan) }}
+                      </v-chip>
+                      <v-chip
+                        :color="row.compshareCredential.hasCompshareConsoleCookie ? 'info' : 'warning'"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        {{ row.compshareCredential.hasCompshareConsoleCookie
+                          ? t('compshareConsoleCookie.configured')
+                          : t('compshareConsoleCookie.notConfigured') }}
+                      </v-chip>
+                    </div>
+                    <v-btn
+                      v-if="row.compshareCredential.hasCompshareConsoleCookie"
+                      icon
+                      size="x-small"
+                      variant="text"
+                      :loading="compshareForms[row.compshareCredential.credentialUid]?.refreshing"
+                      :title="t('compshareConsoleCookie.refresh')"
+                      @click="refreshCompshareCookie(row.compshareCredential)"
+                    >
+                      <v-icon size="small">mdi-refresh</v-icon>
+                    </v-btn>
+                  </div>
+
+                  <template v-if="row.compshareCredential.compsharePlan">
+                    <div class="compshare-usage-grid mb-3">
+                      <div
+                        v-for="item in compshareUsageItems(row.compshareCredential.compsharePlan)"
+                        :key="item.label"
+                        class="compshare-usage-item"
+                      >
+                        <div class="text-caption text-medium-emphasis">{{ t(item.label) }}</div>
+                        <div class="text-body-2 font-weight-medium">{{ compshareFormatRemaining(item.window) }}</div>
+                        <v-progress-linear
+                          :model-value="compshareUsagePercent(item.window)"
+                          :color="compshareUsageColor(item.window)"
+                          height="4"
+                          rounded
+                          class="my-2"
+                        />
+                        <div class="text-caption text-disabled">
+                          {{ t('compshareConsoleCookie.nextReset') }} {{ compshareFormatEpoch(item.window.nextResetAt) }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="compshare-plan-meta mb-2">
+                      <div>
+                        <div class="text-caption text-medium-emphasis">{{ t('compshareConsoleCookie.concurrency') }}</div>
+                        <div class="text-body-2 font-weight-medium">{{ row.compshareCredential.compsharePlan.concurrencyLimit }}</div>
+                      </div>
+                      <div>
+                        <div class="text-caption text-medium-emphasis">{{ t('compshareConsoleCookie.accountType') }}</div>
+                        <div class="text-body-2 font-weight-medium">
+                          {{ row.compshareCredential.compsharePlan.isTeam
+                            ? t('compshareConsoleCookie.team')
+                            : t('compshareConsoleCookie.personal') }}
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-caption text-medium-emphasis">{{ t('compshareConsoleCookie.expiresAt') }}</div>
+                        <div class="text-body-2 font-weight-medium">{{ compshareFormatEpoch(row.compshareCredential.compsharePlan.expireAt) }}</div>
+                      </div>
+                    </div>
+                    <div class="text-caption text-disabled mb-3">
+                      {{ t('compshareConsoleCookie.validatedAt') }} {{ compshareFormatDateTime(row.compshareCredential.compsharePlan.validatedAt) }}
+                    </div>
+                  </template>
+                  <div v-else class="text-caption text-disabled mb-3">{{ t('compshareConsoleCookie.noUsageData') }}</div>
+
+                  <div v-if="compshareForms[row.compshareCredential.credentialUid]" class="d-flex flex-column ga-2">
+                    <v-text-field
+                      v-model="compshareForms[row.compshareCredential.credentialUid].cookie"
+                      :label="t('compshareConsoleCookie.cookie')"
+                      :placeholder="t('compshareConsoleCookie.cookiePlaceholder')"
+                      type="password"
+                      variant="outlined"
+                      density="compact"
+                      autocomplete="new-password"
+                      hide-details
+                    />
+                    <v-alert
+                      v-if="compshareForms[row.compshareCredential.credentialUid].error"
+                      color="error"
+                      variant="tonal"
+                      density="compact"
+                    >
+                      {{ compshareForms[row.compshareCredential.credentialUid].error }}
+                    </v-alert>
+                    <div class="d-flex align-center justify-end ga-2 flex-wrap">
+                      <v-btn
+                        v-if="row.compshareCredential.hasCompshareConsoleCookie"
+                        size="small"
+                        variant="text"
+                        color="error"
+                        :loading="compshareForms[row.compshareCredential.credentialUid].clearing"
+                        @click="clearCompshareCookie(row.compshareCredential)"
+                      >
+                        <v-icon start size="small">mdi-delete-outline</v-icon>
+                        {{ t('compshareConsoleCookie.clear') }}
+                      </v-btn>
+                      <v-btn
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                        :loading="compshareForms[row.compshareCredential.credentialUid].saving"
+                        :disabled="!compshareForms[row.compshareCredential.credentialUid].cookie.trim()"
+                        @click="saveCompshareCookie(row.compshareCredential)"
+                      >
+                        <v-icon start size="small">mdi-check-decagram-outline</v-icon>
+                        {{ t('compshareConsoleCookie.verifyAndSave') }}
+                      </v-btn>
+                    </div>
+                  </div>
+                </div>
+              </v-expand-transition>
+
+              <v-expand-transition>
+                <div
+                  v-if="row.minimaxEndpoint && expandedCredentialKey === row.key"
+                  class="volcengine-key-detail px-4 pt-3 pb-4"
+                >
+                  <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-3">
+                    <v-chip size="x-small" color="primary" variant="tonal">Token Plan</v-chip>
+                    <v-btn
+                      icon
+                      size="x-small"
+                      variant="text"
+                      :loading="minimaxUsageRefreshing[row.minimaxEndpoint.endpointUid]"
+                      :title="t('healthCenter.detail.refreshUsage')"
+                      @click="refreshMinimaxUsage(row.minimaxEndpoint)"
+                    >
+                      <v-icon size="small">mdi-refresh</v-icon>
+                    </v-btn>
+                  </div>
+
+                  <div
+                    v-if="row.minimaxEndpoint.miniMaxTokenPlanUsage?.models.length && !row.minimaxEndpoint.miniMaxTokenPlanUsageError"
+                    class="mb-2"
+                  >
+                    <v-table density="compact">
+                      <thead>
+                        <tr>
+                          <th>{{ t('healthCenter.detail.model') }}</th>
+                          <th>{{ t('healthCenter.detail.currentWindow') }}</th>
+                          <th>{{ t('healthCenter.detail.weeklyWindow') }}</th>
+                          <th>{{ t('healthCenter.detail.resetsIn') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="quota in row.minimaxEndpoint.miniMaxTokenPlanUsage.models" :key="quota.modelName">
+                          <td class="font-weight-medium">{{ quota.modelName }}</td>
+                          <td :class="minimaxQuotaColor(quota.currentIntervalRemainingPercent)">
+                            {{ minimaxFormatQuota(quota.currentIntervalRemainingPercent, quota.currentIntervalUsageCount, quota.currentIntervalTotalCount) }}
+                          </td>
+                          <td :class="minimaxQuotaColor(quota.currentWeeklyRemainingPercent)">
+                            {{ minimaxFormatQuota(quota.currentWeeklyRemainingPercent, quota.currentWeeklyUsageCount, quota.currentWeeklyTotalCount) }}
+                          </td>
+                          <td>{{ minimaxFormatRemainsTime(quota.remainsTimeMs) }}</td>
+                        </tr>
+                      </tbody>
+                    </v-table>
+                    <div class="text-caption text-disabled mt-2">
+                      {{ t('healthCenter.detail.updatedAt') }}: {{ minimaxFormatDateTime(row.minimaxEndpoint.miniMaxTokenPlanUsage.fetchedAt) }}
+                    </div>
+                  </div>
+                  <div v-else-if="row.minimaxEndpoint.miniMaxTokenPlanUsageError" class="text-caption text-error">
+                    {{ t('healthCenter.detail.tokenPlanUsageError') }}: {{ row.minimaxEndpoint.miniMaxTokenPlanUsageError }}
+                  </div>
+                  <div v-else class="text-caption text-disabled">{{ t('healthCenter.detail.noUsageData') }}</div>
+                </div>
+              </v-expand-transition>
             </div>
           </v-list>
         </div>
@@ -449,121 +1012,6 @@
             <div v-else class="text-caption text-disabled">{{ t('deepseekBalance.noBalance') }}</div>
           </div>
         </div>
-
-        <div v-if="providerId === 'mimo' && accountUid" class="mimo-console-cookies mb-5">
-          <v-divider class="mb-4" />
-          <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-2">
-            <div class="d-flex align-center ga-2">
-              <v-icon color="primary" size="small">mdi-cookie-cog-outline</v-icon>
-              <span class="text-body-2 font-weight-medium">{{ t('mimoConsoleCookie.title') }}</span>
-            </div>
-            <v-btn
-              href="https://platform.xiaomimimo.com/console/plan-manage"
-              target="_blank"
-              rel="noopener noreferrer"
-              size="small"
-              variant="text"
-              color="primary"
-            >
-              <v-icon start size="small">mdi-open-in-new</v-icon>
-              {{ t('mimoConsoleCookie.openConsole') }}
-            </v-btn>
-          </div>
-          <div class="text-caption text-medium-emphasis mb-3">{{ t('mimoConsoleCookie.hint') }}</div>
-          <v-progress-linear v-if="mimoCredentialsLoading" indeterminate color="primary" class="mb-3" />
-          <v-alert v-if="mimoCredentialsError" color="error" variant="tonal" density="compact" class="mb-3">
-            {{ mimoCredentialsError }}
-          </v-alert>
-          <div v-for="credential in mimoCredentials" :key="credential.credentialUid" class="volcengine-credential py-3">
-            <div class="d-flex align-center justify-space-between ga-3 flex-wrap mb-3">
-              <code class="text-caption">{{ credential.keyMask }}</code>
-              <div class="d-flex align-center ga-2">
-                <v-chip v-if="credential.mimoTokenPlan" size="x-small" color="success" variant="tonal">
-                  {{ credential.mimoTokenPlan.planName }}
-                </v-chip>
-                <v-chip :color="credential.hasMiMoConsoleCookie ? 'info' : 'warning'" size="x-small" variant="tonal">
-                  {{ credential.hasMiMoConsoleCookie
-                    ? t('mimoConsoleCookie.configured')
-                    : t('mimoConsoleCookie.notConfigured') }}
-                </v-chip>
-              </div>
-            </div>
-            <div v-if="credential.mimoTokenPlan" class="mimo-usage-grid mb-3">
-              <div>
-                <div class="text-caption text-medium-emphasis">{{ t('mimoConsoleCookie.currentRemaining') }}</div>
-                <div class="text-body-2 font-weight-medium">{{ formatMiMoQuota(credential.mimoTokenPlan.currentUsage) }}</div>
-              </div>
-              <div>
-                <div class="text-caption text-medium-emphasis">{{ t('mimoConsoleCookie.monthRemaining') }}</div>
-                <div class="text-body-2 font-weight-medium">{{ formatMiMoQuota(credential.mimoTokenPlan.monthUsage) }}</div>
-              </div>
-              <div>
-                <div class="text-caption text-medium-emphasis">{{ t('mimoConsoleCookie.expiresAt') }}</div>
-                <div class="text-body-2 font-weight-medium">{{ credential.mimoTokenPlan.currentPeriodEnd }}</div>
-              </div>
-            </div>
-            <div v-if="mimoForms[credential.credentialUid]" class="d-flex flex-column ga-2">
-              <v-text-field
-                v-model="mimoForms[credential.credentialUid].cookie"
-                :label="t('mimoConsoleCookie.cookie')"
-                :placeholder="t('mimoConsoleCookie.cookiePlaceholder')"
-                type="password"
-                variant="outlined"
-                density="compact"
-                autocomplete="new-password"
-                hide-details
-              />
-              <v-alert v-if="mimoForms[credential.credentialUid].error" color="error" variant="tonal" density="compact">
-                {{ mimoForms[credential.credentialUid].error }}
-              </v-alert>
-              <div class="d-flex align-center justify-end ga-2 flex-wrap">
-                <v-btn
-                  v-if="credential.hasMiMoConsoleCookie"
-                  size="small"
-                  variant="text"
-                  color="secondary"
-                  :loading="mimoForms[credential.credentialUid].refreshing"
-                  @click="refreshMiMoConsoleCookie(credential)"
-                >
-                  <v-icon start size="small">mdi-refresh</v-icon>
-                  {{ t('mimoConsoleCookie.refresh') }}
-                </v-btn>
-                <v-btn
-                  v-if="credential.hasMiMoConsoleCookie"
-                  size="small"
-                  variant="text"
-                  color="error"
-                  :loading="mimoForms[credential.credentialUid].clearing"
-                  @click="clearMiMoConsoleCookie(credential)"
-                >
-                  <v-icon start size="small">mdi-delete-outline</v-icon>
-                  {{ t('mimoConsoleCookie.clear') }}
-                </v-btn>
-                <v-btn
-                  size="small"
-                  variant="tonal"
-                  color="primary"
-                  :loading="mimoForms[credential.credentialUid].saving"
-                  :disabled="!mimoForms[credential.credentialUid].cookie.trim()"
-                  @click="saveMiMoConsoleCookie(credential)"
-                >
-                  <v-icon start size="small">mdi-check-decagram-outline</v-icon>
-                  {{ t('mimoConsoleCookie.verifyAndSave') }}
-                </v-btn>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <CompsharePlanSection
-          v-if="providerId === 'compshare' && accountUid"
-          :account-uid="accountUid"
-        />
-
-        <KimiPlanSection
-          v-if="providerId === 'kimi' && accountUid"
-          :account-uid="accountUid"
-        />
 
         <!-- 添加新密钥 -->
         <div class="d-flex align-start ga-3">
@@ -767,8 +1215,13 @@ import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from '../../i18n'
 import { ApiError, ApiService } from '../../services/api'
 import type {
+  CompsharePlanSnapshot,
+  CompsharePlanUsageWindow,
   DeepSeekCredentialBalance,
   DisabledKeyInfo,
+  EndpointDetailItem,
+  KimiCodeQuotaWindow,
+  KimiCodeUsageSnapshot,
   ManagedAccountCredential,
   MiMoTokenPlanQuota,
   VolcenginePlanUsage,
@@ -777,8 +1230,7 @@ import type {
 import { maskApiKey } from '../../utils/apiKeyMask'
 import { buildChannelApiKeyRows } from '../../utils/channelApiKeys'
 import { getVolcenginePlanConsoleURL } from '../../utils/channelWebsite'
-import CompsharePlanSection from './CompsharePlanSection.vue'
-import KimiPlanSection from './KimiPlanSection.vue'
+import { selectMiniMaxTokenPlanEndpoint, sha256KeyHash } from '../../utils/minimaxEndpointUsage'
 
 interface KeyModelsStatus {
   loading?: boolean
@@ -807,6 +1259,8 @@ interface Props {
   serviceType?: string
   isAutoManaged?: boolean
   channelId?: number
+  channelUid?: string
+  dialogOpen: boolean
   proxyUrl?: string
   accountUid?: string
   providerId?: string
@@ -844,7 +1298,19 @@ const volcengineCredentialsLoading = ref(false)
 const volcengineCredentialsError = ref('')
 const volcengineForms = ref<Record<string, VolcengineCredentialForm>>({})
 const volcengineUsageRefreshing = ref<Record<string, boolean>>({})
-const expandedVolcengineKey = ref<string | null>(null)
+const expandedCredentialKey = ref<string | null>(null)
+interface KimiCredentialForm {
+  accessToken: string
+  saving: boolean
+  refreshing: boolean
+  clearing: boolean
+  error: string
+}
+
+const kimiCredentials = ref<ManagedAccountCredential[]>([])
+const kimiCredentialsLoading = ref(false)
+const kimiCredentialsError = ref('')
+const kimiForms = ref<Record<string, KimiCredentialForm>>({})
 interface MiMoCredentialForm {
   cookie: string
   saving: boolean
@@ -857,6 +1323,26 @@ const mimoCredentials = ref<ManagedAccountCredential[]>([])
 const mimoCredentialsLoading = ref(false)
 const mimoCredentialsError = ref('')
 const mimoForms = ref<Record<string, MiMoCredentialForm>>({})
+interface CompshareCredentialForm {
+  cookie: string
+  saving: boolean
+  refreshing: boolean
+  clearing: boolean
+  error: string
+}
+
+const compshareCredentials = ref<ManagedAccountCredential[]>([])
+const compshareCredentialsLoading = ref(false)
+const compshareCredentialsError = ref('')
+const compshareForms = ref<Record<string, CompshareCredentialForm>>({})
+
+const minimaxEndpoints = ref<EndpointDetailItem[]>([])
+const minimaxEndpointsLoading = ref(false)
+const minimaxEndpointsError = ref('')
+const minimaxUsageRefreshing = ref<Record<string, boolean>>({})
+const minimaxKeyHashes = ref<Record<string, string>>({})
+let minimaxEndpointsRequestId = 0
+let minimaxKeyHashRequestId = 0
 interface CopilotDiagnoseResponse {
   githubUser?: {
     login?: string
@@ -884,19 +1370,60 @@ const copilotDiagnoseResult = ref<CopilotDiagnoseResponse | null>(null)
 const copilotDiagnoseError = ref('')
 let copilotPollTimer: number | null = null
 
-const keyRows = computed(() => buildChannelApiKeyRows(props.apiKeys, props.disabledKeys).map(row => ({
-  ...row,
-  volcengineCredential: props.providerId === 'volcengine'
-    ? volcengineCredentials.value.find(credential => credential.keyMask === maskApiKey(row.key))
-    : undefined,
-})))
+const keyRows = computed(() => buildChannelApiKeyRows(props.apiKeys, props.disabledKeys).map(row => {
+  const matchCredential = (credentials: ManagedAccountCredential[]) =>
+    credentials.find(credential => credential.keyMask === maskApiKey(row.key))
+  const volcengineCredential = props.providerId === 'volcengine' ? matchCredential(volcengineCredentials.value) : undefined
+  const kimiCredential = props.providerId === 'kimi' ? matchCredential(kimiCredentials.value) : undefined
+  const mimoCredential = props.providerId === 'mimo' ? matchCredential(mimoCredentials.value) : undefined
+  const compshareCredential = props.providerId === 'compshare' ? matchCredential(compshareCredentials.value) : undefined
+  const minimaxEndpoint = props.providerId === 'minimax'
+    ? selectMiniMaxTokenPlanEndpoint(minimaxEndpoints.value, minimaxKeyHashes.value[row.key] ?? '', maskApiKey(row.key))
+    : undefined
+  return {
+    ...row,
+    volcengineCredential,
+    kimiCredential,
+    mimoCredential,
+    compshareCredential,
+    minimaxEndpoint,
+    planCredential: volcengineCredential ?? kimiCredential ?? mimoCredential ?? compshareCredential,
+  }
+}))
+
+watch(
+  () => buildChannelApiKeyRows(props.apiKeys, props.disabledKeys).map(row => row.key),
+  async keys => {
+    const requestId = ++minimaxKeyHashRequestId
+    const entries = await Promise.all(keys.map(async key => {
+      try {
+        return [key, await sha256KeyHash(key)] as const
+      } catch {
+        return [key, ''] as const
+      }
+    }))
+    if (requestId === minimaxKeyHashRequestId) minimaxKeyHashes.value = Object.fromEntries(entries)
+  },
+  { immediate: true },
+)
+
+const planRowTitle = (): string => {
+  switch (props.providerId) {
+    case 'volcengine': return t('volcengineAccessKey.usageTitle')
+    case 'kimi': return t('kimiConsoleToken.title')
+    case 'mimo': return t('mimoConsoleCookie.title')
+    case 'compshare': return t('compshareConsoleCookie.title')
+    case 'minimax': return t('healthCenter.detail.tokenPlanUsage')
+    default: return ''
+  }
+}
 
 const hasConfigurableKeys = computed(() => props.serviceType === 'copilot' || keyRows.value.length > 0)
 
 const visibleDisabledKeyModels = computed(() => props.disabledKeyModels || [])
 
-const toggleVolcengineKey = (key: string) => {
-  expandedVolcengineKey.value = expandedVolcengineKey.value === key ? null : key
+const toggleCredentialKey = (key: string) => {
+  expandedCredentialKey.value = expandedCredentialKey.value === key ? null : key
 }
 
 const disabledKeyColor = (reason: string) => (
@@ -972,6 +1499,43 @@ watch(
   { immediate: true }
 )
 
+const loadKimiCredentials = async () => {
+  kimiCredentials.value = []
+  kimiCredentialsError.value = ''
+  if (props.providerId !== 'kimi' || !props.accountUid) return
+  kimiCredentialsLoading.value = true
+  try {
+    const response = await apiService.getManagedAccounts()
+    const account = response.accounts.find(item => item.accountUid === props.accountUid)
+    if (!account) {
+      kimiCredentialsError.value = t('kimiConsoleToken.accountNotFound')
+      return
+    }
+    kimiCredentials.value = account.credentials
+    const nextForms: Record<string, KimiCredentialForm> = {}
+    for (const credential of account.credentials) {
+      nextForms[credential.credentialUid] = kimiForms.value[credential.credentialUid] ?? {
+        accessToken: '',
+        saving: false,
+        refreshing: false,
+        clearing: false,
+        error: '',
+      }
+    }
+    kimiForms.value = nextForms
+  } catch (err) {
+    kimiCredentialsError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    kimiCredentialsLoading.value = false
+  }
+}
+
+watch(
+  () => [props.providerId, props.accountUid],
+  () => { void loadKimiCredentials() },
+  { immediate: true }
+)
+
 const loadMiMoCredentials = async () => {
   mimoCredentials.value = []
   mimoCredentialsError.value = ''
@@ -1004,6 +1568,251 @@ watch(
   () => { void loadMiMoCredentials() },
   { immediate: true }
 )
+
+const loadCompshareCredentials = async () => {
+  compshareCredentials.value = []
+  compshareCredentialsError.value = ''
+  if (props.providerId !== 'compshare' || !props.accountUid) return
+  compshareCredentialsLoading.value = true
+  try {
+    const response = await apiService.getManagedAccounts()
+    const account = response.accounts.find(item => item.accountUid === props.accountUid)
+    if (!account) {
+      compshareCredentialsError.value = t('compshareConsoleCookie.accountNotFound')
+      return
+    }
+    compshareCredentials.value = account.credentials
+    const nextForms: Record<string, CompshareCredentialForm> = {}
+    for (const credential of account.credentials) {
+      nextForms[credential.credentialUid] = compshareForms.value[credential.credentialUid] ?? {
+        cookie: '',
+        saving: false,
+        refreshing: false,
+        clearing: false,
+        error: '',
+      }
+    }
+    compshareForms.value = nextForms
+  } catch (err) {
+    compshareCredentialsError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    compshareCredentialsLoading.value = false
+  }
+}
+
+watch(
+  () => [props.providerId, props.accountUid],
+  () => { void loadCompshareCredentials() },
+  { immediate: true }
+)
+
+const loadMiniMaxEndpoints = async (requestId: number, channelUid: string): Promise<boolean> => {
+  const response = await apiService.getHealthCenterChannelEndpoints(channelUid)
+  if (requestId !== minimaxEndpointsRequestId) return false
+  minimaxEndpoints.value = response.endpoints
+  minimaxEndpointsError.value = ''
+  return true
+}
+
+watch(
+  () => [props.dialogOpen, props.providerId, props.channelUid] as const,
+  async ([dialogOpen, providerId, channelUid]) => {
+    const requestId = ++minimaxEndpointsRequestId
+    minimaxEndpoints.value = []
+    minimaxEndpointsError.value = ''
+    minimaxEndpointsLoading.value = false
+    minimaxUsageRefreshing.value = {}
+    if (!dialogOpen || providerId !== 'minimax' || !channelUid) return
+
+    minimaxEndpointsLoading.value = true
+    try {
+      if (!await loadMiniMaxEndpoints(requestId, channelUid)) return
+      // 后端用 TTL 控制实际请求频率；弹窗每次打开都回读一次最新缓存。
+      const supported = minimaxEndpoints.value.filter(endpoint => endpoint.tokenPlanUsageSupported)
+      if (supported.length > 0) {
+        await Promise.allSettled(supported.map(endpoint => apiService.refreshEndpointTokenPlanUsage(endpoint.endpointUid)))
+        if (requestId !== minimaxEndpointsRequestId) return
+        await loadMiniMaxEndpoints(requestId, channelUid)
+      }
+    } catch (err) {
+      if (requestId !== minimaxEndpointsRequestId) return
+      minimaxEndpoints.value = []
+      minimaxEndpointsError.value = err instanceof Error ? err.message : String(err)
+    } finally {
+      if (requestId === minimaxEndpointsRequestId) minimaxEndpointsLoading.value = false
+    }
+  },
+  { immediate: true },
+)
+
+const refreshMinimaxUsage = async (endpoint: EndpointDetailItem) => {
+  const requestId = minimaxEndpointsRequestId
+  const endpointUid = endpoint.endpointUid
+  minimaxUsageRefreshing.value = { ...minimaxUsageRefreshing.value, [endpointUid]: true }
+  try {
+    const response = await apiService.refreshEndpointTokenPlanUsage(endpointUid)
+    if (requestId !== minimaxEndpointsRequestId) return
+    const current = minimaxEndpoints.value.find(item => item.endpointUid === endpointUid)
+    if (!current) return
+    current.miniMaxTokenPlanUsage = response.usage
+    current.miniMaxTokenPlanUsageError = ''
+  } catch (err) {
+    if (requestId !== minimaxEndpointsRequestId) return
+    const current = minimaxEndpoints.value.find(item => item.endpointUid === endpointUid)
+    if (!current) return
+    current.miniMaxTokenPlanUsage = undefined
+    current.miniMaxTokenPlanUsageError = err instanceof Error ? err.message : String(err)
+  } finally {
+    if (requestId === minimaxEndpointsRequestId) {
+      minimaxUsageRefreshing.value = { ...minimaxUsageRefreshing.value, [endpointUid]: false }
+    }
+  }
+}
+
+const saveCompshareCookie = async (credential: ManagedAccountCredential) => {
+  if (!props.accountUid) return
+  const form = compshareForms.value[credential.credentialUid]
+  if (!form?.cookie.trim()) return
+  form.saving = true
+  form.error = ''
+  try {
+    const response = await apiService.setCompshareConsoleCookie(props.accountUid, credential.credentialUid, form.cookie.trim())
+    credential.hasCompshareConsoleCookie = true
+    credential.compsharePlan = response.plan
+    form.cookie = ''
+  } catch (err) {
+    form.error = err instanceof Error ? err.message : String(err)
+  } finally {
+    form.saving = false
+  }
+}
+
+const refreshCompshareCookie = async (credential: ManagedAccountCredential) => {
+  if (!props.accountUid) return
+  const form = compshareForms.value[credential.credentialUid]
+  if (!form) return
+  form.refreshing = true
+  form.error = ''
+  try {
+    const response = await apiService.refreshCompshareConsoleCookie(props.accountUid, credential.credentialUid)
+    credential.compsharePlan = response.plan
+  } catch (err) {
+    form.error = err instanceof Error ? err.message : String(err)
+  } finally {
+    form.refreshing = false
+  }
+}
+
+const clearCompshareCookie = async (credential: ManagedAccountCredential) => {
+  if (!props.accountUid || !window.confirm(t('compshareConsoleCookie.clearConfirm'))) return
+  const form = compshareForms.value[credential.credentialUid]
+  if (!form) return
+  form.clearing = true
+  form.error = ''
+  try {
+    await apiService.clearCompshareConsoleCookie(props.accountUid, credential.credentialUid)
+    credential.hasCompshareConsoleCookie = false
+    credential.compsharePlan = undefined
+  } catch (err) {
+    form.error = err instanceof Error ? err.message : String(err)
+  } finally {
+    form.clearing = false
+  }
+}
+
+const compshareUsageItems = (plan: CompsharePlanSnapshot) => [
+  { label: 'compshareConsoleCookie.fiveHourRemaining', window: plan.fiveHourUsage },
+  { label: 'compshareConsoleCookie.weeklyRemaining', window: plan.weeklyUsage },
+  { label: 'compshareConsoleCookie.monthlyRemaining', window: plan.monthlyUsage },
+]
+
+const compshareNumberFormat = new Intl.NumberFormat()
+const compshareDateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+const compshareFormatRemaining = (window: CompsharePlanUsageWindow) => {
+  const remaining = Math.max(0, window.limit - window.used)
+  return `${compshareNumberFormat.format(remaining)} / ${compshareNumberFormat.format(window.limit)}`
+}
+
+const compshareUsagePercent = (window: CompsharePlanUsageWindow) => {
+  if (window.limit <= 0) return 0
+  return Math.max(0, Math.min(100, (window.used / window.limit) * 100))
+}
+
+const compshareUsageColor = (window: CompsharePlanUsageWindow) => {
+  const percent = compshareUsagePercent(window)
+  if (percent >= 90) return 'error'
+  if (percent >= 70) return 'warning'
+  return 'success'
+}
+
+const compshareFormatEpoch = (value?: number) =>
+  value && value > 0 ? compshareDateTimeFormat.format(new Date(value * 1000)) : '-'
+
+const compshareFormatDateTime = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '-' : compshareDateTimeFormat.format(date)
+}
+
+const compsharePlanDisplayName = (plan: CompsharePlanSnapshot) => plan.displayName || plan.planName || plan.planCode
+
+// Key 行摘要：未绑定 Cookie 时提示绑定，否则展示套餐名与本周余量。
+const compshareUsageSummary = (credential: ManagedAccountCredential): string => {
+  if (!credential.hasCompshareConsoleCookie) return t('compshareConsoleCookie.notConfigured')
+  const plan = credential.compsharePlan
+  if (!plan) return t('compshareConsoleCookie.noUsageData')
+  return `${compsharePlanDisplayName(plan)} · ${t('compshareConsoleCookie.weeklyRemaining')} ${compshareFormatRemaining(plan.weeklyUsage)}`
+}
+
+// Key 行摘要：未绑定 Cookie 时提示绑定，否则展示套餐名与当前套餐余量。
+const mimoUsageSummary = (credential: ManagedAccountCredential): string => {
+  if (!credential.hasMiMoConsoleCookie) return t('mimoConsoleCookie.notConfigured')
+  const plan = credential.mimoTokenPlan
+  if (!plan) return t('mimoConsoleCookie.noUsageData')
+  return `${plan.planName} · ${t('mimoConsoleCookie.currentRemaining')} ${formatMiMoQuota(plan.currentUsage)}`
+}
+
+const minimaxFormatQuota = (remainingPercent: number, used: number, total: number) => {
+  const percent = Math.max(0, Math.min(100, remainingPercent)).toFixed(0)
+  return total > 0 ? `${percent}% (${used}/${total})` : `${percent}%`
+}
+
+const minimaxQuotaColor = (remainingPercent: number) => {
+  if (remainingPercent >= 50) return 'text-success'
+  if (remainingPercent >= 20) return 'text-warning'
+  return 'text-error'
+}
+
+const minimaxFormatRemainsTime = (milliseconds: number) => {
+  if (milliseconds <= 0) return t('healthCenter.detail.resetSoon')
+  const minutes = Math.floor(milliseconds / 60000)
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`
+}
+
+const minimaxFormatDateTime = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
+}
+
+// Key 行摘要：展示各模型当前窗口剩余百分比。
+const minimaxUsageSummary = (endpoint: EndpointDetailItem): string => {
+  if (endpoint.miniMaxTokenPlanUsageError) return endpoint.miniMaxTokenPlanUsageError
+  const usage = endpoint.miniMaxTokenPlanUsage
+  if (!usage?.models.length) return t('healthCenter.detail.noUsageData')
+  return usage.models
+    .map(model => `${model.modelName} ${Math.max(0, Math.min(100, model.currentIntervalRemainingPercent)).toFixed(0)}%`)
+    .join(' · ')
+}
 
 const applyMiMoCookieResponse = (credential: ManagedAccountCredential, response: Awaited<ReturnType<ApiService['setMiMoConsoleCookie']>>) => {
   if (response.keyAdopted && response.adoptedApiKey) {
@@ -1244,6 +2053,124 @@ const clearVolcengineAccessKey = async (credential: ManagedAccountCredential) =>
   }
 }
 
+const saveKimiToken = async (credential: ManagedAccountCredential) => {
+  if (!props.accountUid) return
+  const form = kimiForms.value[credential.credentialUid]
+  if (!form?.accessToken.trim()) return
+  form.saving = true
+  form.error = ''
+  try {
+    const response = await apiService.setKimiConsoleToken(props.accountUid, credential.credentialUid, form.accessToken.trim())
+    credential.hasKimiConsoleToken = true
+    credential.kimiCodeUsage = response.usage
+    form.accessToken = ''
+  } catch (err) {
+    form.error = err instanceof Error ? err.message : String(err)
+  } finally {
+    form.saving = false
+  }
+}
+
+const refreshKimiToken = async (credential: ManagedAccountCredential) => {
+  if (!props.accountUid) return
+  const form = kimiForms.value[credential.credentialUid]
+  if (!form) return
+  form.refreshing = true
+  form.error = ''
+  try {
+    const response = await apiService.refreshKimiConsoleToken(props.accountUid, credential.credentialUid)
+    credential.kimiCodeUsage = response.usage
+  } catch (err) {
+    form.error = err instanceof Error ? err.message : String(err)
+  } finally {
+    form.refreshing = false
+  }
+}
+
+const clearKimiToken = async (credential: ManagedAccountCredential) => {
+  if (!props.accountUid || !window.confirm(t('kimiConsoleToken.clearConfirm'))) return
+  const form = kimiForms.value[credential.credentialUid]
+  if (!form) return
+  form.clearing = true
+  form.error = ''
+  try {
+    await apiService.clearKimiConsoleToken(props.accountUid, credential.credentialUid)
+    credential.hasKimiConsoleToken = false
+    credential.kimiCodeUsage = undefined
+  } catch (err) {
+    form.error = err instanceof Error ? err.message : String(err)
+  } finally {
+    form.clearing = false
+  }
+}
+
+const kimiQuotaItems = (usage: KimiCodeUsageSnapshot) => [
+  { label: t('kimiConsoleToken.weeklyRemaining'), window: usage.weeklyUsage },
+  ...(usage.rateLimits ?? []).map(limit => ({
+    label: t('kimiConsoleToken.rateLimitRemaining', { window: kimiFormatDuration(limit.windowSeconds) }),
+    window: limit.usage,
+  })),
+]
+
+const kimiNumberFormat = new Intl.NumberFormat()
+const kimiPercentFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
+const kimiDateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+const kimiFormatQuota = (window: KimiCodeQuotaWindow) =>
+  `${kimiNumberFormat.format(Math.max(0, window.remaining))} / ${kimiNumberFormat.format(Math.max(0, window.limit))}`
+
+const kimiQuotaUsedPercent = (window: KimiCodeQuotaWindow) => {
+  if (window.limit <= 0) return 0
+  return Math.max(0, Math.min(100, (window.used / window.limit) * 100))
+}
+
+const kimiUsageColor = (percent: number) => {
+  if (percent >= 90) return 'error'
+  if (percent >= 70) return 'warning'
+  return 'success'
+}
+
+const kimiFormatRemainingRatio = (usedRatio: number) => `${kimiPercentFormat.format(Math.max(0, (1 - usedRatio) * 100))}%`
+const kimiFormatUsedRatio = (usedRatio: number) => `${kimiPercentFormat.format(Math.max(0, usedRatio * 100))}%`
+
+const kimiFormatDateTime = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '-' : kimiDateTimeFormat.format(date)
+}
+
+const kimiFormatDuration = (seconds: number) => {
+  if (seconds > 0 && seconds % 3600 === 0) {
+    return t('kimiConsoleToken.durationHours', { value: seconds / 3600 })
+  }
+  if (seconds > 0 && seconds % 60 === 0) {
+    return t('kimiConsoleToken.durationMinutes', { value: seconds / 60 })
+  }
+  return t('kimiConsoleToken.durationSeconds', { value: Math.max(0, seconds) })
+}
+
+// Key 行摘要：未绑定令牌时提示绑定，否则展示本周用量与订阅剩余。
+const kimiUsageSummary = (credential: ManagedAccountCredential): string => {
+  if (!credential.hasKimiConsoleToken) return t('kimiConsoleToken.notConfigured')
+  const usage = credential.kimiCodeUsage
+  if (!usage) return t('kimiConsoleToken.noUsageData')
+  const parts = [`${t('kimiConsoleToken.weeklyRemaining')} ${kimiFormatQuota(usage.weeklyUsage)}`]
+  if (usage.subscriptionBalance) {
+    parts.push(`${t('kimiConsoleToken.subscriptionRemaining')} ${kimiFormatRemainingRatio(usage.subscriptionBalance.amountUsedRatio)}`)
+  }
+  return parts.join(' · ')
+}
+
+// 上游对无赠送账号也返回一条 0/0 的占位赠送额度，过滤掉避免误导；有真实消耗时再展示。
+const kimiVisibleGifts = (usage: KimiCodeUsageSnapshot) =>
+  (usage.giftBalances ?? []).filter(gift => gift.amountUsedRatio > 0 || gift.kimiCodeUsedRatio > 0)
+
 const handleInput = () => {
   apiKeyError.value = ''
   duplicateKeyIndex.value = null
@@ -1368,7 +2295,11 @@ const startCopilotOAuth = async () => {
   }
 }
 
-onBeforeUnmount(clearCopilotPollTimer)
+onBeforeUnmount(() => {
+  clearCopilotPollTimer()
+  minimaxEndpointsRequestId++
+  minimaxKeyHashRequestId++
+})
 
 const cancelCopilotOAuth = () => {
   clearCopilotPollTimer()
@@ -1493,12 +2424,44 @@ const getDisabledKeyLabel = (reason: string) => {
   gap: 12px;
 }
 
+.kimi-quota-grid,
+.kimi-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.kimi-quota-item {
+  min-width: 0;
+}
+
+.compshare-usage-grid,
+.compshare-plan-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.compshare-usage-item {
+  min-width: 0;
+}
+
 @media (max-width: 700px) {
   .volcengine-key-fields {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .mimo-usage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kimi-quota-grid,
+  .kimi-balance-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compshare-usage-grid,
+  .compshare-plan-meta {
     grid-template-columns: minmax(0, 1fr);
   }
 

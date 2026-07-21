@@ -6,16 +6,18 @@ package autopilot
 // 聚合了请求特征（ClassifierInput）和分类结果（TaskClass/TaskDomain）。
 type RequestProfile struct {
 	// ── 来自请求（脱敏，对应 ClassifierInput）──
-	Model       string // 请求的目标模型
-	ChannelKind string // messages | chat | responses | gemini | images | vectors
-	Operation   string // completion | count_tokens | image_generation | image_edit | image_variation | embedding
-	AgentRole   string // "main" | "subagent" | ""
-	AgentType   string // "codex_subagent" | "claude_code_subagent" | ""
-	HasImage    bool   // 是否包含图片
-	EstTokens   int    // 估算输入 token 数（基于字符估算的保守上界）
+	Model       string         // 请求的目标模型
+	ChannelKind string         // messages | chat | responses | gemini | images | vectors
+	Operation   string         // completion | count_tokens | image_generation | image_edit | image_variation | embedding
+	AgentRole   string         // "main" | "subagent" | ""
+	AgentType   string         // "codex_subagent" | "claude_code_subagent" | ""
+	HasImage    bool           // 是否包含图片
+	EstTokens   int            // 估算输入 token 数（基于字符估算的保守上界）
+	Complexity  TaskComplexity // 不含正文的任务难度信号
 
 	// ── 路由能力下界 ──
 	QualityNeed        QualityTier // 该模型对应的质量需求
+	QualityTarget      QualityTier // 结合任务难度后的首选质量档
 	ContextNeed        int         // 估算输入 token 数；输出上限由 scheduler 独立校验
 	VisionNeed         bool        // 是否需要识图
 	ImageGenNeed       bool        // 是否需要原生生图端点
@@ -44,8 +46,9 @@ type ClassifierInput struct {
 	AgentType   string // "codex_subagent" | "claude_code_subagent" | ""
 
 	// ── 请求特征（脱敏）──
-	HasImage  bool // 是否包含图片内容
-	EstTokens int  // 估算输入 token 数（字符级估算，非精确计费）
+	HasImage   bool           // 是否包含图片内容
+	EstTokens  int            // 估算输入 token 数（字符级估算，非精确计费）
+	Complexity TaskComplexity // 请求入口提取的任务难度，不含正文
 
 	// ── 路由能力下界 ──
 	ContextNeed   int  // 估算输入 token 数（0 = 未知），与 scheduler 的输入窗口过滤语义一致

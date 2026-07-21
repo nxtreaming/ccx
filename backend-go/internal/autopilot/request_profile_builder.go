@@ -10,6 +10,7 @@ type RequestProfileFeatures struct {
 	AgentType          string
 	HasImage           bool
 	EstTokens          int
+	Complexity         TaskComplexity
 	ContextNeed        int
 	VisionNeed         bool
 	ImageGenNeed       bool
@@ -19,6 +20,7 @@ type RequestProfileFeatures struct {
 	EmbeddingDimension int
 	SessionID          string
 	PromptHash         string
+	DomainHints        DomainHints
 }
 
 // BuildRequestProfile 将协议无关特征收敛为 SmartRouter 使用的请求画像。
@@ -43,6 +45,7 @@ func BuildRequestProfile(features RequestProfileFeatures) RequestProfile {
 		AgentType:          features.AgentType,
 		HasImage:           features.HasImage,
 		EstTokens:          features.EstTokens,
+		Complexity:         features.Complexity,
 		QualityNeed:        qualityNeed,
 		ContextNeed:        contextNeed,
 		VisionNeed:         features.VisionNeed || features.HasImage,
@@ -55,6 +58,59 @@ func BuildRequestProfile(features RequestProfileFeatures) RequestProfile {
 		PromptHash:         features.PromptHash,
 	}
 
-	ClassifyAndFill(&profile, BuildClassifierInput(&profile))
+	input := BuildClassifierInput(&profile)
+	input.DomainHints = features.DomainHints
+	ClassifyAndFill(&profile, input)
+	profile.QualityTarget = ResolveQualityTarget(&profile)
 	return profile
+}
+
+// ResolveQualityTarget 把用户请求模型档位和当前任务难度收敛为跨渠道统一目标。
+func ResolveQualityTarget(profile *RequestProfile) QualityTier {
+	if profile == nil || profile.QualityNeed == "" {
+		return ""
+	}
+
+	target := profile.QualityNeed
+	switch profile.TaskClass {
+	case TaskClassImageGen:
+		target = QualityTierNormal
+	case TaskClassEmbedding:
+		target = QualityTierLow
+	default:
+		switch profile.Complexity {
+		case TaskComplexityTrivial:
+			target = QualityTierLow
+		case TaskComplexityRoutine:
+			target = QualityTierNormal
+		case TaskComplexityComplex:
+			if profile.TaskClass == TaskClassWorker {
+				target = QualityTierHigh
+			} else {
+				target = profile.QualityNeed
+			}
+		default:
+			switch profile.TaskClass {
+			case TaskClassLightweight:
+				target = QualityTierLow
+			case TaskClassWorker:
+				target = QualityTierNormal
+			case TaskClassSupervisor, TaskClassVision, TaskClassLongContext:
+				target = QualityTierHigh
+			}
+		}
+	}
+
+	if profile.ReasoningNeed || profile.VisionNeed || profile.HasImage || profile.ContextNeed >= 50_000 {
+		if qualityTierRank(target) < qualityTierRank(QualityTierHigh) {
+			target = QualityTierHigh
+		}
+	} else if profile.ToolUseNeed && qualityTierRank(target) < qualityTierRank(QualityTierNormal) {
+		target = QualityTierNormal
+	}
+
+	if qualityTierRank(target) > qualityTierRank(profile.QualityNeed) {
+		return profile.QualityNeed
+	}
+	return target
 }

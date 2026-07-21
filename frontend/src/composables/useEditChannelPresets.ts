@@ -1,5 +1,4 @@
 import { computed, type ComputedRef } from 'vue'
-import type { Channel } from '../services/api'
 import { ensureRuntimePresetsLoaded, useRuntimePresets } from './useRuntimePresets'
 
 type ChannelType = 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors'

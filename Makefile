@@ -4,7 +4,7 @@ GREEN=\033[0;32m
 YELLOW=\033[0;33m
 NC=\033[0m
 
-.PHONY: help install dev run build clean frontend-dev frontend-build embed-frontend desktop-dev desktop-build container-verify generate-preset-manifest
+.PHONY: help install dev run build clean frontend-dev frontend-build embed-frontend desktop-dev desktop-build container-verify generate-preset-manifest benchmark-update benchmark-update-dry benchmark-chart
 
 help:
 	@echo "$(GREEN)CCX - 可用命令:$(NC)"
@@ -29,6 +29,7 @@ help:
 	@echo "  make generate-preset-manifest - 生成预设清单"
 	@echo "  make benchmark-update         - 自动更新模型能力基准数据"
 	@echo "  make benchmark-update-dry     - 预览基准数据变更（不写入）"
+	@echo "  make benchmark-chart          - 生成能力-成本边界曲线"
 
 install:
 	@echo "$(GREEN)📦 安装前端依赖...$(NC)"
@@ -99,3 +100,6 @@ benchmark-update:
 
 benchmark-update-dry:
 	@node scripts/update-benchmark-data.mjs --dry-run
+
+benchmark-chart:
+	@node scripts/generate-benchmark-chart.mjs

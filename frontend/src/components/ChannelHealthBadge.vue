@@ -8,7 +8,7 @@
     @focusout="hovered = false"
   >
     <div class="health-dot-wrapper" :class="`health-${health.aggState}`">
-      <div class="health-dot" />
+      <div class="health-dot"></div>
     </div>
     <v-tooltip
       v-if="hovered"

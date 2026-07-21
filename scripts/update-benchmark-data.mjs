@@ -21,8 +21,8 @@
  *   --models        只更新指定模型 (逗号分隔)
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 
@@ -30,9 +30,7 @@ import {
   DEEPSWE_MODEL_MAP,
   BENCHLM_MODEL_MAP,
   BENCHLM_CATEGORY_MAP,
-  deepsweToCanonical,
-  benchlmToCanonical,
-  benchlmCategoryToCcx,
+  canonicalModelToPattern,
   deepsweModelToPattern,
 } from './benchmark-sources/mapper.mjs'
 import { fetchDeepsweData } from './benchmark-sources/deepswe.mjs'
@@ -51,7 +49,14 @@ const skipBenchlm = args.includes('--skip-benchlm')
 const skipDradar = args.includes('--skip-dradar')
 const skipLitellm = args.includes('--skip-litellm')
 const modelsArg = args.find(a => a.startsWith('--models='))
-const targetModels = modelsArg ? modelsArg.split('=')[1].split(',') : null
+const modelsArgIndex = args.indexOf('--models')
+const modelsValue = modelsArg?.split('=', 2)[1] ?? (modelsArgIndex >= 0 ? args[modelsArgIndex + 1] : '')
+const targetModels = modelsValue ? modelsValue.split(',').map(model => model.trim()).filter(Boolean) : null
+const generatedPaths = [
+  join(root, 'backend-go/internal/config/generated_model_registry.go'),
+  join(root, 'frontend/src/generated/modelRegistry.ts'),
+  join(root, 'desktop/frontend/src/generated/model-registry.ts'),
+]
 
 /**
  * 加载注册表
@@ -64,9 +69,23 @@ function loadRegistry() {
 /**
  * 保存注册表
  */
+function serializeRegistry(registry) {
+  return JSON.stringify(registry, null, 2) + '\n'
+}
+
+function atomicWrite(path, content) {
+  const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`
+  try {
+    writeFileSync(tempPath, content, 'utf8')
+    renameSync(tempPath, path)
+  } catch (error) {
+    if (existsSync(tempPath)) unlinkSync(tempPath)
+    throw error
+  }
+}
+
 function saveRegistry(registry) {
-  const content = JSON.stringify(registry, null, 2) + '\n'
-  writeFileSync(registryPath, content, 'utf8')
+  atomicWrite(registryPath, serializeRegistry(registry))
 }
 
 /**
@@ -85,31 +104,57 @@ function findProfileIndex(profiles, canonicalModel) {
  * @param {string} pattern
  * @returns {Object}
  */
-function createProfile(canonicalModel, pattern) {
+export function createProfile(canonicalModel, pattern = canonicalModelToPattern(canonicalModel)) {
+  if (!pattern) {
+    throw new Error(`cannot generate benchmark pattern for ${canonicalModel}`)
+  }
   return {
     patterns: [pattern],
     canonicalModel,
     verifiedAt: new Date().toISOString().split('T')[0],
     lane: 'provisional',
     sources: [],
+    sharedResults: 1,
+    comparableCategories: 1,
+    totalCategories: 1,
   }
+}
+
+function ensureEvidenceProfileMetadata(profile) {
+  const evidence = profile.benchmarkEvidence || []
+  const sourceURLs = evidence.map(item => item.sourceUrl).filter(Boolean)
+  profile.sources = [...new Set([...(profile.sources || []), ...sourceURLs])]
+
+  const cohortSize = Math.max(0, ...evidence.map(item => Number(item.cohortSize) || 0))
+  const domainCount = new Set(evidence.map(item => item.domain).filter(Boolean)).size
+  profile.sharedResults = Math.max(Number(profile.sharedResults) || 0, cohortSize, 1)
+  profile.comparableCategories = Math.max(Number(profile.comparableCategories) || 0, domainCount, 1)
+  profile.totalCategories = Math.max(
+    Number(profile.totalCategories) || 0,
+    profile.comparableCategories,
+  )
 }
 
 /**
  * 合并 deepswe 数据到注册表
  */
-function mergeDeepsweData(registry, deepsweData, report) {
+export function mergeDeepsweData(registry, deepsweData, report, models = targetModels) {
   if (!registry.benchmarkProfiles) {
     registry.benchmarkProfiles = []
   }
 
   for (const [canonical, data] of Object.entries(deepsweData)) {
-    if (targetModels && !targetModels.includes(canonical)) {
+    if (models && !models.includes(canonical)) {
       continue
     }
 
     const idx = findProfileIndex(registry.benchmarkProfiles, canonical)
-    const profile = idx >= 0 ? registry.benchmarkProfiles[idx] : createProfile(canonical, deepsweModelToPattern(data.deepsweMeta?.deepsweModel || canonical))
+    const profile = idx >= 0
+      ? registry.benchmarkProfiles[idx]
+      : createProfile(
+          canonical,
+          deepsweModelToPattern(data.deepsweMeta?.deepsweModel) || canonicalModelToPattern(canonical),
+        )
 
     // 确保 benchmarkEvidence 存在
     if (!profile.benchmarkEvidence) {
@@ -121,6 +166,7 @@ function mergeDeepsweData(registry, deepsweData, report) {
 
     // 添加新的 deepswe 证据
     profile.benchmarkEvidence.push(...data.benchmarkEvidence)
+    ensureEvidenceProfileMetadata(profile)
 
     // 更新 verifiedAt
     profile.verifiedAt = new Date().toISOString().split('T')[0]
@@ -139,18 +185,18 @@ function mergeDeepsweData(registry, deepsweData, report) {
 /**
  * 合并 benchlm.ai 数据到注册表
  */
-function mergeBenchlmData(registry, benchlmData, report) {
+export function mergeBenchlmData(registry, benchlmData, report, models = targetModels) {
   if (!registry.benchmarkProfiles) {
     registry.benchmarkProfiles = []
   }
 
   for (const [canonical, data] of Object.entries(benchlmData)) {
-    if (targetModels && !targetModels.includes(canonical)) {
+    if (models && !models.includes(canonical)) {
       continue
     }
 
     const idx = findProfileIndex(registry.benchmarkProfiles, canonical)
-    const profile = idx >= 0 ? registry.benchmarkProfiles[idx] : createProfile(canonical, benchlmModelToPattern(canonical))
+    const profile = idx >= 0 ? registry.benchmarkProfiles[idx] : createProfile(canonical)
 
     // 更新 overallScore
     if (data.overallScore !== null && data.overallScore !== undefined) {
@@ -193,18 +239,18 @@ function mergeBenchlmData(registry, benchlmData, report) {
 /**
  * 合并 dradar 数据到注册表
  */
-function mergeDradarData(registry, dradarData, report) {
+export function mergeDradarData(registry, dradarData, report, models = targetModels) {
   if (!registry.benchmarkProfiles) {
     registry.benchmarkProfiles = []
   }
 
   for (const [canonical, data] of Object.entries(dradarData)) {
-    if (targetModels && !targetModels.includes(canonical)) {
+    if (models && !models.includes(canonical)) {
       continue
     }
 
     const idx = findProfileIndex(registry.benchmarkProfiles, canonical)
-    const profile = idx >= 0 ? registry.benchmarkProfiles[idx] : createProfile(canonical, deepsweModelToPattern(canonical))
+    const profile = idx >= 0 ? registry.benchmarkProfiles[idx] : createProfile(canonical)
 
     // 确保 benchmarkEvidence 存在
     if (!profile.benchmarkEvidence) {
@@ -218,6 +264,7 @@ function mergeDradarData(registry, dradarData, report) {
 
     // 添加新的 dradar 证据
     profile.benchmarkEvidence.push(...data.benchmarkEvidence)
+    ensureEvidenceProfileMetadata(profile)
 
     // 添加 cost 数据作为额外字段（如果 profile 支持）
     if (data.costData && Object.keys(data.costData).length > 0) {
@@ -244,13 +291,13 @@ function mergeDradarData(registry, dradarData, report) {
 /**
  * 合并 litellm 数据到注册表（更新 upstreamCapabilities 的 pricing/contextWindow）
  */
-function mergeLitellmData(registry, litellmData, report) {
+export function mergeLitellmData(registry, litellmData, report, models = targetModels) {
   if (!registry.upstreamCapabilities) {
     registry.upstreamCapabilities = []
   }
 
   for (const [canonical, data] of Object.entries(litellmData)) {
-    if (targetModels && !targetModels.includes(canonical)) {
+    if (models && !models.includes(canonical)) {
       continue
     }
 
@@ -305,12 +352,16 @@ function mergeLitellmData(registry, litellmData, report) {
         if (!cap.capabilities) {
           cap.capabilities = {}
         }
-        if (data.supports.reasoning !== undefined) cap.capabilities.reasoning = data.supports.reasoning
-        if (data.supports.vision !== undefined) cap.capabilities.vision = data.supports.vision
-        if (data.supports.functionCalling !== undefined) cap.capabilities.functionCalling = data.supports.functionCalling
-        if (data.supports.parallelFunctionCalling !== undefined) cap.capabilities.parallelFunctionCalling = data.supports.parallelFunctionCalling
-        if (data.supports.webSearch !== undefined) cap.capabilities.webSearch = data.supports.webSearch
-        report.litellmUpdated.push({ canonical, field: 'capabilities', value: 'updated' })
+        let capabilitiesUpdated = false
+        for (const field of ['reasoning', 'vision', 'toolCalls', 'parallelFunctionCalling', 'webSearch']) {
+          if (data.supports[field] !== undefined && cap.capabilities[field] === undefined) {
+            cap.capabilities[field] = data.supports[field]
+            capabilitiesUpdated = true
+          }
+        }
+        if (capabilitiesUpdated) {
+          report.litellmUpdated.push({ canonical, field: 'capabilities', value: 'filled missing values' })
+        }
       }
 
       registry.upstreamCapabilities[capIdx] = cap
@@ -320,27 +371,37 @@ function mergeLitellmData(registry, litellmData, report) {
   }
 }
 
-/**
- * 为 benchlm 模型生成 pattern
- */
-function benchlmModelToPattern(canonical) {
-  // 复用 deepswe 的 pattern 生成逻辑
-  if (canonical.startsWith('claude-')) {
-    return `(?:^|[-/])${canonical}(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)`
+export function validateRegistry(registry) {
+  for (const [index, profile] of (registry.benchmarkProfiles || []).entries()) {
+    const prefix = `benchmarkProfiles[${index}]`
+    if (!profile.canonicalModel || !Array.isArray(profile.patterns) || profile.patterns.length === 0) {
+      throw new Error(`${prefix} is missing canonicalModel or patterns`)
+    }
+    if (profile.patterns.some(pattern => typeof pattern !== 'string' || pattern.trim() === '')) {
+      throw new Error(`${prefix} contains an empty pattern`)
+    }
+    if ((!profile.categoryScores || Object.keys(profile.categoryScores).length === 0) &&
+        (!profile.benchmarkEvidence || profile.benchmarkEvidence.length === 0)) {
+      throw new Error(`${prefix} requires categoryScores or benchmarkEvidence`)
+    }
+    if (!Array.isArray(profile.sources) || profile.sources.length === 0) {
+      throw new Error(`${prefix} requires at least one source`)
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.verifiedAt || '')) {
+      throw new Error(`${prefix}.verifiedAt must use YYYY-MM-DD`)
+    }
+    if (!['provisional', 'verified'].includes(profile.lane)) {
+      throw new Error(`${prefix}.lane is invalid`)
+    }
+    for (const field of ['sharedResults', 'comparableCategories', 'totalCategories']) {
+      if (!Number.isFinite(profile[field]) || profile[field] <= 0) {
+        throw new Error(`${prefix}.${field} must be positive`)
+      }
+    }
+    if (profile.comparableCategories > profile.totalCategories) {
+      throw new Error(`${prefix}.comparableCategories exceeds totalCategories`)
+    }
   }
-  if (canonical.startsWith('gpt-')) {
-    const escaped = canonical.replace(/\./g, '\\.')
-    return `(?:^|[-/])${escaped}(?=$|@)`
-  }
-  if (canonical.startsWith('glm-')) {
-    const escaped = canonical.replace(/\./g, '\\.')
-    return `(?:^|[-/])${escaped}(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)`
-  }
-  if (canonical.startsWith('kimi-')) {
-    const escaped = canonical.replace(/\./g, '\\.')
-    return `(?:^|[-/])${escaped}(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)`
-  }
-  return `(?:^|[-/])${canonical}(?=$|@)`
 }
 
 /**
@@ -360,11 +421,34 @@ function runCodeGeneration() {
   }
 }
 
+function saveAndGenerateAtomically(registry) {
+  const trackedPaths = [registryPath, ...generatedPaths]
+  const snapshots = new Map(
+    trackedPaths
+      .filter(path => existsSync(path))
+      .map(path => [path, readFileSync(path, 'utf8')]),
+  )
+
+  try {
+    saveRegistry(registry)
+    runCodeGeneration()
+  } catch (error) {
+    for (const [path, content] of snapshots) {
+      atomicWrite(path, content)
+    }
+    throw error
+  }
+}
+
 /**
  * 主函数
  */
-async function main() {
+export async function main() {
   console.log('='.repeat(60))
+
+  if (skipDeepswe && skipBenchlm && skipDradar && skipLitellm) {
+    throw new Error('all benchmark sources are skipped')
+  }
   console.log('CCX Benchmark Data Auto-Updater')
   console.log('='.repeat(60))
   console.log(`Mode: ${dryRun ? 'DRY RUN' : 'UPDATE'}`)
@@ -435,14 +519,18 @@ async function main() {
     }
   }
 
+  if (report.errors.length > 0) {
+    const failedSources = report.errors.map(item => item.source).join(', ')
+    throw new Error(`enabled sources failed (${failedSources}); registry was not changed`)
+  }
+
+  validateRegistry(registry)
+
   // 保存注册表
   if (!dryRun) {
     console.log('\n--- Saving registry ---')
-    saveRegistry(registry)
-    console.log(`[save] Registry saved to ${registryPath}`)
-
-    // 运行代码生成
-    runCodeGeneration()
+    saveAndGenerateAtomically(registry)
+    console.log(`[save] Registry and generated code updated atomically`)
   } else {
     console.log('\n--- DRY RUN: No changes saved ---')
   }
@@ -487,8 +575,10 @@ async function main() {
   }
 }
 
-// 运行
-main().catch(err => {
-  console.error('Fatal error:', err)
-  process.exit(1)
-})
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : ''
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  main().catch(err => {
+    console.error('Fatal error:', err)
+    process.exit(1)
+  })
+}

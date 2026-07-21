@@ -156,10 +156,11 @@ type ScoringCandidate struct {
 
 // ScoringContext 是评分时的上下文信息（来自请求/策略）。
 type ScoringContext struct {
-	TaskClass   TaskClass
-	TaskDomain  TaskDomain
-	FamilyPrefs []ModelFamily // 用户派系偏好顺序
-	Weights     ScoringWeights
+	TaskClass         TaskClass
+	TaskDomain        TaskDomain
+	TargetQualityTier QualityTier   // 当前任务目标档；空值时兼容旧的绝对档位评分
+	FamilyPrefs       []ModelFamily // 用户派系偏好顺序
+	Weights           ScoringWeights
 
 	// tierMatchHint：策略偏好的标签（quality/stability/speed/cost）。
 	// 用于计算 tierMatchBonus（渠道画像标签匹配策略优先标签时 +10）。
@@ -224,8 +225,16 @@ var costTierScore = map[CostTier]float64{
 func ScoreCandidate(candidate ScoringCandidate, ctx ScoringContext) ScoredCandidate {
 	w := ctx.Weights
 
-	// 1. qualityScore: low=1, normal=2, high=3, premium=4
+	// 1. qualityScore：有任务目标时按档位距离评分，避免轻量/常规任务
+	// 因“绝对档位更高”持续选择旗舰模型；旧调用方未提供目标时保持原语义。
 	qs := qualityTierScore[candidate.QualityTier]
+	if ctx.TargetQualityTier != "" && candidate.QualityTier != "" {
+		distance := absInt(qualityTierRank(candidate.QualityTier) - qualityTierRank(ctx.TargetQualityTier))
+		qs = float64(4 - distance)
+		if qs < 1 {
+			qs = 1
+		}
+	}
 
 	// 2. stabilityScore: unstable=0, normal=1, stable=2
 	ss := stabilityTierScore[candidate.StabilityTier]

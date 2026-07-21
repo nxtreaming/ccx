@@ -104,6 +104,17 @@ export function deepsweModelToPattern(deepsweModel) {
   const canonical = deepsweToCanonical(deepsweModel)
   if (!canonical) return null
 
+  return canonicalModelToPattern(canonical)
+}
+
+/**
+ * 生成 CCX canonicalModel 对应的 pattern。
+ * @param {string} canonical
+ * @returns {string|null}
+ */
+export function canonicalModelToPattern(canonical) {
+  if (typeof canonical !== 'string' || canonical.trim() === '') return null
+
   // 根据模型类型生成 pattern
   if (canonical.startsWith('claude-')) {
     // claude-opus-4-8 -> (?:^|[-/])claude-opus-4-8(?:-\d{4}-\d{2}-\d{2}|-\d{6,8})?(?=$|@)

@@ -16,6 +16,8 @@
  * dradar 模型名 -> CCX canonicalModel 映射
  * dradar 使用点号: "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"
  */
+import { fetchWithTimeout } from './http.mjs'
+
 export const DRADAR_MODEL_MAP = {
   'gpt-5.6-sol': 'gpt-5.6-sol',
   'gpt-5.6-terra': 'gpt-5.6-terra',
@@ -34,7 +36,7 @@ export async function fetchLeaderboard() {
 
   console.log(`[dradar] Fetching ${url}`)
 
-  const resp = await fetch(url, {
+  const resp = await fetchWithTimeout(url, {
     headers: {
       'User-Agent': 'ccx-benchmark-updater/1.0',
       Accept: 'application/json',
@@ -57,7 +59,7 @@ export async function fetchTable() {
 
   console.log(`[dradar] Fetching ${url}`)
 
-  const resp = await fetch(url, {
+  const resp = await fetchWithTimeout(url, {
     headers: {
       'User-Agent': 'ccx-benchmark-updater/1.0',
       Accept: 'application/json',
@@ -193,9 +195,9 @@ export function extractCostData(data, modelMap) {
  */
 export function toBenchmarkEvidence(modelData, allModels) {
   // 计算 percentile
-  const allRates = allModels.map(m => m.passRate).sort((a, b) => a - b)
-  const index = allRates.findIndex(r => r >= modelData.passRate)
-  const percentile = index === -1 ? 1 : index / allRates.length
+  const allRates = allModels.map(m => m.passRate).filter(rate => rate > 0)
+  const atOrBelow = allRates.filter(rate => rate <= modelData.passRate).length
+  const percentile = allRates.length > 0 ? atOrBelow / allRates.length : 0
 
   return {
     benchmark: 'deepswe',
@@ -207,7 +209,7 @@ export function toBenchmarkEvidence(modelData, allModels) {
     uncertainty: 0, // dradar 不提供 CI
     cohortPercentile: percentile,
     taskCount: modelData.cells,
-    cohortSize: modelData.graded,
+    cohortSize: allModels.length,
     effort: modelData.bestEffort,
     selectionBasis: 'best_available_effort',
     sourceUrl: 'https://deng.codexradar.com/',

@@ -624,6 +624,22 @@ func TestScoreCandidate_ProviderQualityConfidenceThreshold(t *testing.T) {
 	}
 }
 
+func TestScoreCandidate_QualityTracksTaskTarget(t *testing.T) {
+	weights := ScoringWeights{WQuality: 1}
+	low := ScoringCandidate{ChannelUID: "low", QualityTier: QualityTierLow}
+	premium := ScoringCandidate{ChannelUID: "premium", QualityTier: QualityTierPremium}
+
+	lightweight := ScoringContext{Weights: weights, TargetQualityTier: QualityTierLow}
+	if ScoreCandidate(low, lightweight).Score <= ScoreCandidate(premium, lightweight).Score {
+		t.Fatal("low target should prefer low tier over premium tier")
+	}
+
+	complex := ScoringContext{Weights: weights, TargetQualityTier: QualityTierPremium}
+	if ScoreCandidate(premium, complex).Score <= ScoreCandidate(low, complex).Score {
+		t.Fatal("premium target should prefer premium tier over low tier")
+	}
+}
+
 // ── Penalty 测试 ──
 
 func TestScoreCandidate_Penalty(t *testing.T) {

@@ -24,10 +24,21 @@ var embeddedChannelPresets []byte
 //go:embed embedded/builtin-manifest.json
 var embeddedBuiltinManifest []byte
 
+//go:embed embedded/index.json
+var embeddedIndex []byte
+
 // EmbeddedBundle 解析并返回编译期内置的 PresetBundle。
-// 内置数据的 DataVersion 为空串，任何有效远程版本都会覆盖它。
+// 内置数据携带生成时的数据版本，防止旧磁盘缓存覆盖更新后的二进制内置预置。
 // 解析失败视为构建缺陷（内置数据由本仓库控制），直接 panic。
 func EmbeddedBundle() *PresetBundle {
+	var index PresetIndex
+	if err := json.Unmarshal(embeddedIndex, &index); err != nil {
+		panic(fmt.Sprintf("[presetstore] 内置 index.json 解析失败: %v", err))
+	}
+	if index.DataVersion == "" {
+		panic("[presetstore] 内置 index.json 缺少 dataVersion")
+	}
+
 	var sub SubscriptionPreset
 	if err := json.Unmarshal(embeddedSubscriptionPreset, &sub); err != nil {
 		panic(fmt.Sprintf("[presetstore] 内置 subscription-preset.json 解析失败: %v", err))
@@ -50,7 +61,7 @@ func EmbeddedBundle() *PresetBundle {
 
 	return &PresetBundle{
 		SchemaVersion:          CurrentSchemaVersion,
-		DataVersion:            "", // 内置默认无数据版本
+		DataVersion:            index.DataVersion,
 		Subscription:           sub,
 		ModelRegistry:          &registry,
 		ChannelPresets:         &channelPresets,

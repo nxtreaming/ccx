@@ -121,6 +121,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useTheme } from 'vuetify'
+import type { ApexOptions } from 'apexcharts'
 import VueApexCharts from 'vue3-apexcharts'
 import { api, type GlobalStatsHistoryResponse, type GlobalHistoryDataPoint as _GlobalHistoryDataPoint, type GlobalStatsSummary, type ModelHistoryDataPoint } from '../services/api'
 import { useI18n } from '../i18n'
@@ -369,7 +370,7 @@ const formatCost = (val: number): string => {
 }
 
 // Chart options
-const chartOptions = computed<ApexCharts.ApexOptions>(() => {
+const chartOptions = computed<ApexOptions>(() => {
   const mode = selectedView.value
   const isMultiModelView = (mode === 'traffic' || mode === 'cost') && hasMultiModel.value
 

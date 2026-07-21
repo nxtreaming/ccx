@@ -160,6 +160,15 @@ export default [
     }
   },
 
+  // TypeScript 已由编译器和 @typescript-eslint 处理标识符与未使用变量。
+  {
+    files: ['**/*.ts'],
+    rules: {
+      'no-undef': 'off',
+      'no-unused-vars': 'off'
+    }
+  },
+
   // 忽略文件
   {
     ignores: [

@@ -131,7 +131,7 @@ const props = defineProps<{
   channelType: ChannelKind
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   (_e: 'update:modelValue', _v: boolean): void
 }>()
 

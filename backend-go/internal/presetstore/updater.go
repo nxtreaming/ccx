@@ -118,7 +118,7 @@ func NewPresetUpdater(store *PresetStore, cfg UpdaterConfig) *PresetUpdater {
 	return u
 }
 
-// LoadCacheAtStartup 尝试从磁盘缓存恢复 bundle；成功时立即切换为 cache 源。
+// LoadCacheAtStartup 尝试从磁盘缓存恢复 bundle；仅较新缓存会切换为 cache 源。
 func (u *PresetUpdater) LoadCacheAtStartup() error {
 	if strings.TrimSpace(u.config.CacheDir) == "" {
 		return fmt.Errorf("[PresetUpdater-Cache] cacheDir 未配置")
@@ -127,6 +127,17 @@ func (u *PresetUpdater) LoadCacheAtStartup() error {
 	if err != nil {
 		u.setCacheValid(false)
 		return err
+	}
+	currentVersion := u.store.DataVersion()
+	if compareDataVersion(bundle.DataVersion, currentVersion) <= 0 {
+		log.Printf("[PresetUpdater-Cache] 跳过非新版本缓存: current=%q cached=%q", currentVersion, bundle.DataVersion)
+		u.mu.Lock()
+		u.source = "embedded"
+		u.dataVersion = currentVersion
+		u.cacheValid = true
+		u.lastError = ""
+		u.mu.Unlock()
+		return nil
 	}
 	u.store.Swap(bundle)
 	u.mu.Lock()
@@ -561,7 +572,14 @@ func parseDataVersion(raw string) dataVersion {
 	if raw == "" {
 		return dataVersion{}
 	}
-	fields := splitVersionTokens(raw)
+	numericVersion := raw
+	if numericVersion[0] == 'v' || numericVersion[0] == 'V' {
+		numericVersion = numericVersion[1:]
+	}
+	fields := splitVersionTokens(numericVersion)
+	if len(fields) == 0 {
+		return dataVersion{raw: raw, hasText: true}
+	}
 	parts := make([]int, 0, len(fields))
 	for _, field := range fields {
 		value, err := strconv.Atoi(field)
@@ -576,7 +594,7 @@ func parseDataVersion(raw string) dataVersion {
 func splitVersionTokens(raw string) []string {
 	return strings.FieldsFunc(raw, func(r rune) bool {
 		switch r {
-		case '.', '-', '_':
+		case '.', '-', '_', '+':
 			return true
 		default:
 			return false

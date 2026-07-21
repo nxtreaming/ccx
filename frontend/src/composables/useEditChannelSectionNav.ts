@@ -32,8 +32,8 @@ export function useEditChannelSectionNav(t: Translator) {
     }
   }
 
-  function setSectionRef(id: string, el: any) {
-    sectionRefs.value[id] = el as HTMLElement | null
+  function setSectionRef(id: string, el: HTMLElement | null) {
+    sectionRefs.value[id] = el
   }
 
   function updateActiveSectionFromScroll() {

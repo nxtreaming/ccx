@@ -829,7 +829,7 @@ const dispatchOverlayResize = () => {
 
 const scheduleChannelMenuReposition = () => {
   nextTick(() => {
-    requestAnimationFrame(dispatchOverlayResize)
+    window.requestAnimationFrame(dispatchOverlayResize)
 
     if (channelMenuRepositionTimer) {
       clearTimeout(channelMenuRepositionTimer)
@@ -1256,10 +1256,7 @@ const websiteLinkIcon = (kind: ChannelWebsiteKind): string => (
 // Activity data Map cache (avoids linear lookup)
 
 const {
-  activityMap,
-  getChannelActivity,
   getActivityBars,
-  getActivityPath,
   _getActivityAreaPath,
   _getActivityGradient,
   formatRPM,

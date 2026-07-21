@@ -997,6 +997,7 @@ export interface EndpointDetailItem {
   channelKind: string
   baseUrl: string
   keyHash: string
+  keyMask?: string
   healthState: HealthState
   healthConfidence: number
   healthEvidence?: string
@@ -1401,6 +1402,9 @@ export interface RoutingCandidate {
   originTier?: string
   channelKind?: string
   healthState?: string
+  mappedModel?: string
+  mappingSource?: string
+  mappingReason?: string
   totalScore: number
   scores?: CandidateScore[]
   domainEvidence?: DomainStrengthEvidence

@@ -934,6 +934,7 @@ func buildEndpointTrace(req *RequestProfile, candidates []EndpointCandidate, sta
 			ChannelUID:  cand.ChannelUID,
 			MetricsKey:  SanitizeMetricsKey(cand.MetricsKey),
 			ChannelKind: cand.ChannelKind,
+			MappedModel: cand.MappedModel,
 			TotalScore:  cand.Score,
 			Selected:    true,
 			Scores: []CandidateScore{

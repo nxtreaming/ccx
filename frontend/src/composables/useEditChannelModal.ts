@@ -20,7 +20,6 @@ import {
   resolveChannelWatcherAction,
   syncBaseUrlsFormState,
   filterValidSupportedModelPatterns,
-  parseSupportedModelInput,
 } from '../utils/add-channel-modal-state'
 import { streamTimeoutPresets } from '../utils/streamTimeoutPresets'
 import { useI18n } from '../i18n'
@@ -1126,7 +1125,7 @@ export function useEditChannelModal(props: ResolvedEditChannelModalProps, emit: 
   })
 
   // 辅助函数：更新表单字段
-  const updateForm = (partial: Record<string, any>) => {
+  const updateForm = (partial: Record<string, unknown>) => {
     Object.assign(form, partial)
   }
 

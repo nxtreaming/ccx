@@ -144,8 +144,8 @@
           hide-selected
           @update:model-value="updateField('tags', $event)"
         >
-          <template #chip="{ props, item }">
-            <v-chip v-bind="props" :text="item.value" color="teal" size="small" variant="tonal" closable />
+          <template #chip="{ props: chipProps, item }">
+            <v-chip v-bind="chipProps" :text="item.value" color="teal" size="small" variant="tonal" closable />
           </template>
         </v-combobox>
       </v-col>

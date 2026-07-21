@@ -2,6 +2,7 @@ package config
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/BenedictKing/ccx/internal/presetstore"
@@ -726,6 +727,44 @@ func TestCurrentBuiltinSnapshot_RebuildsAfterSetDefault(t *testing.T) {
 	resolved := ResolveUpstreamCapability("custom-runtime-model", nil, nil)
 	if !resolved.Known || resolved.Capability.ContextWindowTokens != 777 {
 		t.Fatalf("resolved = %+v, want runtime rebuilt capability", resolved)
+	}
+}
+
+func TestCurrentBuiltinSnapshot_IgnoresOlderCacheMissingK3(t *testing.T) {
+	original := presetstore.Default()
+	defer func() {
+		presetstore.SetDefault(original)
+		_ = BuiltinUpstreamModelCapabilities()
+	}()
+
+	stale := presetstore.EmbeddedBundle()
+	stale.DataVersion = "v0.0.1+19700101"
+	stale.ModelRegistry.UpstreamCapabilities = slices.DeleteFunc(
+		stale.ModelRegistry.UpstreamCapabilities,
+		func(entry presetstore.ModelRegistryCapabilityPreset) bool {
+			return slices.ContainsFunc(entry.Patterns, func(pattern string) bool {
+				return strings.Contains(strings.ToLower(pattern), "k3")
+			})
+		},
+	)
+	cacheDir := t.TempDir()
+	if err := presetstore.SaveCache(cacheDir, stale); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+
+	store := presetstore.NewPresetStore(nil)
+	updater := presetstore.NewPresetUpdater(store, presetstore.UpdaterConfig{CacheDir: cacheDir})
+	if err := updater.LoadCacheAtStartup(); err != nil {
+		t.Fatalf("LoadCacheAtStartup() error = %v", err)
+	}
+	presetstore.SetDefault(store)
+
+	resolved := ResolveUpstreamCapability("k3", nil, nil)
+	if !resolved.Known || resolved.Source != "builtin" ||
+		!resolved.Capability.Capabilities["vision"] ||
+		!resolved.Capability.Capabilities["toolCalls"] ||
+		resolved.Capability.ContextWindowTokens != 262144 {
+		t.Fatalf("resolved = %+v, want current embedded K3 capabilities", resolved)
 	}
 }
 

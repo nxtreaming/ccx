@@ -125,6 +125,7 @@ func testProfile() *RequestProfile {
 		AgentRole:   "main",
 		HasImage:    false,
 		EstTokens:   1000,
+		Complexity:  TaskComplexityTrivial,
 		QualityNeed: QualityTierHigh,
 		ContextNeed: 200000,
 	}
@@ -1025,7 +1026,7 @@ func TestInvariant_DisabledTaskClass_FallsBackToDefault(t *testing.T) {
 	cfg.AutopilotRouting = config.AutopilotRoutingConfig{
 		RoutingMode: "shadow",
 		KillSwitch:  false,
-		// testProfile() 的 EstTokens=1000、AgentRole=main 会被分类为 lightweight
+		// testProfile() 显式携带 trivial 难度信号，会被分类为 lightweight
 		// （TestInvariant_RoutingTraceRecorded 已验证这一分类结果）。
 		DisabledTaskClasses: []string{string(TaskClassLightweight)},
 	}

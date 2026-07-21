@@ -12,6 +12,8 @@
  * - 每个模型可能有多个 harness + reasoning_effort 组合
  */
 
+import { fetchWithTimeout } from './http.mjs'
+
 const BASE_URL = 'https://deepswe.datacurve.ai'
 
 /**
@@ -25,7 +27,7 @@ export async function fetchLeaderboard(version = 'v1.1') {
 
   console.log(`[deepswe] Fetching ${url}`)
 
-  const resp = await fetch(url, {
+  const resp = await fetchWithTimeout(url, {
     headers: {
       'User-Agent': 'ccx-benchmark-updater/1.0',
       Accept: 'application/json',
@@ -48,7 +50,7 @@ export async function fetchV1Delta() {
 
   console.log(`[deepswe] Fetching ${url}`)
 
-  const resp = await fetch(url, {
+  const resp = await fetchWithTimeout(url, {
     headers: {
       'User-Agent': 'ccx-benchmark-updater/1.0',
       Accept: 'application/json',
@@ -118,16 +120,15 @@ export function extractBestPerModel(data, modelMap) {
  * @param {number} score - 当前模型的分数
  * @returns {number} - 百分位数 (0-1)
  */
-export function calculateCohortPercentile(allRows, score) {
-  const allScores = allRows
-    .map(r => r.pass_at_1 ?? r.pass_rate ?? 0)
+export function calculateCohortPercentile(cohortModels, score) {
+  const allScores = cohortModels
+    .map(model => model.score ?? model.passAt1 ?? model.passRate ?? 0)
     .filter(s => s > 0)
-    .sort((a, b) => a - b)
 
   if (allScores.length === 0) return 0
 
-  const index = allScores.findIndex(s => s >= score)
-  return index === -1 ? 1 : index / allScores.length
+  const atOrBelow = allScores.filter(candidateScore => candidateScore <= score).length
+  return atOrBelow / allScores.length
 }
 
 /**
@@ -137,8 +138,8 @@ export function calculateCohortPercentile(allRows, score) {
  * @param {string} benchmarkVersion - benchmark 版本 (如 'v1.1')
  * @returns {Object} - benchmarkEvidence 条目
  */
-export function toBenchmarkEvidence(modelData, allRows, benchmarkVersion = 'v1.1') {
-  const percentile = calculateCohortPercentile(allRows, modelData.score)
+export function toBenchmarkEvidence(modelData, cohortModels, benchmarkVersion = 'v1.1') {
+  const percentile = calculateCohortPercentile(cohortModels, modelData.score)
 
   return {
     benchmark: 'deepswe',
@@ -150,7 +151,7 @@ export function toBenchmarkEvidence(modelData, allRows, benchmarkVersion = 'v1.1
     uncertainty: modelData.ciHalf || 0,
     cohortPercentile: percentile,
     taskCount: modelData.nTasks,
-    cohortSize: modelData.nAttempted,
+    cohortSize: cohortModels.length,
     effort: modelData.reasoningEffort,
     selectionBasis: 'best_available_effort',
     sourceUrl: `${BASE_URL}/`,
@@ -176,12 +177,13 @@ export async function fetchDeepsweData(modelMap) {
     if (v11Data?.rows) {
       const bestV11 = extractBestPerModel(v11Data, modelMap)
       for (const model of bestV11) {
-        const evidence = toBenchmarkEvidence(model, v11Data.rows, 'v1.1')
+        const evidence = toBenchmarkEvidence(model, bestV11, 'v1.1')
         if (!result[model.canonicalModel]) {
           result[model.canonicalModel] = { benchmarkEvidence: [], deepsweMeta: {} }
         }
         result[model.canonicalModel].benchmarkEvidence.push(evidence)
         result[model.canonicalModel].deepsweMeta = {
+          deepsweModel: model.deepsweModel,
           harness: model.harness,
           reasoningEffort: model.reasoningEffort,
           passAt4: model.passAt4,
@@ -204,7 +206,7 @@ export async function fetchDeepsweData(modelMap) {
           e => e.benchmark === 'deepswe' && e.benchmarkVersion === 'v1.1'
         )
         if (!existingEvidence) {
-          const evidence = toBenchmarkEvidence(model, v1Data.rows, 'v1')
+          const evidence = toBenchmarkEvidence(model, bestV1, 'v1')
           result[model.canonicalModel].benchmarkEvidence.push(evidence)
         }
       }

@@ -27,7 +27,7 @@ export async function fetchLitellmData() {
     const metaOutput = execFileSync(
       'gh',
       ['api', `repos/${REPO}/contents/${FILE_PATH}`, '--jq', '.git_url'],
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20_000 }
     )
     const gitUrl = metaOutput.trim()
 
@@ -35,7 +35,7 @@ export async function fetchLitellmData() {
     const blobOutput = execFileSync(
       'gh',
       ['api', gitUrl.replace('https://api.github.com/', ''), '--jq', '.content'],
-      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
+      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, timeout: 30_000 }
     )
     const base64Content = blobOutput.trim()
 
@@ -81,6 +81,13 @@ export const LITELLM_MODEL_MAP = {
 export function extractModelInfo(data, modelMap) {
   const result = {}
 
+  const knownBoolean = (info, field) => {
+    if (!Object.prototype.hasOwnProperty.call(info, field) || info[field] == null) {
+      return undefined
+    }
+    return Boolean(info[field])
+  }
+
   for (const [litellmName, canonical] of Object.entries(modelMap)) {
     const info = data[litellmName]
     if (!info) continue
@@ -102,13 +109,13 @@ export function extractModelInfo(data, modelMap) {
           : null,
       },
       supports: {
-        reasoning: info.supports_reasoning || false,
-        vision: info.supports_vision || false,
-        functionCalling: info.supports_function_calling || false,
-        parallelFunctionCalling: info.supports_parallel_function_calling || false,
-        webSearch: info.supports_web_search || false,
-        promptCaching: info.supports_prompt_caching || false,
-        nativeStreaming: info.supports_native_streaming || false,
+        reasoning: knownBoolean(info, 'supports_reasoning'),
+        vision: knownBoolean(info, 'supports_vision'),
+        toolCalls: knownBoolean(info, 'supports_function_calling'),
+        parallelFunctionCalling: knownBoolean(info, 'supports_parallel_function_calling'),
+        webSearch: knownBoolean(info, 'supports_web_search'),
+        promptCaching: knownBoolean(info, 'supports_prompt_caching'),
+        nativeStreaming: knownBoolean(info, 'supports_native_streaming'),
       },
       litellmProvider: info.litellm_provider,
       mode: info.mode,

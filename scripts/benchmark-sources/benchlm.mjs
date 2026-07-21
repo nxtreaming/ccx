@@ -13,6 +13,8 @@
  * - counts: {sharedBenchmarkCount, comparableCategoryCount, totalCategoryCount}
  */
 
+import { fetchWithTimeout } from './http.mjs'
+
 const BASE_URL = 'https://benchlm.ai'
 
 /**
@@ -26,7 +28,7 @@ export async function fetchComparison(modelASlug, modelBSlug) {
 
   console.log(`[benchlm] Fetching ${url}`)
 
-  const resp = await fetch(url, {
+  const resp = await fetchWithTimeout(url, {
     headers: {
       'User-Agent': 'ccx-benchmark-updater/1.0',
       Accept: 'text/html',
@@ -239,6 +241,11 @@ export async function fetchBenchlmData(modelMap, categoryMap) {
   console.log(`[benchlm] Extracted data for ${Object.keys(result).length} models`)
   if (errors.length > 0) {
     console.warn(`[benchlm] ${errors.length} comparisons failed`)
+  }
+
+  if (Object.keys(result).length === 0) {
+    const detail = errors[0]?.error || 'no mapped benchmark results'
+    throw new Error(`all ${uniquePairs.length} comparisons failed: ${detail}`)
   }
 
   return result

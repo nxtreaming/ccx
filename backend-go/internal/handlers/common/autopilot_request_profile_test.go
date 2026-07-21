@@ -2,6 +2,7 @@ package common
 
 import (
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -114,5 +115,57 @@ func TestEnsureAutopilotRequestProfilePreservesAttachedProfile(t *testing.T) {
 	ensured := EnsureAutopilotRequestProfile(c, scheduler.ChannelKindResponses, "other-model", "completion", "other-session", []byte(body))
 	if ensured.Model != attached.Model || ensured.Operation != attached.Operation || ensured.PromptHash != attached.PromptHash {
 		t.Fatalf("EnsureAutopilotRequestProfile replaced attached profile: got %+v want %+v", ensured, attached)
+	}
+}
+
+func TestAnalyzeAutopilotPromptExtractsEphemeralRoutingSignals(t *testing.T) {
+	req := decodeAutopilotRequest([]byte(`{
+		"system":"You are a coding assistant",
+		"messages":[
+			{"role":"user","content":"先检查 scheduler.go"},
+			{"role":"assistant","content":"ok"},
+			{"role":"user","content":"定位分布式路由的根因并完成架构重构\ndiff --git a/a.go b/a.go"}
+		],
+		"tools":[{"name":"Read"},{"function":{"name":"apply_patch"}}]
+	}`))
+
+	analysis := analyzeAutopilotPrompt(req, 1200, "")
+	if analysis.Complexity != autopilot.TaskComplexityComplex {
+		t.Fatalf("Complexity = %q, want complex", analysis.Complexity)
+	}
+	if analysis.DomainHints.SystemPrompt == "" || !analysis.DomainHints.HasDiffContext {
+		t.Fatalf("unexpected domain hints: %+v", analysis.DomainHints)
+	}
+	if len(analysis.DomainHints.ToolNames) != 2 {
+		t.Fatalf("ToolNames = %v, want 2 entries", analysis.DomainHints.ToolNames)
+	}
+	if len(analysis.DomainHints.FileExtensions) == 0 {
+		t.Fatalf("FileExtensions = %v, want .go", analysis.DomainHints.FileExtensions)
+	}
+}
+
+func TestAttachAutopilotRequestProfileRoutesByCurrentTaskDifficulty(t *testing.T) {
+	tests := []struct {
+		name           string
+		prompt         string
+		wantComplexity autopilot.TaskComplexity
+		wantClass      autopilot.TaskClass
+		wantTarget     autopilot.QualityTier
+	}{
+		{name: "trivial", prompt: "hello", wantComplexity: autopilot.TaskComplexityTrivial, wantClass: autopilot.TaskClassLightweight, wantTarget: autopilot.QualityTierLow},
+		{name: "routine", prompt: "实现一个分页查询并补充单元测试", wantComplexity: autopilot.TaskComplexityRoutine, wantClass: autopilot.TaskClassWorker, wantTarget: autopilot.QualityTierNormal},
+		{name: "complex", prompt: "定位分布式调度的根因并重构整体架构", wantComplexity: autopilot.TaskComplexityComplex, wantClass: autopilot.TaskClassSupervisor, wantTarget: autopilot.QualityTierPremium},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := `{"model":"claude-opus-4-8","messages":[{"role":"user","content":` + strconv.Quote(tt.prompt) + `}]}`
+			c := newAutopilotProfileTestContext(t, "/v1/messages", body, nil)
+			profile := AttachAutopilotRequestProfile(c, scheduler.ChannelKindMessages, "claude-opus-4-8", "completion", "session-test", []byte(body), 0)
+
+			if profile.Complexity != tt.wantComplexity || profile.TaskClass != tt.wantClass || profile.QualityTarget != tt.wantTarget {
+				t.Fatalf("profile = complexity:%q class:%q target:%q", profile.Complexity, profile.TaskClass, profile.QualityTarget)
+			}
+		})
 	}
 }

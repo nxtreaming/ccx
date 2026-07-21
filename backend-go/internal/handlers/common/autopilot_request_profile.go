@@ -36,6 +36,12 @@ func AttachAutopilotRequestProfile(
 
 	hasImage := c != nil && HasImageContent(c, bodyBytes)
 	estTokens := estimateAutopilotInputTokens(kind, bodyBytes)
+	req := decodeAutopilotRequest(bodyBytes)
+	explicitDomain := ""
+	if c != nil {
+		explicitDomain = c.GetHeader("X-Task-Domain")
+	}
+	promptAnalysis := analyzeAutopilotPrompt(req, estTokens, explicitDomain)
 	profile := autopilot.BuildRequestProfile(autopilot.RequestProfileFeatures{
 		Model:              model,
 		ChannelKind:        string(kind),
@@ -44,15 +50,17 @@ func AttachAutopilotRequestProfile(
 		AgentType:          agentType,
 		HasImage:           hasImage,
 		EstTokens:          estTokens,
+		Complexity:         promptAnalysis.Complexity,
 		ContextNeed:        estTokens,
 		VisionNeed:         hasImage,
 		ImageGenNeed:       kind == scheduler.ChannelKindImages,
 		EmbeddingNeed:      kind == scheduler.ChannelKindVectors,
-		ToolUseNeed:        autopilotRequestUsesTools(bodyBytes),
-		ReasoningNeed:      autopilotRequestNeedsReasoning(bodyBytes),
+		ToolUseNeed:        autopilotRequestUsesTools(req),
+		ReasoningNeed:      autopilotRequestNeedsReasoning(req),
 		EmbeddingDimension: embeddingDimension,
 		SessionID:          sessionID,
 		PromptHash:         hashAutopilotRequest(bodyBytes),
+		DomainHints:        promptAnalysis.DomainHints,
 	})
 
 	if c != nil && c.Request != nil {
@@ -125,13 +133,11 @@ func normalizeAutopilotOperation(kind scheduler.ChannelKind, operation string, c
 	return "completion"
 }
 
-func autopilotRequestUsesTools(bodyBytes []byte) bool {
-	req := decodeAutopilotRequest(bodyBytes)
+func autopilotRequestUsesTools(req map[string]interface{}) bool {
 	return hasNonEmptyAutopilotFeature(req["tools"])
 }
 
-func autopilotRequestNeedsReasoning(bodyBytes []byte) bool {
-	req := decodeAutopilotRequest(bodyBytes)
+func autopilotRequestNeedsReasoning(req map[string]interface{}) bool {
 	for _, key := range []string{"thinking", "reasoning", "reasoning_effort", "reasoningEffort", "enable_thinking"} {
 		if hasNonEmptyAutopilotFeature(req[key]) {
 			return true

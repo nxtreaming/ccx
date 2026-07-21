@@ -13,9 +13,10 @@ import "strings"
 //  2. 原生 embedding 端点：ChannelKind=="vectors" || EmbeddingNeed → embedding
 //  3. 识图理解任务：HasImage && VisionNeed → vision
 //  4. 长上下文任务：ContextNeed > 200_000 → long_context
-//  5. 轻任务：isLightweightRequest 命中 → lightweight
-//  6. 主代理：AgentRole=="main" 或未知 → supervisor
-//  7. 子代理：AgentRole=="subagent" → worker
+//  5. 明确复杂的主任务 → supervisor
+//  6. 轻任务：isLightweightRequest 命中 → lightweight
+//  7. 子代理或常规任务 → worker
+//  8. 主代理或未知 → supervisor
 //     兜底：→ worker
 //
 // P0.3 约束：
@@ -44,19 +45,28 @@ func Classify(input ClassifierInput) TaskClass {
 		return TaskClassLongContext
 	}
 
-	// 规则 5：明确的低风险轻任务
+	// 规则 5：复杂主任务优先使用 supervisor；复杂子代理仍保持 worker 语义，
+	// 其质量目标由 Complexity 单独提升。
+	if input.Complexity == TaskComplexityComplex && input.AgentRole != "subagent" {
+		return TaskClassSupervisor
+	}
+
+	// 规则 6：明确的低风险轻任务
 	if isLightweightRequest(input) {
 		return TaskClassLightweight
 	}
 
-	// 规则 6：主代理/监工（main 或未知默认走 Supervisor）
-	if input.AgentRole == "main" || input.AgentRole == "" {
-		return TaskClassSupervisor
-	}
-
-	// 规则 7：子代理
+	// 规则 7：子代理或正文明确为常规任务
 	if input.AgentRole == "subagent" {
 		return TaskClassWorker
+	}
+	if input.Complexity == TaskComplexityRoutine {
+		return TaskClassWorker
+	}
+
+	// 规则 8：主代理/监工（正文未知时保守走 Supervisor）
+	if input.AgentRole == "main" || input.AgentRole == "" {
+		return TaskClassSupervisor
 	}
 
 	// 兜底：不确定时升级到更保守分类（worker），不降级到 lightweight
@@ -83,9 +93,7 @@ var lightweightModelSignals = []string{
 // 规则（全部满足才返回 true）：
 //  1. 无图片、工具、reasoning、长上下文或原生端点能力需求。
 //  2. Operation 命中白名单（count_tokens、标题生成、分类、格式转换、摘要、翻译），
-//     或者同时满足以下条件：
-//     - EstTokens < 10_000（上下文小于 10K）
-//     - 无 AgentType（非 codex/claude_code 子代理）
+//     或正文复杂度明确为 trivial。
 //  3. 模型名包含 haiku/mini/flash 等子串作为弱信号加分，但不能单独决定 lightweight。
 //
 // P0.3：模型名弱信号必须与其他条件组合，不能单独决定 lightweight。
@@ -115,19 +123,7 @@ func isLightweightRequest(input ClassifierInput) bool {
 		return true
 	}
 
-	// 0 表示未采集到输入规模，不得把未知请求静默降级为 lightweight。
-	if input.EstTokens <= 0 {
-		return false
-	}
-
-	// 核心条件：上下文 < 10K 且无特殊需求
-	if input.EstTokens >= 10_000 {
-		return false
-	}
-
-	// 到此已满足全部条件：无图片/无工具/无推理/非长上下文/非原生能力/非子代理/< 10K
-	// 弱信号（模型名含 haiku/mini/flash）作为确认，但上述硬条件已足够
-	return true
+	return input.Complexity == TaskComplexityTrivial && (input.EstTokens <= 0 || input.EstTokens < 10_000)
 }
 
 // classifyModelSignal 检查模型名是否包含轻量级弱信号关键词。
@@ -153,6 +149,7 @@ func BuildClassifierInput(profile *RequestProfile) ClassifierInput {
 		AgentType:     profile.AgentType,
 		HasImage:      profile.HasImage,
 		EstTokens:     profile.EstTokens,
+		Complexity:    profile.Complexity,
 		ContextNeed:   profile.ContextNeed,
 		VisionNeed:    profile.VisionNeed,
 		ImageGenNeed:  profile.ImageGenNeed,

@@ -2,14 +2,16 @@
 // 原始代码原样搬运，仅加函数包装。
 import { ref, watch } from "vue"
 import { api, type CapabilityTestJob, type CapabilityProtocolJobResult, type CapabilityModelJobResult, type CapabilitySnapshot, type Channel, type CapabilityTestJobStartResponse, ApiError } from "../services/api"
+import { useChannelStore } from '../stores/channel'
+import { useDialogStore } from '../stores/dialog'
 
 type CapabilityChannelKind = "messages" | "chat" | "responses" | "gemini"
 
 export function useCapabilityTestManager(
-  channelStore: any,
-  dialogStore: any,
+  channelStore: ReturnType<typeof useChannelStore>,
+  dialogStore: ReturnType<typeof useDialogStore>,
   showToast: (message: string, type: "success" | "error" | "warning" | "info") => void,
-  t: (key: string, params?: Record<string, any>) => string,
+  t: (key: string, params?: Record<string, string | number>) => string,
   refreshChannels: () => Promise<void>,
 ) {
 
@@ -18,7 +20,7 @@ const capabilityTestChannelName = ref('')
 const capabilityTestChannelId = ref<number | null>(null)
 const capabilityTestChannelType = ref<CapabilityChannelKind>('messages')
 const capabilityTestSourceTab = ref<CapabilityChannelKind>('messages')
-const capabilityTestDialogRef = ref<any | null>(null)
+const capabilityTestDialogRef = ref<{ setError: (message: string) => void } | null>(null)
 const capabilityTestJobId = ref('')
 const capabilityPollers = ref<Record<string, ReturnType<typeof setInterval>>>({})
 const capabilityTestJob = ref<CapabilityTestJob | null>(null)
