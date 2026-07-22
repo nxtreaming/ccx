@@ -5,9 +5,10 @@ import { sortModelNamesDesc } from '../utils/modelPriority'
 type ChannelType = 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors'
 type ServiceType = 'openai' | 'gemini' | 'claude' | 'responses' | 'copilot' | ''
 type Translator = (key: string) => string
-type DisabledKeyInfo = { key: string }
+type DisabledKeyInfo = { key: string; config?: { baseUrl?: string } }
 type FormLike = {
   apiKeys: string[]
+  apiKeyConfigs?: Array<{ key: string; baseUrl?: string }>
   authHeader: 'auto' | 'bearer' | 'x-api-key' | ''
   baseUrl: string
   customHeaders: Record<string, string>
@@ -113,12 +114,22 @@ export function useTargetModelFetch(options: TargetModelFetchOptions) {
       authHeader: options.form.authHeader && options.form.authHeader !== 'auto' ? options.form.authHeader : undefined,
     }
 
+    // 多入口渠道（如火山 Agent Plan / Coding Plan）每个 key 可能绑定了
+    // 自己的 baseUrl，拉模型时必须用 key 级地址，否则会被其他入口拒绝鉴权
+    const boundBaseUrlForKey = (apiKey: string) => {
+      const hit = options.form.apiKeyConfigs?.find(cfg => cfg.key === apiKey && cfg.baseUrl?.trim())
+      if (hit?.baseUrl?.trim()) return hit.baseUrl.trim()
+      // 禁用 key 已从 apiKeyConfigs 移除，回退到拉黑前的配置快照
+      const snapshot = options.visibleDisabledKeys.value.find(dk => dk.key === apiKey)?.config?.baseUrl?.trim()
+      return snapshot || undefined
+    }
+
     const keyPromises = uncheckedKeys.map(async (apiKey) => {
       keyModelsStatus.value.set(apiKey, { loading: true, success: false })
 
       try {
         const id = options.channel.value?.index ?? 0
-        const request = { key: apiKey, ...requestOverrides }
+        const request = { key: apiKey, ...requestOverrides, baseUrl: boundBaseUrlForKey(apiKey) || requestOverrides.baseUrl }
         let response: { data: { id: string }[] }
 
         switch (modelsApiType) {
