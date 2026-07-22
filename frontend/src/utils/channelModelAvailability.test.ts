@@ -32,6 +32,9 @@ describe('buildNativeProtocolModelRoutes', () => {
         kind: 'messages', channelUid: 'ch-messages', name: 'volcengine-claude', serviceType: 'claude', status: 'active',
         modelInventoryKnown: true,
         discoveredModels: ['glm-5.2', 'deepseek-v4-pro'],
+        modelsDiscoveredAt: '2026-07-22T00:42:12Z',
+        modelDiscoverySource: 'control_plane',
+        modelDiscoveryMessage: '火山管控面 Coding Plan 模型清单',
       },
       {
         kind: 'chat', channelUid: 'ch-chat', name: 'volcengine-chat', serviceType: 'openai', status: 'active',
@@ -46,6 +49,8 @@ describe('buildNativeProtocolModelRoutes', () => {
     expect(result.map(route => route.upstreamKind)).toEqual(['messages', 'chat'])
     expect(result[0].discoveredModels).toEqual(['glm-5.2', 'deepseek-v4-pro'])
     expect(result[0].modelInventoryKnown).toBe(true)
+    expect(result[0].modelsDiscoveredAt).toBe('2026-07-22T00:42:12Z')
+    expect(result[0].modelDiscoverySource).toBe('control_plane')
     expect(result[1].discoveredModels).toEqual(['glm-5.2'])
   })
 

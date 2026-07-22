@@ -159,6 +159,7 @@ type ScoringContext struct {
 	TaskClass         TaskClass
 	TaskDomain        TaskDomain
 	TargetQualityTier QualityTier   // 当前任务目标档；空值时兼容旧的绝对档位评分
+	QualityBenefitCap QualityTier   // 简单/常规任务的质量收益上限；超过后不再因质量档加分
 	FamilyPrefs       []ModelFamily // 用户派系偏好顺序
 	Weights           ScoringWeights
 
@@ -225,15 +226,16 @@ var costTierScore = map[CostTier]float64{
 func ScoreCandidate(candidate ScoringCandidate, ctx ScoringContext) ScoredCandidate {
 	w := ctx.Weights
 
-	// 1. qualityScore：有任务目标时按档位距离评分，避免轻量/常规任务
-	// 因“绝对档位更高”持续选择旗舰模型；旧调用方未提供目标时保持原语义。
+	// 1. qualityScore：目标质量是下限，不对更高质量档做距离惩罚。
+	// 简单/常规任务可通过 QualityBenefitCap 让质量收益在足够档位饱和，
+	// 再由实测表现、成本等软证据决定；旧调用方未提供目标时保持绝对档位语义。
 	qs := qualityTierScore[candidate.QualityTier]
 	if ctx.TargetQualityTier != "" && candidate.QualityTier != "" {
-		distance := absInt(qualityTierRank(candidate.QualityTier) - qualityTierRank(ctx.TargetQualityTier))
-		qs = float64(4 - distance)
-		if qs < 1 {
-			qs = 1
+		qualityRank := qualityTierRank(candidate.QualityTier)
+		if ctx.QualityBenefitCap != "" && qualityRank > qualityTierRank(ctx.QualityBenefitCap) {
+			qualityRank = qualityTierRank(ctx.QualityBenefitCap)
 		}
+		qs = float64(qualityRank + 1)
 	}
 
 	// 2. stabilityScore: unstable=0, normal=1, stable=2

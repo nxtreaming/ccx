@@ -31,6 +31,19 @@
           </v-chip>
         </div>
 
+        <div v-if="route.hasInventory" class="protocol-model-route__discovery-meta">
+          <span class="text-caption text-medium-emphasis">
+            {{ t('channelEditor.protocolModels.lastDiscovered') }}
+            {{ route.discoveryTime || t('channelEditor.protocolModels.discoveryTimeUnknown') }}
+          </span>
+          <v-chip size="x-small" variant="tonal" color="secondary">
+            {{ route.discoverySourceLabel }}
+          </v-chip>
+          <span v-if="route.modelDiscoveryMessage" class="text-caption text-medium-emphasis">
+            {{ route.modelDiscoveryMessage }}
+          </span>
+        </div>
+
         <div v-if="route.models.length" class="protocol-model-route__models">
           <v-chip
             v-for="model in route.models"
@@ -71,6 +84,16 @@
                 <v-icon class="protocol-model-binding__chevron" size="16">mdi-chevron-down</v-icon>
               </summary>
               <div class="protocol-model-binding__detail">
+                <div class="protocol-model-binding__discovery-meta text-caption text-medium-emphasis">
+                  <span>
+                    {{ t('channelEditor.protocolModels.lastDiscovered') }}
+                    {{ formatDiscoveryTime(binding.modelsDiscoveredAt) || t('channelEditor.protocolModels.discoveryTimeUnknown') }}
+                  </span>
+                  <span v-if="binding.modelDiscoverySource">
+                    {{ discoverySourceLabel(binding.modelDiscoverySource) }}
+                  </span>
+                  <span v-if="binding.modelDiscoveryMessage">{{ binding.modelDiscoveryMessage }}</span>
+                </div>
                 <div>
                   <div class="protocol-model-binding__label text-success">
                     {{ t('channelEditor.protocolModels.availableModels') }} · {{ binding.models.length }}
@@ -171,6 +194,30 @@ const props = withDefaults(defineProps<{
 
 const { t } = useI18n()
 
+const discoverySourceKey: Record<string, string> = {
+  control_plane: 'channelEditor.protocolModels.source.controlPlane',
+  models_api: 'channelEditor.protocolModels.source.modelsApi',
+  builtin_manifest: 'channelEditor.protocolModels.source.builtinManifest',
+  builtin_fallback: 'channelEditor.protocolModels.source.builtinFallback',
+  mixed: 'channelEditor.protocolModels.source.mixed',
+}
+
+const discoverySourceLabel = (source?: string) => {
+  const key = source ? discoverySourceKey[source] : undefined
+  return t(key ?? 'channelEditor.protocolModels.source.unknown')
+}
+
+const discoveryDateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+})
+
+const formatDiscoveryTime = (value?: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : discoveryDateTimeFormat.format(date)
+}
+
 const normalizeModels = (models?: string[]) => Array.from(new Set(
   (models ?? []).map(model => model.trim()).filter(Boolean),
 )).sort((left, right) => left.localeCompare(right))
@@ -209,6 +256,8 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
     bindings: bindingsWithDifferences,
     hasInventory: hasDiscoveredInventory || models.length > 0,
     hasBindingDifferences: bindings.length > 1 && bindingSignatures.size > 1,
+    discoveryTime: formatDiscoveryTime(route.modelsDiscoveredAt),
+    discoverySourceLabel: discoverySourceLabel(route.modelDiscoverySource),
   }
 }))
 </script>
@@ -256,6 +305,15 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
   min-width: 0;
   flex-direction: column;
   gap: 2px;
+}
+
+.protocol-model-route__discovery-meta {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -6px;
 }
 
 .protocol-model-route__path {
@@ -334,6 +392,12 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
   gap: 12px;
   padding: 12px;
   border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.protocol-model-binding__discovery-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
 }
 
 .protocol-model-binding__label {

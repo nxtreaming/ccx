@@ -132,4 +132,30 @@ describe('ProtocolModelAvailability', () => {
     expect(messages.findAll('details')).toHaveLength(2)
     expect(messages.findAll('details')[0].text()).toContain('other-model')
   })
+
+  it('展示模型清单的发现时间、来源和说明', () => {
+    const wrapper = mount(ProtocolModelAvailability, {
+      props: {
+        routes: [{
+          kind: 'messages', index: 0, name: 'volcengine-claude', serviceType: 'claude',
+          modelInventoryKnown: true,
+          discoveredModels: ['glm-5.2'],
+          modelsDiscoveredAt: '2026-07-22T00:42:12Z',
+          modelDiscoverySource: 'control_plane',
+          modelDiscoveryMessage: '火山管控面 Coding Plan 模型清单',
+        }],
+      },
+      global: {
+        stubs: {
+          VChip: passthroughStub,
+          VIcon: passthroughStub,
+        },
+      },
+    })
+
+    const messages = wrapper.get('[data-kind="messages"]')
+    expect(messages.text()).toContain('channelEditor.protocolModels.lastDiscovered')
+    expect(messages.text()).toContain('channelEditor.protocolModels.source.controlPlane')
+    expect(messages.text()).toContain('火山管控面 Coding Plan 模型清单')
+  })
 })

@@ -208,6 +208,9 @@ export function buildNativeProtocolModelRoutes(
         discoveredModels: availability?.discoveredModels,
         modelBindings: availability?.modelBindings,
         modelsUpdatedAt: availability?.modelsUpdatedAt,
+        modelsDiscoveredAt: availability?.modelsDiscoveredAt,
+        modelDiscoverySource: availability?.modelDiscoverySource,
+        modelDiscoveryMessage: availability?.modelDiscoveryMessage,
       },
     })
   }

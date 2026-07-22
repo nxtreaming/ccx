@@ -29,14 +29,27 @@ const (
 	DiscoveryStatusFailed  DiscoveryStatus = "failed"
 )
 
+// ModelDiscoverySource 描述模型清单的事实来源。
+// 它独立于 KeyEndpointProfile.Source；后者会在后续 L1 画像刷新时变成
+// l1_passive，不能用来判断模型清单是否来自管控面或静态兜底。
+const (
+	ModelDiscoverySourceControlPlane    = "control_plane"
+	ModelDiscoverySourceModelsAPI       = "models_api"
+	ModelDiscoverySourceBuiltinManifest = "builtin_manifest"
+	ModelDiscoverySourceBuiltinFallback = "builtin_fallback"
+)
+
 // EndpointDiscoveryResult 单个 (baseURL, key) 端点的发现结果。
 type EndpointDiscoveryResult struct {
-	KeyMask      string   `json:"keyMask"`
-	BaseURL      string   `json:"baseUrl"`
-	ModelsCount  int      `json:"modelsCount"`
-	Models       []string `json:"models,omitempty"`
-	ProtocolOk   bool     `json:"protocolOk"`
-	ErrorMessage string   `json:"errorMessage,omitempty"`
+	KeyMask               string     `json:"keyMask"`
+	BaseURL               string     `json:"baseUrl"`
+	ModelsCount           int        `json:"modelsCount"`
+	Models                []string   `json:"models,omitempty"`
+	ProtocolOk            bool       `json:"protocolOk"`
+	ErrorMessage          string     `json:"errorMessage,omitempty"`
+	ModelDiscoverySource  string     `json:"modelDiscoverySource,omitempty"`
+	ModelDiscoveryMessage string     `json:"modelDiscoveryMessage,omitempty"`
+	ModelsDiscoveredAt    *time.Time `json:"modelsDiscoveredAt,omitempty"`
 }
 
 // DiscoveryTask 单渠道发现任务的运行时状态。
@@ -230,6 +243,7 @@ func (r *AutoDiscoveryRunner) discoverEndpoints(ctx context.Context, channel *co
 			} else {
 				result = r.probeEndpoint(ctx, client, channel, baseURL, key)
 			}
+			logEndpointDiscovery(channel.ChannelUID, result)
 			results = append(results, result)
 		}
 	}
@@ -290,6 +304,7 @@ func (r *AutoDiscoveryRunner) discoverVolcenginePlanEndpoint(
 	result.Models = models
 	result.ModelsCount = len(models)
 	result.ProtocolOk = true
+	setModelDiscoveryMetadata(&result, ModelDiscoverySourceControlPlane, fmt.Sprintf("火山管控面 %s 模型清单", displayVolcenginePlan(plan.Plan)))
 	return result
 }
 
@@ -300,7 +315,7 @@ func (r *AutoDiscoveryRunner) applyVolcengineFallback(result *EndpointDiscoveryR
 	if !ok || len(manifest.ModelIDs) == 0 {
 		return false
 	}
-	applyBuiltinModels(result, manifest, message)
+	applyBuiltinFallbackModels(result, manifest, message)
 	return result.ProtocolOk
 }
 
@@ -367,7 +382,7 @@ func (r *AutoDiscoveryRunner) probeEndpoint(ctx context.Context, client *http.Cl
 
 	if resp.StatusCode != http.StatusOK {
 		if hasManifest && resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
-			applyBuiltinModels(&result, manifest, fmt.Sprintf("models 端点返回 HTTP %d，已回退内置模型清单", resp.StatusCode))
+			applyBuiltinFallbackModels(&result, manifest, fmt.Sprintf("models 端点返回 HTTP %d，已回退内置模型清单", resp.StatusCode))
 			return result
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -387,12 +402,13 @@ func (r *AutoDiscoveryRunner) probeEndpoint(ctx context.Context, client *http.Cl
 		models = filterExcludedDiscoveryModels(models, manifest.ExcludeModelPatterns)
 	}
 	if len(models) == 0 && hasManifest {
-		applyBuiltinModels(&result, manifest, "models 端点返回空列表，已回退内置模型清单")
+		applyBuiltinFallbackModels(&result, manifest, "models 端点返回空列表，已回退内置模型清单")
 		return result
 	}
 	result.ModelsCount = len(models)
 	result.Models = models
 	result.ProtocolOk = true
+	setModelDiscoveryMetadata(&result, ModelDiscoverySourceModelsAPI, "models API 返回实时模型清单")
 
 	return result
 }
@@ -442,6 +458,41 @@ func applyBuiltinModels(result *EndpointDiscoveryResult, manifest config.Builtin
 	result.ModelsCount = len(result.Models)
 	result.ProtocolOk = len(result.Models) > 0
 	result.ErrorMessage = message
+	setModelDiscoveryMetadata(result, ModelDiscoverySourceBuiltinManifest, message)
+}
+
+// applyBuiltinFallbackModels 与明确配置的内置清单区分开来，记录这是一次
+// 管控面/models API 失败后的回退，而不是正常的静态清单来源。
+func applyBuiltinFallbackModels(result *EndpointDiscoveryResult, manifest config.BuiltinModelsManifest, message string) {
+	applyBuiltinModels(result, manifest, message)
+	result.ModelDiscoverySource = ModelDiscoverySourceBuiltinFallback
+}
+
+func setModelDiscoveryMetadata(result *EndpointDiscoveryResult, source, message string) {
+	if result == nil {
+		return
+	}
+	now := time.Now().UTC()
+	result.ModelDiscoverySource = source
+	result.ModelDiscoveryMessage = strings.TrimSpace(message)
+	result.ModelsDiscoveredAt = &now
+}
+
+func logEndpointDiscovery(channelUID string, result EndpointDiscoveryResult) {
+	source := result.ModelDiscoverySource
+	if source == "" {
+		source = "unknown"
+	}
+	discoveredAt := "-"
+	if result.ModelsDiscoveredAt != nil {
+		discoveredAt = result.ModelsDiscoveredAt.UTC().Format(time.RFC3339)
+	}
+	message := strings.TrimSpace(result.ModelDiscoveryMessage)
+	if message == "" {
+		message = strings.TrimSpace(result.ErrorMessage)
+	}
+	log.Printf("[AutoDiscovery-Endpoint] channel=%s key=%s baseURL=%s source=%s models=%d discoveredAt=%s protocolOk=%t message=%s",
+		channelUID, result.KeyMask, result.BaseURL, source, result.ModelsCount, discoveredAt, result.ProtocolOk, message)
 }
 
 func filterExcludedDiscoveryModels(models []string, patterns []string) []string {
@@ -586,6 +637,16 @@ func (r *AutoDiscoveryRunner) writeProfiles(channelUID string, channel *config.U
 		if len(ep.Models) > 0 {
 			hash := sha256.Sum256([]byte(strings.Join(ep.Models, ",")))
 			profile.ModelListHash = hex.EncodeToString(hash[:8])
+		}
+		if ep.ModelDiscoverySource != "" {
+			profile.ModelDiscoverySource = ep.ModelDiscoverySource
+		}
+		if ep.ModelDiscoveryMessage != "" {
+			profile.ModelDiscoveryMessage = ep.ModelDiscoveryMessage
+		}
+		if ep.ModelsDiscoveredAt != nil {
+			discoveredAt := ep.ModelsDiscoveredAt.UTC()
+			profile.ModelsDiscoveredAt = &discoveredAt
 		}
 		profile.Source = "auto_discovery"
 		profile.UpdatedAt = time.Now()

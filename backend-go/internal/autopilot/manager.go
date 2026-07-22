@@ -987,6 +987,12 @@ func carryForwardDiscoveryFields(old *KeyEndpointProfile, current *KeyEndpointPr
 	current.CredentialUID = old.CredentialUID
 	current.AvailableModels = append([]string(nil), old.AvailableModels...)
 	current.ModelListHash = old.ModelListHash
+	current.ModelDiscoverySource = old.ModelDiscoverySource
+	current.ModelDiscoveryMessage = old.ModelDiscoveryMessage
+	if old.ModelsDiscoveredAt != nil {
+		discoveredAt := old.ModelsDiscoveredAt.UTC()
+		current.ModelsDiscoveredAt = &discoveredAt
+	}
 	current.MiniMaxTokenPlanUsage = cloneMiniMaxTokenPlanUsage(old.MiniMaxTokenPlanUsage)
 	current.MiniMaxTokenPlanUsageError = old.MiniMaxTokenPlanUsageError
 	if old.ModelMapping != nil {

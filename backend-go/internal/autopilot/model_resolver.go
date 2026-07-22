@@ -2,6 +2,8 @@ package autopilot
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -341,6 +343,8 @@ type rankedModelCandidate struct {
 	providerCostSource             string
 	publicCostKnown                bool
 	normalizedPublicCostUSD        float64
+	versionLineage                 string
+	versionNumbers                 []int
 	sameFamily                     bool
 	normalizedCandidateID          string
 }
@@ -374,8 +378,12 @@ func (candidate rankedModelCandidate) reasonSummary() string {
 	if candidate.publicCostKnown {
 		publicCost = fmt.Sprintf("%.6f", candidate.normalizedPublicCostUSD)
 	}
-	return fmt.Sprintf("family:%s, quality:%s, provider_quality_priority:%s, measured_quality:%s, latency:%s, provider_cost_multiplier:%s, normalized_public_cost_usd:%s",
-		candidate.profile.ModelFamily, quality, providerQuality, measuredQuality, latency, providerCost, publicCost)
+	version := "unknown"
+	if candidate.versionLineage != "" {
+		version = fmt.Sprintf("%s:%v", candidate.versionLineage, candidate.versionNumbers)
+	}
+	return fmt.Sprintf("family:%s, quality:%s, provider_quality_priority:%s, measured_quality:%s, version:%s, latency:%s, provider_cost_multiplier:%s, normalized_public_cost_usd:%s",
+		candidate.profile.ModelFamily, quality, providerQuality, measuredQuality, version, latency, providerCost, publicCost)
 }
 
 // rankEligibleModels 在已经满足能力下界的候选中选择最佳模型。
@@ -417,6 +425,8 @@ func (r *ModelResolver) rankEligibleModels(
 			providerCostSource:           providerSource,
 			publicCostKnown:              publicCostKnown,
 			normalizedPublicCostUSD:      publicCostUSD,
+			versionLineage:               modelVersionLineage(profile.ModelFamily, profile.ModelID),
+			versionNumbers:               modelVersionNumbers(profile.ModelFamily, profile.ModelID),
 			sameFamily:                   profile.ModelFamily == reqFamily,
 			normalizedCandidateID:        strings.ToLower(profile.ModelID),
 		})
@@ -458,6 +468,9 @@ func betterRankedModel(candidate, current rankedModelCandidate) bool {
 	if candidate.measuredQualityScore != current.measuredQualityScore {
 		return candidate.measuredQualityScore > current.measuredQualityScore
 	}
+	if better, decided := compareModelVersion(candidate, current); decided {
+		return better
+	}
 	if candidate.latencyKnown != current.latencyKnown {
 		return candidate.latencyKnown
 	}
@@ -471,6 +484,68 @@ func betterRankedModel(candidate, current rankedModelCandidate) bool {
 		return candidate.sameFamily
 	}
 	return candidate.normalizedCandidateID < current.normalizedCandidateID
+}
+
+// modelVersionPattern 提取模型 ID 中最接近厂商/系列标记的版本串。
+// 例如 kimi-k2.6 → lineage=k2, numbers=[2,6]；
+// kimi-k2.7-code → lineage=k2, numbers=[2,7]。
+// 版本号只作为同一 ModelFamily、同一 lineage 且没有更可靠质量证据时的兜底，
+// 不跨厂商比较，也不覆盖供应商声明或实测质量。
+var modelVersionPattern = regexp.MustCompile(`(?:^|[-/])([a-z]+)-?(\d+(?:[.-]\d+)*)`)
+
+func modelVersionLineage(family ModelFamily, modelID string) string {
+	prefix, numbers, ok := parseModelVersion(modelID)
+	if !ok || len(numbers) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s%d", prefix, numbers[0])
+}
+
+func modelVersionNumbers(family ModelFamily, modelID string) []int {
+	_, numbers, ok := parseModelVersion(modelID)
+	if !ok {
+		return nil
+	}
+	return numbers
+}
+
+func parseModelVersion(modelID string) (string, []int, bool) {
+	match := modelVersionPattern.FindStringSubmatch(strings.ToLower(strings.TrimSpace(modelID)))
+	if len(match) != 3 {
+		return "", nil, false
+	}
+	parts := strings.FieldsFunc(match[2], func(r rune) bool { return r == '.' || r == '-' })
+	numbers := make([]int, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return "", nil, false
+		}
+		numbers = append(numbers, value)
+	}
+	return match[1], numbers, len(numbers) > 0
+}
+
+func compareModelVersion(candidate, current rankedModelCandidate) (better bool, decided bool) {
+	if candidate.profile.ModelFamily == "" || candidate.profile.ModelFamily != current.profile.ModelFamily ||
+		candidate.versionLineage == "" || candidate.versionLineage != current.versionLineage ||
+		len(candidate.versionNumbers) == 0 || len(current.versionNumbers) == 0 {
+		return false, false
+	}
+	limit := len(candidate.versionNumbers)
+	if len(current.versionNumbers) < limit {
+		limit = len(current.versionNumbers)
+	}
+	for i := 0; i < limit; i++ {
+		if candidate.versionNumbers[i] == current.versionNumbers[i] {
+			continue
+		}
+		return candidate.versionNumbers[i] > current.versionNumbers[i], true
+	}
+	if len(candidate.versionNumbers) != len(current.versionNumbers) {
+		return len(candidate.versionNumbers) > len(current.versionNumbers), true
+	}
+	return false, false
 }
 
 // selectQualityBenefitBand 为难度已知的简单/常规任务选择最低的足够质量档。
@@ -672,13 +747,6 @@ func (r *ModelResolver) modelRankingCapabilityContext(
 	upstreamCopy := *upstream
 	upstreamCopy.ModelMapping = nil
 	return &upstreamCopy, cfg.UpstreamModelCapabilities
-}
-
-func absInt(value int) int {
-	if value < 0 {
-		return -value
-	}
-	return value
 }
 
 // refreshAutoDiscoveryCapabilities 兼容由旧版本写入的自动发现画像。

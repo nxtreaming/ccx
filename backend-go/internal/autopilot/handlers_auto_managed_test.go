@@ -77,14 +77,18 @@ func TestListAccountsIncludesActiveEndpointModelAvailability(t *testing.T) {
 		t.Fatalf("NewProfileStoreWithDB 失败: %v", err)
 	}
 	updatedAt := time.Date(2026, 7, 17, 10, 54, 33, 0, time.UTC)
+	discoveredAt := updatedAt
+	discoveredAtLater := updatedAt.Add(time.Minute)
 	for _, profile := range []*KeyEndpointProfile{
 		{
 			EndpointUID: "ep_a", AccountUID: "acct_test", ChannelUID: "ch_messages",
 			CredentialUID: "cred_a", KeyMask: "ark-a***001", AvailableModels: []string{"model-b", "model-a"}, UpdatedAt: updatedAt,
+			ModelDiscoverySource: ModelDiscoverySourceModelsAPI, ModelsDiscoveredAt: &discoveredAt,
 		},
 		{
 			EndpointUID: "ep_b", AccountUID: "acct_test", ChannelUID: "ch_messages",
 			CredentialUID: "cred_b", KeyMask: "ark-b***002", AvailableModels: []string{"model-c", "model-b"}, UpdatedAt: updatedAt.Add(time.Minute),
+			ModelDiscoverySource: ModelDiscoverySourceModelsAPI, ModelsDiscoveredAt: &discoveredAtLater,
 		},
 	} {
 		if err := store.Upsert(profile); err != nil {
@@ -160,6 +164,43 @@ func TestManagedChannelModelAvailabilityIncludesEmptyAutoDiscoveryResult(t *test
 	}
 	if latest == nil || !latest.Equal(updatedAt.Add(time.Minute)) {
 		t.Fatalf("latest=%v, want discovered inventory update time", latest)
+	}
+}
+
+func TestManagedChannelModelAvailabilityIncludesDiscoveryMetadata(t *testing.T) {
+	first := time.Date(2026, 7, 22, 0, 42, 12, 0, time.UTC)
+	second := first.Add(time.Minute)
+	inventory := managedChannelModelAvailabilityDetails([]*KeyEndpointProfile{
+		{
+			EndpointUID:           "ep-a",
+			CredentialUID:         "cred-a",
+			KeyMask:               "ark-a***001",
+			AvailableModels:       []string{"glm-5.2"},
+			UpdatedAt:             first,
+			ModelDiscoverySource:  ModelDiscoverySourceControlPlane,
+			ModelDiscoveryMessage: "火山管控面 Coding Plan 模型清单",
+			ModelsDiscoveredAt:    &first,
+		},
+		{
+			EndpointUID:           "ep-b",
+			CredentialUID:         "cred-b",
+			KeyMask:               "ark-b***002",
+			AvailableModels:       []string{"deepseek-v4-pro"},
+			UpdatedAt:             second,
+			ModelDiscoverySource:  ModelDiscoverySourceBuiltinFallback,
+			ModelDiscoveryMessage: "管控面失败，已回退内置模型清单",
+			ModelsDiscoveredAt:    &second,
+		},
+	})
+
+	if !inventory.known || inventory.source != "mixed" {
+		t.Fatalf("inventory source=%q known=%v", inventory.source, inventory.known)
+	}
+	if !inventory.latestDiscoveredAt.Equal(second) || inventory.message != "管控面失败，已回退内置模型清单" {
+		t.Fatalf("inventory discovery metadata=%+v", inventory)
+	}
+	if len(inventory.bindings) != 2 || inventory.bindings[1].ModelsDiscoveredAt == nil {
+		t.Fatalf("binding discovery metadata=%+v", inventory.bindings)
 	}
 }
 

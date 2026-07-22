@@ -67,6 +67,7 @@ func TestAutoDiscoveryWriteProfilesPreservesProviderQualityEvidence(t *testing.T
 	t.Cleanup(cleanup)
 
 	probedAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	discoveredAt := time.Date(2026, 7, 22, 0, 42, 12, 0, time.UTC)
 	metricsKey := computeMetricsIdentityKey(baseURL, apiKey, channel.ServiceType)
 	if err := modelStore.Upsert(&ModelProfile{
 		ChannelUID:                  channelUID,
@@ -89,13 +90,22 @@ func TestAutoDiscoveryWriteProfilesPreservesProviderQualityEvidence(t *testing.T
 	runner.ModelProfileStore = modelStore
 	runner.writeProfiles(channelUID, &channel, []EndpointDiscoveryResult{
 		{
-			KeyMask:     utils.MaskAPIKey(apiKey),
-			BaseURL:     baseURL,
-			Models:      []string{modelID},
-			ModelsCount: 1,
-			ProtocolOk:  true,
+			KeyMask:               utils.MaskAPIKey(apiKey),
+			BaseURL:               baseURL,
+			Models:                []string{modelID},
+			ModelsCount:           1,
+			ProtocolOk:            true,
+			ModelDiscoverySource:  ModelDiscoverySourceControlPlane,
+			ModelDiscoveryMessage: "火山管控面 Coding Plan 模型清单",
+			ModelsDiscoveredAt:    &discoveredAt,
 		},
 	}, cfgManager)
+	endpoint := profileStore.Get(GenerateEndpointUID(channelUID, baseURL, KeyHashFromAPIKey(apiKey)))
+	if endpoint == nil || endpoint.ModelDiscoverySource != ModelDiscoverySourceControlPlane ||
+		endpoint.ModelDiscoveryMessage == "" || endpoint.ModelsDiscoveredAt == nil ||
+		!endpoint.ModelsDiscoveredAt.Equal(discoveredAt) {
+		t.Fatalf("模型发现元数据未持久化: %+v", endpoint)
+	}
 
 	got := modelStore.Get(channelUID, "messages", metricsKey, modelID)
 	if got == nil {
@@ -412,6 +422,9 @@ func TestProbeEndpoint_DisableProbeUsesBuiltinManifest(t *testing.T) {
 	if result.ModelsCount != 2 {
 		t.Fatalf("ModelsCount = %d, want 2", result.ModelsCount)
 	}
+	if result.ModelDiscoverySource != ModelDiscoverySourceBuiltinManifest || result.ModelsDiscoveredAt == nil {
+		t.Fatalf("静态清单元数据错误: %+v", result)
+	}
 }
 
 func TestProbeEndpoint_BuiltinManifestDoesNotHideAuthFailure(t *testing.T) {
@@ -474,6 +487,9 @@ func TestProbeEndpoint_ModelsUsesUnifiedAuthHeader(t *testing.T) {
 	}
 	if result.ModelsCount != 1 || result.Models[0] != "claude-test" {
 		t.Fatalf("models = %v, count=%d", result.Models, result.ModelsCount)
+	}
+	if result.ModelDiscoverySource != ModelDiscoverySourceModelsAPI || result.ModelsDiscoveredAt == nil {
+		t.Fatalf("models API 元数据错误: %+v", result)
 	}
 }
 

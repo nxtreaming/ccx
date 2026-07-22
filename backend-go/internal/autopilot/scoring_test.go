@@ -629,14 +629,28 @@ func TestScoreCandidate_QualityTracksTaskTarget(t *testing.T) {
 	low := ScoringCandidate{ChannelUID: "low", QualityTier: QualityTierLow}
 	premium := ScoringCandidate{ChannelUID: "premium", QualityTier: QualityTierPremium}
 
-	lightweight := ScoringContext{Weights: weights, TargetQualityTier: QualityTierLow}
-	if ScoreCandidate(low, lightweight).Score <= ScoreCandidate(premium, lightweight).Score {
-		t.Fatal("low target should prefer low tier over premium tier")
+	lightweight := ScoringContext{
+		Weights:           weights,
+		TargetQualityTier: QualityTierLow,
+		QualityBenefitCap: QualityTierLow,
+	}
+	if gotLow, gotPremium := ScoreCandidate(low, lightweight).Score, ScoreCandidate(premium, lightweight).Score; gotLow != gotPremium {
+		t.Fatalf("quality above the low floor should be saturated, low=%v premium=%v", gotLow, gotPremium)
 	}
 
 	complex := ScoringContext{Weights: weights, TargetQualityTier: QualityTierPremium}
 	if ScoreCandidate(premium, complex).Score <= ScoreCandidate(low, complex).Score {
 		t.Fatal("premium target should prefer premium tier over low tier")
+	}
+}
+
+func TestScoreCandidate_HigherQualityIsNotPenalizedAboveFloor(t *testing.T) {
+	weights := ScoringWeights{WQuality: 1}
+	ctx := ScoringContext{Weights: weights, TargetQualityTier: QualityTierHigh}
+	high := ScoreCandidate(ScoringCandidate{QualityTier: QualityTierHigh}, ctx)
+	premium := ScoreCandidate(ScoringCandidate{QualityTier: QualityTierPremium}, ctx)
+	if premium.QualityScore <= high.QualityScore {
+		t.Fatalf("premium quality should not be penalized above high floor: high=%v premium=%v", high.QualityScore, premium.QualityScore)
 	}
 }
 

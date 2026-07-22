@@ -211,6 +211,7 @@ func (r *SmartRouter) BuildPlan(profile *RequestProfile) *RoutingPlan {
 		TaskClass:         profile.TaskClass,
 		TaskDomain:        profile.TaskDomain,
 		TargetQualityTier: requestQualityTarget(profile),
+		QualityBenefitCap: requestQualityBenefitCap(profile),
 		FamilyPrefs:       familyPrefs,
 		Weights:           weights,
 	}
@@ -450,6 +451,7 @@ func (r *SmartRouter) executeFilter(
 		TaskClass:         profile.TaskClass,
 		TaskDomain:        profile.TaskDomain,
 		TargetQualityTier: requestQualityTarget(profile),
+		QualityBenefitCap: requestQualityBenefitCap(profile),
 		FamilyPrefs:       familyPrefs,
 		Weights:           weights,
 	}

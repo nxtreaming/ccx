@@ -276,6 +276,9 @@ export interface ChannelModelBinding {
   keyMask: string
   models: string[]
   updatedAt?: string
+  modelsDiscoveredAt?: string
+  modelDiscoverySource?: string
+  modelDiscoveryMessage?: string
 }
 
 export interface ChannelProtocolRoute {
@@ -290,6 +293,9 @@ export interface ChannelProtocolRoute {
   discoveredModels?: string[]
   modelBindings?: ChannelModelBinding[]
   modelsUpdatedAt?: string
+  modelsDiscoveredAt?: string
+  modelDiscoverySource?: string
+  modelDiscoveryMessage?: string
 }
 
 export interface ChannelsResponse {
@@ -1722,6 +1728,9 @@ export interface ManagedAccountChannel {
   discoveredModels?: string[]
   modelBindings?: ChannelModelBinding[]
   modelsUpdatedAt?: string
+  modelsDiscoveredAt?: string
+  modelDiscoverySource?: string
+  modelDiscoveryMessage?: string
 }
 
 export interface ManagedAccount {
@@ -1743,6 +1752,9 @@ export interface EndpointDiscoveryInfo {
   baseUrl: string
   modelsCount: number
   protocolOk: boolean
+  modelDiscoverySource?: string
+  modelDiscoveryMessage?: string
+  modelsDiscoveredAt?: string
 }
 
 // 发现状态信息

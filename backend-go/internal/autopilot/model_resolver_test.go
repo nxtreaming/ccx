@@ -436,6 +436,28 @@ func TestRankEligibleModels_PrefersProviderModelQualityBeforeRelativeCost(t *tes
 	}
 }
 
+func TestRankEligibleModels_UsesHigherVersionWithinUndeclaredFamily(t *testing.T) {
+	eligible := []ModelProfile{
+		makeModelProfile("kimi-k2.6", ModelFamilyKimi, QualityTierHigh, 262144,
+			true, true, true, true, 0),
+		makeModelProfile("kimi-k2.7-code", ModelFamilyKimi, QualityTierHigh, 262144,
+			true, true, true, true, 0),
+	}
+
+	best := rankTestModels(eligible, "claude-sonnet-5")
+	if best.ModelID != "kimi-k2.7-code" {
+		t.Fatalf("未声明同档能力顺序时应优先较高版本，got %s", best.ModelID)
+	}
+}
+
+func TestCompareModelVersionDoesNotCrossFamily(t *testing.T) {
+	left := rankedModelCandidate{profile: ModelProfile{ModelFamily: ModelFamilyKimi}, versionLineage: "k2", versionNumbers: []int{2, 7}}
+	right := rankedModelCandidate{profile: ModelProfile{ModelFamily: ModelFamilyGLM}, versionLineage: "glm5", versionNumbers: []int{5, 1}}
+	if _, decided := compareModelVersion(left, right); decided {
+		t.Fatal("版本号启发式不应跨模型族比较")
+	}
+}
+
 func TestRankEligibleModels_PrefersProviderRelativeCostWhenQualityOrderIncomplete(t *testing.T) {
 	eligible := []ModelProfile{
 		makeModelProfile("glm-5.2", ModelFamilyGLM, QualityTierHigh, 1048576,

@@ -234,6 +234,12 @@ type KeyEndpointProfile struct {
 	GroupChangedAt *time.Time `json:"groupChangedAt,omitempty"` // 分组变更时间
 	ModelListHash  string     `json:"modelListHash,omitempty"`  // 模型列表哈希，用于检测变更
 
+	// ── 模型清单发现元数据 ──
+	// 与 UpdatedAt 分离：UpdatedAt 会被 L1 健康画像刷新覆盖，不能代表模型清单时间。
+	ModelDiscoverySource  string     `json:"modelDiscoverySource,omitempty"`  // control_plane | models_api | builtin_manifest | builtin_fallback
+	ModelDiscoveryMessage string     `json:"modelDiscoveryMessage,omitempty"` // 发现/回退说明
+	ModelsDiscoveredAt    *time.Time `json:"modelsDiscoveredAt,omitempty"`    // 最近一次模型清单发现时间
+
 	// ── 质量趋势（Phase 1 shadow）──
 	QualityTrend *QualityTrend `json:"qualityTrend,omitempty"` // 当前质量趋势检测结果
 

@@ -87,10 +87,13 @@ type DiscoveryStatusInfo struct {
 
 // EndpointDiscoveryInfo 端点发现结果（key 已掩码）。
 type EndpointDiscoveryInfo struct {
-	KeyMask     string `json:"keyMask"`
-	BaseURL     string `json:"baseUrl"`
-	ModelsCount int    `json:"modelsCount"`
-	ProtocolOk  bool   `json:"protocolOk"`
+	KeyMask               string     `json:"keyMask"`
+	BaseURL               string     `json:"baseUrl"`
+	ModelsCount           int        `json:"modelsCount"`
+	ProtocolOk            bool       `json:"protocolOk"`
+	ModelDiscoverySource  string     `json:"modelDiscoverySource,omitempty"`
+	ModelDiscoveryMessage string     `json:"modelDiscoveryMessage,omitempty"`
+	ModelsDiscoveredAt    *time.Time `json:"modelsDiscoveredAt,omitempty"`
 }
 
 // ─── 路由注册 ─────────────────────────────────────────────────────────────────────────
@@ -281,22 +284,28 @@ type managedCompsharePlanView struct {
 }
 
 type managedAccountChannelView struct {
-	Kind                string                                  `json:"kind"`
-	ChannelUID          string                                  `json:"channelUid"`
-	Name                string                                  `json:"name"`
-	ServiceType         string                                  `json:"serviceType"`
-	Status              string                                  `json:"status"`
-	ModelInventoryKnown bool                                    `json:"modelInventoryKnown,omitempty"`
-	DiscoveredModels    []string                                `json:"discoveredModels,omitempty"`
-	ModelBindings       []managedAccountChannelModelBindingView `json:"modelBindings,omitempty"`
-	ModelsUpdatedAt     *time.Time                              `json:"modelsUpdatedAt,omitempty"`
+	Kind                  string                                  `json:"kind"`
+	ChannelUID            string                                  `json:"channelUid"`
+	Name                  string                                  `json:"name"`
+	ServiceType           string                                  `json:"serviceType"`
+	Status                string                                  `json:"status"`
+	ModelInventoryKnown   bool                                    `json:"modelInventoryKnown,omitempty"`
+	DiscoveredModels      []string                                `json:"discoveredModels,omitempty"`
+	ModelBindings         []managedAccountChannelModelBindingView `json:"modelBindings,omitempty"`
+	ModelsUpdatedAt       *time.Time                              `json:"modelsUpdatedAt,omitempty"`
+	ModelsDiscoveredAt    *time.Time                              `json:"modelsDiscoveredAt,omitempty"`
+	ModelDiscoverySource  string                                  `json:"modelDiscoverySource,omitempty"`
+	ModelDiscoveryMessage string                                  `json:"modelDiscoveryMessage,omitempty"`
 }
 
 type managedAccountChannelModelBindingView struct {
-	CredentialUID string     `json:"credentialUid,omitempty"`
-	KeyMask       string     `json:"keyMask"`
-	Models        []string   `json:"models"`
-	UpdatedAt     *time.Time `json:"updatedAt,omitempty"`
+	CredentialUID         string     `json:"credentialUid,omitempty"`
+	KeyMask               string     `json:"keyMask"`
+	Models                []string   `json:"models"`
+	UpdatedAt             *time.Time `json:"updatedAt,omitempty"`
+	ModelsDiscoveredAt    *time.Time `json:"modelsDiscoveredAt,omitempty"`
+	ModelDiscoverySource  string     `json:"modelDiscoverySource,omitempty"`
+	ModelDiscoveryMessage string     `json:"modelDiscoveryMessage,omitempty"`
 }
 
 type managedAccountView struct {
@@ -356,8 +365,16 @@ func handleListAccounts(deps *AutoManagedDeps) gin.HandlerFunc {
 					ServiceType: channel.Upstream.ServiceType, Status: channel.Upstream.Status,
 				}
 				if profileStore != nil {
-					channelView.DiscoveredModels, channelView.ModelBindings, channelView.ModelsUpdatedAt, channelView.ModelInventoryKnown =
-						managedChannelModelAvailability(profileStore.ListActiveByChannel(channel.Upstream.ChannelUID))
+					inventory := managedChannelModelAvailabilityDetails(profileStore.ListActiveByChannel(channel.Upstream.ChannelUID))
+					channelView.DiscoveredModels = inventory.models
+					channelView.ModelBindings = inventory.bindings
+					// modelsUpdatedAt 兼容旧前端，但语义必须是模型清单发现时间，
+					// 不能再暴露会被 L1 刷新的 endpoint UpdatedAt。
+					channelView.ModelsUpdatedAt = inventory.latestDiscoveredAtPointer()
+					channelView.ModelsDiscoveredAt = inventory.latestDiscoveredAtPointer()
+					channelView.ModelDiscoverySource = inventory.source
+					channelView.ModelDiscoveryMessage = inventory.message
+					channelView.ModelInventoryKnown = inventory.known
 				}
 				view.Channels = append(view.Channels, channelView)
 			}
@@ -370,23 +387,56 @@ func handleListAccounts(deps *AutoManagedDeps) gin.HandlerFunc {
 	}
 }
 
-func managedChannelModelAvailability(profiles []*KeyEndpointProfile) ([]string, []managedAccountChannelModelBindingView, *time.Time, bool) {
+type managedChannelModelInventory struct {
+	models             []string
+	bindings           []managedAccountChannelModelBindingView
+	latestUpdatedAt    time.Time
+	latestDiscoveredAt time.Time
+	source             string
+	message            string
+	known              bool
+}
+
+func (inventory managedChannelModelInventory) latestUpdatedAtPointer() *time.Time {
+	if inventory.latestUpdatedAt.IsZero() {
+		return nil
+	}
+	value := inventory.latestUpdatedAt
+	return &value
+}
+
+func (inventory managedChannelModelInventory) latestDiscoveredAtPointer() *time.Time {
+	if inventory.latestDiscoveredAt.IsZero() {
+		return nil
+	}
+	value := inventory.latestDiscoveredAt
+	return &value
+}
+
+func managedChannelModelAvailabilityDetails(profiles []*KeyEndpointProfile) managedChannelModelInventory {
 	type bindingAggregate struct {
-		credentialUID string
-		keyMask       string
-		models        map[string]struct{}
-		updatedAt     time.Time
+		credentialUID    string
+		keyMask          string
+		models           map[string]struct{}
+		updatedAt        time.Time
+		discoveredAt     time.Time
+		discoverySource  string
+		discoveryMessage string
 	}
 
 	allModels := make(map[string]struct{})
 	bindings := make(map[string]*bindingAggregate)
-	var latest time.Time
-	modelInventoryKnown := false
+	var latestUpdatedAt time.Time
+	var latestDiscoveredAt time.Time
+	sources := make(map[string]struct{})
+	var latestMessage string
+	var latestMessageAt time.Time
+	known := false
 	for _, profile := range profiles {
 		if profile == nil || !profileHasModelInventory(profile) {
 			continue
 		}
-		modelInventoryKnown = true
+		known = true
 		bindingKey := strings.TrimSpace(profile.CredentialUID)
 		if bindingKey == "" {
 			bindingKey = strings.TrimSpace(profile.KeyHash)
@@ -417,8 +467,26 @@ func managedChannelModelAvailability(profiles []*KeyEndpointProfile) ([]string, 
 		if profile.UpdatedAt.After(binding.updatedAt) {
 			binding.updatedAt = profile.UpdatedAt
 		}
-		if profile.UpdatedAt.After(latest) {
-			latest = profile.UpdatedAt
+		if profile.UpdatedAt.After(latestUpdatedAt) {
+			latestUpdatedAt = profile.UpdatedAt
+		}
+		if profile.ModelDiscoverySource != "" {
+			sources[profile.ModelDiscoverySource] = struct{}{}
+		}
+		if profile.ModelsDiscoveredAt != nil {
+			discoveredAt := profile.ModelsDiscoveredAt.UTC()
+			if discoveredAt.After(binding.discoveredAt) {
+				binding.discoveredAt = discoveredAt
+				binding.discoverySource = profile.ModelDiscoverySource
+				binding.discoveryMessage = profile.ModelDiscoveryMessage
+			}
+			if discoveredAt.After(latestDiscoveredAt) {
+				latestDiscoveredAt = discoveredAt
+			}
+			if discoveredAt.After(latestMessageAt) && strings.TrimSpace(profile.ModelDiscoveryMessage) != "" {
+				latestMessageAt = discoveredAt
+				latestMessage = profile.ModelDiscoveryMessage
+			}
 		}
 	}
 
@@ -426,13 +494,19 @@ func managedChannelModelAvailability(profiles []*KeyEndpointProfile) ([]string, 
 	bindingList := make([]managedAccountChannelModelBindingView, 0, len(bindings))
 	for _, binding := range bindings {
 		view := managedAccountChannelModelBindingView{
-			CredentialUID: binding.credentialUID,
-			KeyMask:       binding.keyMask,
-			Models:        sortedModelSet(binding.models),
+			CredentialUID:         binding.credentialUID,
+			KeyMask:               binding.keyMask,
+			Models:                sortedModelSet(binding.models),
+			ModelDiscoverySource:  binding.discoverySource,
+			ModelDiscoveryMessage: binding.discoveryMessage,
 		}
 		if !binding.updatedAt.IsZero() {
 			updatedAt := binding.updatedAt
 			view.UpdatedAt = &updatedAt
+		}
+		if !binding.discoveredAt.IsZero() {
+			discoveredAt := binding.discoveredAt
+			view.ModelsDiscoveredAt = &discoveredAt
 		}
 		bindingList = append(bindingList, view)
 	}
@@ -442,17 +516,38 @@ func managedChannelModelAvailability(profiles []*KeyEndpointProfile) ([]string, 
 		}
 		return bindingList[i].KeyMask < bindingList[j].KeyMask
 	})
-	if latest.IsZero() {
-		return modelList, bindingList, nil, modelInventoryKnown
+
+	source := ""
+	if len(sources) == 1 {
+		for value := range sources {
+			source = value
+		}
+	} else if len(sources) > 1 {
+		source = "mixed"
 	}
-	return modelList, bindingList, &latest, modelInventoryKnown
+	return managedChannelModelInventory{
+		models:             modelList,
+		bindings:           bindingList,
+		latestUpdatedAt:    latestUpdatedAt,
+		latestDiscoveredAt: latestDiscoveredAt,
+		source:             source,
+		message:            latestMessage,
+		known:              known,
+	}
+}
+
+func managedChannelModelAvailability(profiles []*KeyEndpointProfile) ([]string, []managedAccountChannelModelBindingView, *time.Time, bool) {
+	inventory := managedChannelModelAvailabilityDetails(profiles)
+	return inventory.models, inventory.bindings, inventory.latestUpdatedAtPointer(), inventory.known
 }
 
 // profileHasModelInventory 区分尚未获得模型清单与成功发现到空清单。
 // 自动发现将 HTTP 200 的空 models 响应持久化为 Source=auto_discovery；它仍是权威结果，
 // 因此需要展示为当前 Key 的 0 个模型，而不是回退到可能过期的配置白名单。
 func profileHasModelInventory(profile *KeyEndpointProfile) bool {
-	return len(profile.AvailableModels) > 0 || strings.EqualFold(strings.TrimSpace(profile.Source), "auto_discovery")
+	return len(profile.AvailableModels) > 0 ||
+		strings.EqualFold(strings.TrimSpace(profile.Source), "auto_discovery") ||
+		strings.TrimSpace(profile.ModelDiscoverySource) != ""
 }
 
 func sortedModelSet(models map[string]struct{}) []string {
@@ -2428,10 +2523,13 @@ func handleAutoStatus(deps *AutoManagedDeps) gin.HandlerFunc {
 				}
 				for _, ep := range task.Endpoints {
 					info.Endpoints = append(info.Endpoints, EndpointDiscoveryInfo{
-						KeyMask:     ep.KeyMask,
-						BaseURL:     ep.BaseURL,
-						ModelsCount: ep.ModelsCount,
-						ProtocolOk:  ep.ProtocolOk,
+						KeyMask:               ep.KeyMask,
+						BaseURL:               ep.BaseURL,
+						ModelsCount:           ep.ModelsCount,
+						ProtocolOk:            ep.ProtocolOk,
+						ModelDiscoverySource:  ep.ModelDiscoverySource,
+						ModelDiscoveryMessage: ep.ModelDiscoveryMessage,
+						ModelsDiscoveredAt:    ep.ModelsDiscoveredAt,
 					})
 				}
 				resp.Discovery = info
