@@ -30,6 +30,7 @@ import (
 	"github.com/BenedictKing/ccx/internal/handlers/messages"
 	"github.com/BenedictKing/ccx/internal/handlers/responses"
 	"github.com/BenedictKing/ccx/internal/handlers/vectors"
+	"github.com/BenedictKing/ccx/internal/healthcheck"
 	"github.com/BenedictKing/ccx/internal/logger"
 	"github.com/BenedictKing/ccx/internal/metrics"
 	"github.com/BenedictKing/ccx/internal/middleware"
@@ -124,6 +125,46 @@ func channelModelsHandlerFetcher(handler gin.HandlerFunc) handlers.ChannelDiscov
 			Body:       append([]byte(nil), recorder.Body.Bytes()...),
 		}, nil
 	}
+}
+
+// healthCheckL1Fetcher 将渠道 GetChannelModels handler 适配为保活验证的 L1Fetcher
+// （与 channelModelsHandlerFetcher 同一包装路径，响应归一化在 healthcheck 包内完成）
+func healthCheckL1Fetcher(handler gin.HandlerFunc) healthcheck.L1Fetcher {
+	fetcher := channelModelsHandlerFetcher(handler)
+	return func(ctx context.Context, req healthcheck.L1Request) (healthcheck.L1Response, error) {
+		resp, err := fetcher(ctx, handlers.DiscoveryModelsFetchRequest{
+			ServiceType:        req.ServiceType,
+			BaseURL:            req.BaseURL,
+			APIKey:             req.APIKey,
+			AuthHeader:         req.AuthHeader,
+			CustomHeaders:      req.CustomHeaders,
+			ProxyURL:           req.ProxyURL,
+			InsecureSkipVerify: req.InsecureSkipVerify,
+		})
+		if err != nil {
+			return healthcheck.L1Response{}, err
+		}
+		return healthcheck.L1Response{StatusCode: resp.StatusCode, Body: resp.Body}, nil
+	}
+}
+
+// healthCheckAPIType 保活验证渠道类型到 ConfigManager.BlacklistKeyWithRecoverAt apiType 的映射
+func healthCheckAPIType(channelType string) string {
+	switch channelType {
+	case "messages":
+		return "Messages"
+	case "responses":
+		return "Responses"
+	case "gemini":
+		return "Gemini"
+	case "chat":
+		return "Chat"
+	case "images":
+		return "Images"
+	case "vectors":
+		return "Vectors"
+	}
+	return channelType
 }
 
 func parseCLIArgs(args []string) (cliOptions, error) {
@@ -783,6 +824,42 @@ func main() {
 	// 启动 loadShed 后台 reaper（30s 推进到期状态）
 	channelScheduler.Start()
 
+	// 渠道保活验证（L1 带 key 拉上游模型列表）：依赖指标持久化存储 key_health 表
+	var healthCheckManager *healthcheck.Manager
+	if metricsStore != nil {
+		healthCheckManager = healthcheck.NewManager(
+			func() config.Config { return cfgManager.GetConfig() },
+			metricsStore,
+			// 鉴权失败拉黑：交 ConfigManager.BlacklistKeyWithRecoverAt
+			func(channelType string, channelIndex int, apiKey, reason, message, recoverAt string) {
+				if err := cfgManager.BlacklistKeyWithRecoverAt(healthCheckAPIType(channelType), channelIndex, apiKey, reason, message, recoverAt); err != nil {
+					log.Printf("[HealthCheck-Blacklist] 警告: 拉黑 Key 失败: %v", err)
+				}
+			},
+			// 失败喂熔断：按渠道类型喂对应指标管理器
+			func(channelType string, channelIndex int, baseURL, apiKey string) {
+				kind := scheduler.ChannelKind(channelType)
+				serviceType := ""
+				cfg := cfgManager.GetConfig()
+				if upstreams := healthcheck.UpstreamsFor(&cfg, channelType); channelIndex >= 0 && channelIndex < len(upstreams) {
+					serviceType = upstreams[channelIndex].ServiceType
+				}
+				channelScheduler.RecordFailure(baseURL, apiKey, scheduler.NormalizedMetricsServiceType(kind, serviceType), kind)
+			},
+			healthcheck.Options{},
+		)
+		// 注册六类渠道的 L1 fetcher（复用各渠道 GetChannelModels handler 的薄包装）
+		healthCheckManager.RegisterL1Fetcher("messages", healthCheckL1Fetcher(messages.GetChannelModels(cfgManager)))
+		healthCheckManager.RegisterL1Fetcher("chat", healthCheckL1Fetcher(chat.GetChannelModels(cfgManager)))
+		healthCheckManager.RegisterL1Fetcher("responses", healthCheckL1Fetcher(responses.GetChannelModels(cfgManager)))
+		healthCheckManager.RegisterL1Fetcher("gemini", healthCheckL1Fetcher(gemini.GetChannelModels(cfgManager)))
+		healthCheckManager.RegisterL1Fetcher("images", healthCheckL1Fetcher(images.GetChannelModels(cfgManager)))
+		healthCheckManager.RegisterL1Fetcher("vectors", healthCheckL1Fetcher(vectors.GetChannelModels(cfgManager)))
+		healthCheckManager.Start()
+	} else {
+		log.Printf("[HealthCheck-Init] 指标持久化不可用，渠道保活验证未启动")
+	}
+
 	scheduledRecoveryStop := make(chan struct{})
 	go func() {
 		runScheduledRecovery := func(now time.Time, missedSlot time.Time) bool {
@@ -939,6 +1016,21 @@ func main() {
 
 		apiGroup.POST("/channel-discovery", handlers.ChannelDiscoveryWithModelFetchers(cfgManager, discoveryModelFetchers))
 
+		// 渠道保活验证管理 API（六类渠道，挂在各渠道 ping 路由附近）
+		registerChannelHealthRoutes := func(channelType string) {
+			base := "/" + channelType + "/channels/:id/health"
+			if healthCheckManager == nil {
+				unavailable := func(c *gin.Context) {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "渠道保活验证未启用（指标持久化不可用）"})
+				}
+				apiGroup.GET(base, unavailable)
+				apiGroup.POST(base+"/check", unavailable)
+				return
+			}
+			apiGroup.GET(base, healthCheckManager.ChannelHealthHandler(channelType))
+			apiGroup.POST(base+"/check", healthCheckManager.TriggerChannelCheckHandler(channelType))
+		}
+
 		apiGroup.POST("/responses/channels/:id/copilot/diagnose", responses.DiagnoseCopilotChannel(cfgManager))
 
 		// Messages 渠道管理
@@ -969,6 +1061,7 @@ func main() {
 		apiGroup.GET("/messages/ping/:id", messages.PingChannel(cfgManager))
 		apiGroup.GET("/messages/ping", messages.PingAllChannels(cfgManager))
 		apiGroup.POST("/messages/channels/:id/models", messages.GetChannelModels(cfgManager))
+		registerChannelHealthRoutes("messages")
 		apiGroup.GET("/messages/models/stats/history", handlers.GetModelStatsHistory(messagesMetricsManager))
 		apiGroup.GET("/messages/channels/:id/logs", handlers.GetChannelLogs(channelScheduler.GetChannelLogStore(scheduler.ChannelKindMessages), cfgManager, scheduler.ChannelKindMessages))
 		apiGroup.GET("/messages/channels/:id/capability-snapshot", handlers.GetCapabilitySnapshot(cfgManager, "messages"))
@@ -1004,6 +1097,7 @@ func main() {
 		apiGroup.GET("/responses/ping/:id", responses.PingChannel(cfgManager))
 		apiGroup.GET("/responses/ping", responses.PingAllChannels(cfgManager))
 		apiGroup.POST("/responses/channels/:id/models", responses.GetChannelModels(cfgManager))
+		registerChannelHealthRoutes("responses")
 		apiGroup.GET("/responses/models/stats/history", handlers.GetModelStatsHistory(responsesMetricsManager))
 		apiGroup.GET("/responses/channels/:id/logs", handlers.GetChannelLogs(channelScheduler.GetChannelLogStore(scheduler.ChannelKindResponses), cfgManager, scheduler.ChannelKindResponses))
 		apiGroup.GET("/responses/channels/:id/capability-snapshot", handlers.GetCapabilitySnapshot(cfgManager, "responses"))
@@ -1039,6 +1133,7 @@ func main() {
 		apiGroup.GET("/gemini/ping/:id", gemini.PingChannel(cfgManager))
 		apiGroup.GET("/gemini/ping", gemini.PingAllChannels(cfgManager))
 		apiGroup.POST("/gemini/channels/:id/models", gemini.GetChannelModels(cfgManager))
+		registerChannelHealthRoutes("gemini")
 		apiGroup.GET("/gemini/models/stats/history", handlers.GetModelStatsHistory(geminiMetricsManager))
 		apiGroup.GET("/gemini/channels/:id/logs", handlers.GetChannelLogs(channelScheduler.GetChannelLogStore(scheduler.ChannelKindGemini), cfgManager, scheduler.ChannelKindGemini))
 		apiGroup.GET("/gemini/channels/:id/capability-snapshot", handlers.GetCapabilitySnapshot(cfgManager, "gemini"))
@@ -1074,6 +1169,7 @@ func main() {
 		apiGroup.GET("/chat/ping/:id", chat.PingChannel(cfgManager))
 		apiGroup.GET("/chat/ping", chat.PingAllChannels(cfgManager))
 		apiGroup.POST("/chat/channels/:id/models", chat.GetChannelModels(cfgManager))
+		registerChannelHealthRoutes("chat")
 		apiGroup.GET("/chat/models/stats/history", handlers.GetModelStatsHistory(chatMetricsManager))
 		apiGroup.GET("/chat/channels/:id/logs", handlers.GetChannelLogs(channelScheduler.GetChannelLogStore(scheduler.ChannelKindChat), cfgManager, scheduler.ChannelKindChat))
 		apiGroup.GET("/chat/channels/:id/capability-snapshot", handlers.GetCapabilitySnapshot(cfgManager, "chat"))
@@ -1110,6 +1206,7 @@ func main() {
 		apiGroup.GET("/images/ping/:id", images.PingChannel(cfgManager))
 		apiGroup.GET("/images/ping", images.PingAllChannels(cfgManager))
 		apiGroup.POST("/images/channels/:id/models", images.GetChannelModels(cfgManager))
+		registerChannelHealthRoutes("images")
 		apiGroup.GET("/images/models/stats/history", handlers.GetModelStatsHistory(imagesMetricsManager))
 		apiGroup.GET("/images/channels/:id/logs", handlers.GetChannelLogs(channelScheduler.GetChannelLogStore(scheduler.ChannelKindImages), cfgManager, scheduler.ChannelKindImages))
 
@@ -1139,6 +1236,7 @@ func main() {
 		apiGroup.GET("/vectors/ping/:id", vectors.PingChannel(cfgManager))
 		apiGroup.GET("/vectors/ping", vectors.PingAllChannels(cfgManager))
 		apiGroup.POST("/vectors/channels/:id/models", vectors.GetChannelModels(cfgManager))
+		registerChannelHealthRoutes("vectors")
 		apiGroup.GET("/vectors/models/stats/history", handlers.GetModelStatsHistory(vectorsMetricsManager))
 		apiGroup.GET("/vectors/channels/:id/logs", handlers.GetChannelLogs(channelScheduler.GetChannelLogStore(scheduler.ChannelKindVectors), cfgManager, scheduler.ChannelKindVectors))
 
@@ -1433,6 +1531,12 @@ func main() {
 		// 停止远程预置更新器（取消进行中的 HTTP 请求并等待 worker 退出）。
 		presetUpdater.Stop()
 		log.Println("[PresetUpdater-Shutdown] 预置更新器已安全关闭")
+
+		// 停止渠道保活验证（等待 worker 池排空后再关指标存储）
+		if healthCheckManager != nil {
+			healthCheckManager.Stop()
+			log.Println("[HealthCheck-Shutdown] 渠道保活验证已安全关闭")
+		}
 
 		// 关闭指标持久化存储
 		if metricsStore != nil {
