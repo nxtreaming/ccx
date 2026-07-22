@@ -125,12 +125,40 @@ describe('ProtocolModelAvailability', () => {
     const messages = wrapper.get('[data-kind="messages"]')
     expect(messages.text()).toContain('actual-model')
     expect(messages.text()).not.toContain('configured-model')
-    expect(messages.text()).toContain('channelEditor.protocolModels.keyDifferences')
+    expect(messages.text()).toContain('channelEditor.protocolModels.diffCount:2')
     expect(messages.text()).toContain('ark-a***001')
     expect(messages.text()).toContain('ark-b***002')
     expect(messages.text()).toContain('channelEditor.protocolModels.coverage:1/2')
-    expect(messages.findAll('details')).toHaveLength(2)
+    // 全量模型列表折叠为一个 details，差异区直接列出缺失关系
+    expect(messages.findAll('details')).toHaveLength(1)
+    expect(messages.findAll('details')[0].text()).toContain('actual-model')
     expect(messages.findAll('details')[0].text()).toContain('other-model')
+  })
+
+  it('多 Key 模型一致时只显示一致提示，不展示差异区', () => {
+    const wrapper = mount(ProtocolModelAvailability, {
+      props: {
+        routes: [{
+          kind: 'messages', index: 0, name: 'multi-key', serviceType: 'claude',
+          discoveredModels: ['model-a', 'model-b'],
+          modelBindings: [
+            { credentialUid: 'cred-a', keyMask: 'sk-a***001', models: ['model-a', 'model-b'] },
+            { credentialUid: 'cred-b', keyMask: 'sk-b***002', models: ['model-a', 'model-b'] },
+          ],
+        }],
+      },
+      global: {
+        stubs: {
+          VChip: passthroughStub,
+          VIcon: passthroughStub,
+        },
+      },
+    })
+
+    const messages = wrapper.get('[data-kind="messages"]')
+    expect(messages.text()).toContain('channelEditor.protocolModels.consistent:2')
+    expect(messages.text()).not.toContain('channelEditor.protocolModels.diffCount')
+    expect(messages.find('.protocol-model-route__diffs').exists()).toBe(false)
   })
 
   it('展示模型清单的发现时间、来源和说明', () => {

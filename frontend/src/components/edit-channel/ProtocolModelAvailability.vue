@@ -44,96 +44,74 @@
           </span>
         </div>
 
-        <div v-if="route.models.length" class="protocol-model-route__models">
-          <v-chip
-            v-for="model in route.models"
-            :key="model"
-            size="small"
-            variant="outlined"
-            class="protocol-model-route__model"
-          >
-            {{ model }}
-          </v-chip>
-        </div>
-        <div v-else class="text-caption text-medium-emphasis">
-          {{ t('channelEditor.protocolModels.empty') }}
-        </div>
-        <div v-if="route.hasBindingDifferences" class="protocol-model-route__bindings">
-          <div class="protocol-model-route__bindings-header">
+        <!-- 多 Key 场景只显示差异：列出未被全部 Key 覆盖的模型及缺失的 Key -->
+        <div v-if="route.diffModels.length" class="protocol-model-route__diffs">
+          <div class="protocol-model-route__diffs-header">
             <v-icon color="warning" size="16">mdi-key-alert</v-icon>
-            <div>
-              <div class="text-caption font-weight-medium text-warning">
-                {{ t('channelEditor.protocolModels.keyDifferences') }}
-              </div>
-              <div class="text-caption text-medium-emphasis">
-                {{ t('channelEditor.protocolModels.keyDifferencesHint') }}
-              </div>
+            <span class="text-caption font-weight-medium text-warning">
+              {{ t('channelEditor.protocolModels.diffCount', { count: route.diffModels.length }) }}
+            </span>
+          </div>
+          <div class="protocol-model-route__diff-list">
+            <div
+              v-for="diff in route.diffModels"
+              :key="diff.model"
+              class="protocol-model-diff"
+            >
+              <code class="protocol-model-diff__model">{{ diff.model }}</code>
+              <span class="text-caption text-medium-emphasis text-no-wrap">
+                {{ t('channelEditor.protocolModels.missingFor') }}
+              </span>
+              <code
+                v-for="key in diff.missingKeys"
+                :key="key.credentialUid || key.keyMask"
+                class="protocol-model-diff__key"
+              >
+                {{ key.keyMask }}
+              </code>
             </div>
           </div>
-          <div class="protocol-model-route__binding-list">
-            <details
+          <div class="protocol-model-route__coverage">
+            <v-chip
               v-for="binding in route.bindings"
               :key="binding.credentialUid || binding.keyMask"
-              class="protocol-model-binding"
+              size="x-small"
+              variant="tonal"
+              :color="binding.models.length === route.models.length ? 'success' : 'warning'"
             >
-              <summary class="protocol-model-binding__summary">
-                <code>{{ binding.keyMask }}</code>
-                <v-chip class="protocol-model-binding__coverage" size="x-small" variant="tonal" color="warning">
-                  {{ t('channelEditor.protocolModels.coverage', { available: binding.models.length, total: route.models.length }) }}
-                </v-chip>
-                <v-icon class="protocol-model-binding__chevron" size="16">mdi-chevron-down</v-icon>
-              </summary>
-              <div class="protocol-model-binding__detail">
-                <div class="protocol-model-binding__discovery-meta text-caption text-medium-emphasis">
-                  <span>
-                    {{ t('channelEditor.protocolModels.lastDiscovered') }}
-                    {{ formatDiscoveryTime(binding.modelsDiscoveredAt) || t('channelEditor.protocolModels.discoveryTimeUnknown') }}
-                  </span>
-                  <span v-if="binding.modelDiscoverySource">
-                    {{ discoverySourceLabel(binding.modelDiscoverySource) }}
-                  </span>
-                  <span v-if="binding.modelDiscoveryMessage">{{ binding.modelDiscoveryMessage }}</span>
-                </div>
-                <div>
-                  <div class="protocol-model-binding__label text-success">
-                    {{ t('channelEditor.protocolModels.availableModels') }} · {{ binding.models.length }}
-                  </div>
-                  <div v-if="binding.models.length" class="protocol-model-binding__models">
-                    <v-chip
-                      v-for="model in binding.models"
-                      :key="`available:${model}`"
-                      size="x-small"
-                      variant="outlined"
-                      color="success"
-                      class="protocol-model-binding__model"
-                    >
-                      {{ model }}
-                    </v-chip>
-                  </div>
-                  <div v-else class="text-caption text-medium-emphasis">
-                    {{ t('channelEditor.protocolModels.empty') }}
-                  </div>
-                </div>
-                <div v-if="binding.missingModels.length">
-                  <div class="protocol-model-binding__label text-warning">
-                    {{ t('channelEditor.protocolModels.unavailableModels') }} · {{ binding.missingModels.length }}
-                  </div>
-                  <div class="protocol-model-binding__models">
-                    <v-chip
-                      v-for="model in binding.missingModels"
-                      :key="`unavailable:${model}`"
-                      size="x-small"
-                      variant="tonal"
-                      color="warning"
-                      class="protocol-model-binding__model"
-                    >
-                      {{ model }}
-                    </v-chip>
-                  </div>
-                </div>
-              </div>
-            </details>
+              {{ binding.keyMask }} ·
+              {{ t('channelEditor.protocolModels.coverage', { available: binding.models.length, total: route.models.length }) }}
+            </v-chip>
           </div>
+        </div>
+        <div v-else-if="route.bindings.length > 1" class="protocol-model-route__consistent">
+          <v-icon color="success" size="14">mdi-check-all</v-icon>
+          <span class="text-caption text-medium-emphasis">
+            {{ t('channelEditor.protocolModels.consistent', { count: route.bindings.length }) }}
+          </span>
+        </div>
+
+        <details v-if="route.models.length" class="protocol-model-route__all">
+          <summary class="protocol-model-route__all-summary">
+            <span class="text-caption">
+              {{ t('channelEditor.protocolModels.viewAll', { count: route.models.length }) }}
+            </span>
+            <v-icon class="protocol-model-route__all-chevron" size="16">mdi-chevron-down</v-icon>
+          </summary>
+          <div class="protocol-model-route__models">
+            <v-chip
+              v-for="model in route.models"
+              :key="model"
+              size="small"
+              variant="outlined"
+              class="protocol-model-route__model"
+            >
+              {{ model }}
+            </v-chip>
+          </div>
+        </details>
+        <div v-else class="text-caption text-medium-emphasis">
+          {{ t('channelEditor.protocolModels.empty') }}
         </div>
       </div>
     </div>
@@ -238,13 +216,16 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
     ...bindings.flatMap(binding => binding.models),
   ])
   const bindingSignatures = new Set(bindings.map(binding => binding.models.join('\u0000')))
-  const bindingsWithDifferences = bindings.map(binding => {
-    const availableModels = new Set(binding.models)
-    return {
-      ...binding,
-      missingModels: models.filter(model => !availableModels.has(model)),
-    }
-  })
+  const hasBindingDifferences = bindings.length > 1 && bindingSignatures.size > 1
+  // 只保留未被全部 Key 覆盖的模型，并列出缺失该模型的 Key。
+  const diffModels = hasBindingDifferences
+    ? models
+        .map(model => ({
+          model,
+          missingKeys: bindings.filter(binding => !binding.models.includes(model)),
+        }))
+        .filter(diff => diff.missingKeys.length > 0)
+    : []
 
   return {
     ...route,
@@ -253,9 +234,9 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
     path: definition.path,
     icon: definition.icon,
     models,
-    bindings: bindingsWithDifferences,
+    bindings,
+    diffModels,
     hasInventory: hasDiscoveredInventory || models.length > 0,
-    hasBindingDifferences: bindings.length > 1 && bindingSignatures.size > 1,
     discoveryTime: formatDiscoveryTime(route.modelsDiscoveredAt),
     discoverySourceLabel: discoverySourceLabel(route.modelDiscoverySource),
   }
@@ -282,9 +263,9 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
 }
 
 .protocol-model-route {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2fr);
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 14px 16px;
 }
 
@@ -309,11 +290,9 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
 
 .protocol-model-route__discovery-meta {
   display: flex;
-  grid-column: 1 / -1;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: -6px;
 }
 
 .protocol-model-route__path {
@@ -323,6 +302,84 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
   line-height: 1.35;
 }
 
+.protocol-model-route__diffs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(var(--v-theme-warning), 0.4);
+  border-radius: 6px;
+  background: rgba(var(--v-theme-warning), 0.04);
+}
+
+.protocol-model-route__diffs-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.protocol-model-route__diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.protocol-model-diff {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.protocol-model-diff__model {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.protocol-model-diff__key {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(var(--v-theme-warning), 0.12);
+  color: rgb(var(--v-theme-warning));
+  font-size: 0.72rem;
+}
+
+.protocol-model-route__coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(var(--v-theme-warning), 0.25);
+}
+
+.protocol-model-route__consistent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.protocol-model-route__all-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+.protocol-model-route__all-summary::-webkit-details-marker {
+  display: none;
+}
+
+.protocol-model-route__all-chevron {
+  transition: transform 0.16s ease;
+}
+
+.protocol-model-route__all[open] .protocol-model-route__all-chevron {
+  transform: rotate(180deg);
+}
+
 .protocol-model-route__models {
   display: flex;
   align-items: flex-start;
@@ -330,99 +387,7 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-}
-
-.protocol-model-route__bindings {
-  display: flex;
-  grid-column: 1 / -1;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(var(--v-theme-warning), 0.35);
-}
-
-.protocol-model-route__bindings-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.protocol-model-route__binding-list {
-  overflow: hidden;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 4px;
-}
-
-.protocol-model-binding + .protocol-model-binding {
-  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-}
-
-.protocol-model-binding__summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 20px;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 7px 10px;
-  cursor: pointer;
-  list-style: none;
-  background: rgba(var(--v-theme-warning), 0.04);
-}
-
-.protocol-model-binding__summary::-webkit-details-marker {
-  display: none;
-}
-
-.protocol-model-binding__summary code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.protocol-model-binding__chevron {
-  transition: transform 0.16s ease;
-}
-
-.protocol-model-binding[open] .protocol-model-binding__chevron {
-  transform: rotate(180deg);
-}
-
-.protocol-model-binding__detail {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-
-.protocol-model-binding__discovery-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-}
-
-.protocol-model-binding__label {
-  margin-bottom: 6px;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.protocol-model-binding__models {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  min-width: 0;
-}
-
-.protocol-model-binding__model {
-  height: auto;
-  min-height: 20px;
-  max-width: 100%;
-}
-
-.protocol-model-binding__model :deep(.v-chip__content) {
-  overflow-wrap: anywhere;
-  white-space: normal;
-  line-height: 1.3;
+  padding-top: 8px;
 }
 
 .protocol-model-route__model {
@@ -435,34 +400,5 @@ const normalizedRoutes = computed(() => (props.routes ?? []).map((route) => {
   overflow-wrap: anywhere;
   white-space: normal;
   line-height: 1.35;
-}
-
-@media (max-width: 700px) {
-  .protocol-model-route {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .protocol-model-binding__summary {
-    grid-template-columns: minmax(0, 1fr) auto 18px;
-    gap: 6px;
-  }
-}
-
-@media (max-width: 480px) {
-  .protocol-model-binding__summary {
-    grid-template-columns: minmax(0, 1fr) 18px;
-  }
-
-  .protocol-model-binding__coverage {
-    grid-column: 1;
-    justify-self: start;
-  }
-
-  .protocol-model-binding__chevron {
-    grid-row: 1 / span 2;
-    grid-column: 2;
-    align-self: center;
-  }
 }
 </style>
