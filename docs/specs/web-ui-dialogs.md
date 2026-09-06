@@ -488,7 +488,7 @@ AutopilotDiagnosePanel:
 - 添加 API 密钥（`App.vue:610`）：`newApiKey` 输入，Enter 添加。
 - 通用确认对话框（`App.vue:636`）：`dialogStore.confirm({message,confirmText,cancelText,color})` 返回 Promise。
 - 认证登录（`App.vue:18`）+ 自动认证 overlay（`App.vue:4`）：`showAuthDialog` computed。
-- 分组模型策略 / Key 倍率（`ApiKeyManagementSection.vue:1295`/`:1347`）：`openGroupModelEditor`/`submitGroupModelDisable`；`openMultiplierEditor`/`saveMultiplier`。倍率编辑入口对全部可编辑 key 可见（未设置倍率时仅显示设置按钮，不产生空 chips）。倍率输入经 `parseMultiplierInput` 安全转 JSON 数字（`Number()` 转换支持常见小数倍率，非有限/负值抛错阻断提交，241de1f5）；两对话框取消/确认按钮带 Esc 与 ⌘/Ctrl+Enter 快捷键提示 chip（同提交，快捷键本身走 §15 全局栈）。
+- 分组模型策略 / Key 倍率（`ApiKeyManagementSection.vue:1295`/`:1347`）：`openGroupModelEditor`/`submitGroupModelDisable`；`openMultiplierEditor`/`saveMultiplier`。倍率编辑入口对全部可编辑 key 可见（未设置倍率时仅显示设置按钮，不产生空 chips）。倍率输入经 `parseMultiplierInput` 安全转 JSON 数字（`Number()` 转换支持常见小数倍率，非有限/负值抛错阻断提交，241de1f5）；Key 级「倍率上限」输入已随渠道级统一移除——弹窗以只读文本回显渠道上限（prop `channelMaxGroupMultiplier` 由 EditChannelModal 传入，显示「渠道倍率上限: x / 未启用」），保存 payload 仅 `groupMultiplier + consumptionPolicy`；两对话框取消/确认按钮带 Esc 与 ⌘/Ctrl+Enter 快捷键提示 chip（同提交，快捷键本身走 §15 全局栈）。
 - 计费条款 / 订阅关联渠道 / 同步结果（`SubscriptionsView.vue:49`/`:64`/`:102`）：`billingDialog`（四字段 paymentAmount/paymentUnit/creditAmount/creditUnit，a96098da 统一币种/金额模型）、`linkDialog`（v-select 选 `linkableChannels` + 已关联 channelUid chips 逐个解绑 `unlinkChannel`，入口 SubscriptionPlanTable 行操作）、`syncDialog`。
 
 布局示意图（按出现顺序，宽度标注在图右下）：
@@ -527,13 +527,13 @@ AutopilotDiagnosePanel:
 └────────────────────────────┘        │ Key 倍率设置            │
                                       │ 消耗策略 [select·clearable]│
 billingDialog 到账规则（560）:         │ 分组倍率 [num·new_api 禁用]│
-┌────────────────────────────┐        │ 倍率上限 [num]           │
+┌────────────────────────────┐        │ [shield] 渠道倍率上限: x/未启用│
 │ 到账规则 {displayName}      │        │ (⚠ opportunistic 提示)   │
 │ 支付金额│支付单位│到账金额│到账单位│  │ (error alert)            │
 │ (error alert·409 版本冲突)   │        ├────────────────────────┤
 ├────────────────────────────┤        │[标记公开/临时][取消][保存]│
 │[重置规则 error][取消][保存] │        └────────────────────────┘
-└────────────────────────────┘         左下「标记公开/临时」仅非 new_api 来源
+└────────────────────────────┘         左下「标记公开/临时」仅非 new_api 来源；Key 级「倍率上限」输入已随渠道级统一移除（上限在渠道编辑计费区设置）
 
 linkDialog 绑定渠道（560）:            syncDialog 同步结果（760）:
 ┌────────────────────────────┐        ┌──────────────────────────────┐
