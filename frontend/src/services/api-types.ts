@@ -262,6 +262,7 @@ export interface Channel {
   proxyUrl?: string                        // HTTP/HTTPS/SOCKS5 代理 URL
   proxyPreferDirect?: boolean              // 直连优先：配代理时先直连，失败（网络错误/451/403）自动回退代理
   costMultiplier?: number                  // 渠道级充值倍率（EffectiveCost = ListCost × 倍率，0/空=不参与）
+  maxGroupMultiplier?: number              // 渠道级最高分组倍率上限（Key 分组倍率超过则自动退出调度，0/空=不启用闸门）
   channelPaymentCurrency?: string          // 充值币种（如 LDC/CNY/USD）
   channelPaymentAmount?: number            // 充值金额（0/空=不参与）
   channelCreditCurrency?: string           // 渠道显示/计价币种（如 USD）

@@ -208,8 +208,9 @@ describe('ApiKeyManagementSection', () => {
       'messages',
       'ch-1',
       'uid-1',
-      expect.objectContaining({ groupMultiplier: 1, maxGroupMultiplier: 2, consumptionPolicy: 'opportunistic' }),
+      expect.objectContaining({ groupMultiplier: 1, consumptionPolicy: 'opportunistic' }),
     )
+    expect(apiMocks.patchKeyMultiplier.mock.calls[0][3]).not.toHaveProperty('maxGroupMultiplier')
   })
 
   it('converts decimal multiplier inputs to JSON numbers before saving', async () => {
@@ -226,9 +227,9 @@ describe('ApiKeyManagementSection', () => {
 
     const multiplierInputs = wrapper.findAllComponents(inputStub)
       .filter(input => input.props('type') === 'number')
-    expect(multiplierInputs).toHaveLength(2)
+    // 倍率上限已统一为渠道级：Key 倍率弹窗只剩分组倍率一个数字输入。
+    expect(multiplierInputs).toHaveLength(1)
     await multiplierInputs[0].vm.$emit('update:modelValue', '0.15')
-    await multiplierInputs[1].vm.$emit('update:modelValue', '1.25')
     await nextTick()
 
     const saveButton = wrapper.findAllComponents(buttonStub)
@@ -240,9 +241,10 @@ describe('ApiKeyManagementSection', () => {
       'messages',
       'ch-1',
       'uid-1',
-      expect.objectContaining({ groupMultiplier: 0.15, maxGroupMultiplier: 1.25 }),
+      expect.objectContaining({ groupMultiplier: 0.15 }),
     )
     expect(apiMocks.patchKeyMultiplier.mock.calls[0][3].groupMultiplier).toBeTypeOf('number')
+    expect(apiMocks.patchKeyMultiplier.mock.calls[0][3]).not.toHaveProperty('maxGroupMultiplier')
   })
 
   it('shows consistent shortcuts on the multiplier dialog', async () => {

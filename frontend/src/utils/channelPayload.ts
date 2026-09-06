@@ -68,6 +68,7 @@ export interface ChannelFormLike {
   customHeaders: Record<string, string>
   proxyUrl: string
   costMultiplier?: string | number | null
+  maxGroupMultiplier?: string | number | null
   channelPaymentCurrency?: string | null
   channelPaymentAmount?: string | number | null
   channelCreditCurrency?: string | null
@@ -614,6 +615,8 @@ export function buildChannelPayload(
   // 渠道级计费覆盖：倍率 >0 生效；留空/0 发 0 让后端清零
   const costMultiplier = Number(form.costMultiplier)
   channelData.costMultiplier = Number.isFinite(costMultiplier) && costMultiplier > 0 ? costMultiplier : 0
+  const maxGroupMultiplier = Number(form.maxGroupMultiplier)
+  channelData.maxGroupMultiplier = Number.isFinite(maxGroupMultiplier) && maxGroupMultiplier > 0 ? maxGroupMultiplier : 0
   // 充值→渠道到账换算：币种 trim，金额 >0 生效（0/空发 0 清零）
   channelData.channelPaymentCurrency = (form.channelPaymentCurrency || '').trim()
   const channelPaymentAmount = Number(form.channelPaymentAmount)

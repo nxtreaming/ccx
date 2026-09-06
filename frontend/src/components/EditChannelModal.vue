@@ -96,6 +96,7 @@
                 :channel-id="props.channel?.index"
                 :channel-uid="props.channel?.channelUid"
                 :channel-kind="props.channelType"
+                :channel-max-group-multiplier="props.channel?.maxGroupMultiplier"
                 :dialog-open="props.show"
                 :proxy-url="form.proxyUrl"
                 :account-uid="props.channel?.accountUid"
@@ -127,6 +128,7 @@
                 :base-url="props.channel?.baseUrl"
                 :channel-uid="props.channel?.channelUid"
                 :channel-kind="props.channelType"
+                :channel-max-group-multiplier="props.channel?.maxGroupMultiplier"
                 :is-generic="isGenericAutoManagedChannel"
                 :auto-managed-kind="props.channel?.autoManagedKind"
                 :channel-proxy-url="form.proxyUrl"
@@ -256,6 +258,24 @@
                   </v-col>
                 </v-row>
                 <div class="text-caption text-medium-emphasis mt-1">{{ t('channelEditor.billing.example') }}</div>
+              </div>
+
+              <!-- 渠道级分组倍率安全上限 -->
+              <div class="mt-6">
+                <v-text-field
+                  :model-value="form.maxGroupMultiplier"
+                  :label="t('channelEditor.billing.maxGroupMultiplier.label')"
+                  :hint="t('channelEditor.billing.maxGroupMultiplier.hint')"
+                  persistent-hint
+                  prepend-inner-icon="mdi-shield-half-full"
+                  variant="outlined"
+                  density="comfortable"
+                  type="number"
+                  step="any"
+                  min="0"
+                  clearable
+                  @update:model-value="updateForm({ maxGroupMultiplier: $event })"
+                />
               </div>
             </section>
           </v-form>

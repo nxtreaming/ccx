@@ -329,7 +329,7 @@
                     </v-chip>
                     <span>{{ t('subscription.keyMultiplier.group') }}: {{ row.quotaGroup || '-' }}</span>
                     <span>{{ t('subscription.keyMultiplier.value') }}: {{ row.groupMultiplier ?? '-' }}</span>
-                    <span>{{ t('subscription.keyMultiplier.max') }}: {{ row.maxGroupMultiplier ?? '-' }}</span>
+                    <span>{{ t('subscription.keyMultiplier.max') }}: {{ row.maxGroupMultiplier ?? props.channelMaxGroupMultiplier ?? '-' }}</span>
                     <span v-if="row.effectiveCostClass">{{ t('subscription.keyMultiplier.effectiveCostClass') }}: {{ row.effectiveCostClass }}</span>
                     <span v-if="row.multiplierExpiresAt">TTL: {{ formatDisabledTime(row.multiplierExpiresAt) }}</span>
                     <span :class="row.eligible === false ? 'text-error' : 'text-success'">
@@ -1403,7 +1403,10 @@
             clearable
             variant="outlined"
           />
-          <v-text-field v-model="multiplierForm.maxGroupMultiplier" type="number" min="0" step="any" :label="t('subscription.keyMultiplier.max')" clearable variant="outlined" />
+          <div class="text-caption text-medium-emphasis mb-4 d-flex align-center ga-1">
+            <v-icon size="16" color="primary">mdi-shield-half-full</v-icon>
+            <span>{{ t('subscription.keyMultiplier.channelMax') }}: {{ props.channelMaxGroupMultiplier ?? t('subscription.keyMultiplier.channelMaxDisabled') }}</span>
+          </div>
           <v-alert
             v-if="multiplierForm.consumptionPolicy === 'opportunistic'"
             color="warning"
@@ -1504,6 +1507,7 @@ interface Props {
   channelId?: number
   channelUid?: string
   channelKind?: 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors'
+  channelMaxGroupMultiplier?: number | null
   dialogOpen: boolean
   proxyUrl?: string
   accountUid?: string
@@ -1541,7 +1545,7 @@ const multiplierDialog = ref(false)
 const multiplierSaving = ref(false)
 const multiplierError = ref('')
 const multiplierEditing = ref<ChannelApiKeyRow | null>(null)
-const multiplierForm = ref<{ groupMultiplier: number | null; maxGroupMultiplier: number | null; consumptionPolicy: 'normal' | 'opportunistic' | null }>({ groupMultiplier: null, maxGroupMultiplier: null, consumptionPolicy: null })
+const multiplierForm = ref<{ groupMultiplier: number | null; consumptionPolicy: 'normal' | 'opportunistic' | null }>({ groupMultiplier: null, consumptionPolicy: null })
 
 const consumptionPolicyOptions = computed(() => [
   { title: t('subscription.keyMultiplier.policyNormal'), value: 'normal' as const },
@@ -1771,7 +1775,6 @@ const openMultiplierEditor = (row: ChannelApiKeyRow) => {
   const policy: 'normal' | 'opportunistic' | null = row.consumptionPolicy === 'opportunistic' ? 'opportunistic' : row.consumptionPolicy === 'normal' ? 'normal' : null
   multiplierForm.value = {
     groupMultiplier: row.groupMultiplier ?? null,
-    maxGroupMultiplier: row.maxGroupMultiplier ?? null,
     consumptionPolicy: policy,
   }
   multiplierError.value = ''
@@ -1781,7 +1784,6 @@ const openMultiplierEditor = (row: ChannelApiKeyRow) => {
 const markAsPublicKey = () => {
   multiplierForm.value = {
     groupMultiplier: 0,
-    maxGroupMultiplier: 0,
     consumptionPolicy: 'opportunistic',
   }
 }
@@ -1799,10 +1801,9 @@ const saveMultiplier = async () => {
   multiplierSaving.value = true
   multiplierError.value = ''
   try {
-    const maxGroupMultiplier = parseMultiplierInput(multiplierForm.value.maxGroupMultiplier)
     const body = row.multiplierSource === 'new_api'
-      ? { maxGroupMultiplier, consumptionPolicy: multiplierForm.value.consumptionPolicy }
-      : { groupMultiplier: parseMultiplierInput(multiplierForm.value.groupMultiplier), maxGroupMultiplier, consumptionPolicy: multiplierForm.value.consumptionPolicy }
+      ? { consumptionPolicy: multiplierForm.value.consumptionPolicy }
+      : { groupMultiplier: parseMultiplierInput(multiplierForm.value.groupMultiplier), consumptionPolicy: multiplierForm.value.consumptionPolicy }
     const response = await apiService.patchKeyMultiplier(props.channelKind, props.channelUid, row.keyUid, body)
     row.groupMultiplier = response.groupMultiplier ?? null
     row.maxGroupMultiplier = response.maxMultiplier ?? null
