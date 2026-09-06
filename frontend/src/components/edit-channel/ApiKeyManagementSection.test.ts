@@ -247,7 +247,7 @@ describe('ApiKeyManagementSection', () => {
     expect(apiMocks.patchKeyMultiplier.mock.calls[0][3]).not.toHaveProperty('maxGroupMultiplier')
   })
 
-  it('shows consistent shortcuts on the multiplier dialog', async () => {
+  it('expands multiplier editor inline under the key row', async () => {
     const wrapper = mountSection({
       apiKeyConfigs: [
         { key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, maxGroupMultiplier: 2 },
@@ -256,11 +256,18 @@ describe('ApiKeyManagementSection', () => {
       channelKind: 'messages',
     })
     await nextTick()
-    await wrapper.find('button').trigger('click')
+    // 倍率设置从弹窗改为行下展开：点击倍率按钮出现内联面板与保存/取消
+    const multiplierBtn = wrapper.findAllComponents(buttonStub)
+      .find(b => b.text().includes('app.actions.edit') || b.text().includes('subscription.keyMultiplier.title'))
+    expect(multiplierBtn).toBeTruthy()
+    await multiplierBtn!.trigger('click')
     await nextTick()
 
-    expect(wrapper.text()).toContain('Esc')
-    expect(wrapper.text()).toMatch(/⌘Enter|Ctrl\+Enter/)
+    expect(wrapper.text()).toContain('subscription.keyMultiplier.policy')
+    expect(wrapper.text()).toContain('subscription.keyMultiplier.value')
+    const actions = wrapper.findAllComponents(buttonStub)
+      .filter(b => b.text().includes('app.actions.save') || b.text().includes('app.actions.cancel'))
+    expect(actions.length).toBeGreaterThanOrEqual(2)
   })
 
   it('does not show mark-public shortcut for new_api keys', async () => {

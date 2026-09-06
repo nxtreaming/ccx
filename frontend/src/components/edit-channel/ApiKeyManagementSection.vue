@@ -336,8 +336,8 @@
                       {{ row.eligible === false ? (row.ineligibleReason || t('subscription.keyMultiplier.ineligible')) : t('subscription.keyMultiplier.eligible') }}
                     </span>
                     </template>
-                    <!-- 倍率编辑入口对未设置倍率的 key 同样可见（否则首次设置无入口） -->
-                    <v-btn v-if="row.keyUid && channelUid && channelKind" size="x-small" variant="tonal" color="secondary" prepend-icon="mdi-scale-balance" @click="openMultiplierEditor(row)">
+                    <!-- 倍率编辑入口对未设置倍率的 key 同样可见（否则首次设置无入口）；点击在行下方展开设置 -->
+                    <v-btn v-if="row.keyUid && channelUid && channelKind" size="x-small" variant="tonal" color="secondary" :prepend-icon="expandedMultiplierKey === row.key ? 'mdi-chevron-up' : 'mdi-scale-balance'" @click="toggleMultiplierEditor(row)">
                       {{ (row.multiplierSource || row.groupMultiplier != null || row.maxGroupMultiplier != null) ? t('app.actions.edit') : t('subscription.keyMultiplier.title') }}
                     </v-btn>
                   </div>
@@ -550,6 +550,71 @@
                   </div>
                 </template>
               </v-list-item>
+
+              <v-expand-transition>
+                <div v-if="row.keyUid && channelUid && channelKind && expandedMultiplierKey === row.key" class="volcengine-key-detail px-4 pt-3 pb-4">
+                  <v-row dense align="center">
+                    <v-col cols="12" sm="4">
+                      <v-select
+                        v-model="multiplierForm.consumptionPolicy"
+                        :items="consumptionPolicyOptions"
+                        item-title="title"
+                        item-value="value"
+                        :label="t('subscription.keyMultiplier.policy')"
+                        clearable
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                      />
+                    </v-col>
+                    <v-col cols="12" sm="4">
+                      <v-text-field
+                        v-model="multiplierForm.groupMultiplier"
+                        type="number"
+                        min="0"
+                        step="any"
+                        :disabled="multiplierEditing?.multiplierSource === 'new_api'"
+                        :label="t('subscription.keyMultiplier.value')"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                      />
+                    </v-col>
+                    <v-col cols="12" sm="4" class="d-flex align-center text-caption text-medium-emphasis ga-1">
+                      <v-icon size="16" color="primary">mdi-shield-half-full</v-icon>
+                      <span>{{ t('subscription.keyMultiplier.channelMax') }}: {{ props.channelMaxGroupMultiplier ?? t('subscription.keyMultiplier.channelMaxDisabled') }}</span>
+                    </v-col>
+                  </v-row>
+                  <v-alert
+                    v-if="multiplierForm.consumptionPolicy === 'opportunistic'"
+                    color="warning"
+                    variant="tonal"
+                    density="compact"
+                    class="mt-3"
+                  >
+                    {{ t('subscription.keyMultiplier.policyHint') }}
+                  </v-alert>
+                  <v-alert v-if="multiplierError" color="error" variant="tonal" density="compact" class="mt-3">{{ multiplierError }}</v-alert>
+                  <div class="d-flex align-center ga-2 mt-3 flex-wrap">
+                    <v-btn
+                      v-if="multiplierEditing?.multiplierSource !== 'new_api'"
+                      size="small"
+                      variant="text"
+                      color="warning"
+                      @click="markAsPublicKey"
+                    >
+                      {{ t('subscription.keyMultiplier.markPublic') }}
+                    </v-btn>
+                    <v-spacer />
+                    <v-btn size="small" variant="text" @click="closeMultiplierEditor">
+                      {{ t('app.actions.cancel') }}
+                    </v-btn>
+                    <v-btn size="small" color="primary" variant="tonal" :loading="multiplierSaving" @click="saveMultiplier">
+                      {{ t('app.actions.save') }}
+                    </v-btn>
+                  </div>
+                </div>
+              </v-expand-transition>
 
               <v-expand-transition>
                 <div
@@ -1379,64 +1444,6 @@
       </v-card>
     </v-dialog>
 
-    <v-dialog v-model="multiplierDialog" max-width="520">
-      <v-card>
-        <v-card-title>{{ t('subscription.keyMultiplier.title') }}</v-card-title>
-        <v-card-text>
-          <v-select
-            v-model="multiplierForm.consumptionPolicy"
-            :items="consumptionPolicyOptions"
-            item-title="title"
-            item-value="value"
-            :label="t('subscription.keyMultiplier.policy')"
-            clearable
-            variant="outlined"
-            class="mb-4"
-          />
-          <v-text-field
-            v-model="multiplierForm.groupMultiplier"
-            type="number"
-            min="0"
-            step="any"
-            :disabled="multiplierEditing?.multiplierSource === 'new_api'"
-            :label="t('subscription.keyMultiplier.value')"
-            clearable
-            variant="outlined"
-          />
-          <div class="text-caption text-medium-emphasis mb-4 d-flex align-center ga-1">
-            <v-icon size="16" color="primary">mdi-shield-half-full</v-icon>
-            <span>{{ t('subscription.keyMultiplier.channelMax') }}: {{ props.channelMaxGroupMultiplier ?? t('subscription.keyMultiplier.channelMaxDisabled') }}</span>
-          </div>
-          <v-alert
-            v-if="multiplierForm.consumptionPolicy === 'opportunistic'"
-            color="warning"
-            variant="tonal"
-            density="compact"
-            class="mt-3"
-          >
-            {{ t('subscription.keyMultiplier.policyHint') }}
-          </v-alert>
-          <v-alert v-if="multiplierError" color="error" variant="tonal" density="compact">{{ multiplierError }}</v-alert>
-        </v-card-text>
-        <v-card-actions>
-          <v-btn
-            v-if="multiplierEditing?.multiplierSource !== 'new_api'"
-            variant="text"
-            color="warning"
-            @click="markAsPublicKey"
-          >
-            {{ t('subscription.keyMultiplier.markPublic') }}
-          </v-btn>
-          <v-spacer />
-          <v-btn variant="text" @click="multiplierDialog = false">
-            {{ t('app.actions.cancel') }}<span class="shortcut-hint ml-2 text-xs opacity-50">Esc</span>
-          </v-btn>
-          <v-btn color="primary" :loading="multiplierSaving" @click="saveMultiplier">
-            {{ t('app.actions.save') }}<span class="shortcut-hint ml-2 text-xs opacity-50">{{ isMac ? '⌘Enter' : 'Ctrl+Enter' }}</span>
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
   </div>
 </template>
 
@@ -1541,7 +1548,7 @@ const copiedKey = ref('')
 const groupModelDialog = ref(false)
 const groupModelEditing = ref<ChannelApiKeyRow | null>(null)
 const groupModelForm = ref({ model: '', note: '' })
-const multiplierDialog = ref(false)
+const expandedMultiplierKey = ref<string | null>(null)
 const multiplierSaving = ref(false)
 const multiplierError = ref('')
 const multiplierEditing = ref<ChannelApiKeyRow | null>(null)
@@ -1778,7 +1785,44 @@ const openMultiplierEditor = (row: ChannelApiKeyRow) => {
     consumptionPolicy: policy,
   }
   multiplierError.value = ''
-  multiplierDialog.value = true
+}
+
+// Key 倍率设置在行下方展开（替代旧弹窗）：一次只展开一行，切换即重置编辑态。
+const toggleMultiplierEditor = (row: ChannelApiKeyRow) => {
+  if (expandedMultiplierKey.value === row.key) {
+    closeMultiplierEditor()
+    return
+  }
+  openMultiplierEditor(row)
+  expandedMultiplierKey.value = row.key
+}
+
+const closeMultiplierEditor = () => {
+  expandedMultiplierKey.value = null
+  multiplierEditing.value = null
+  multiplierError.value = ''
+}
+
+// 把倍率端点响应同步回外层渠道编辑表单的 apiKeyConfigs 快照：
+// 内嵌编辑直接 PATCH 落盘，若不回写，之后点渠道编辑「保存」会把旧快照发回后端
+// （后端 merge 已做缺省回填防御，此处保证表单与后端一致、避免旧值覆盖窗口）。
+const syncMultiplierResponseToConfigs = (row: ChannelApiKeyRow, response: { groupMultiplier?: number | null, maxMultiplier?: number | null, consumptionPolicy?: 'normal' | 'opportunistic' | null, status?: string, reason?: string, updatedAt?: string, expiresAt?: string }) => {
+  if (!props.apiKeyConfigs?.length) return
+  const configs = props.apiKeyConfigs.map(cfg => {
+    const cfgId = cfg.keyUid ?? cfg.credentialUid
+    if (cfgId !== row.keyUid && cfg.key !== row.key) return cfg
+    return {
+      ...cfg,
+      groupMultiplier: response.groupMultiplier ?? null,
+      maxGroupMultiplier: null,
+      consumptionPolicy: response.consumptionPolicy ?? undefined,
+      multiplierSyncStatus: response.status,
+      multiplierSyncError: response.reason,
+      multiplierUpdatedAt: response.updatedAt,
+      multiplierExpiresAt: response.expiresAt,
+    }
+  })
+  emit('update:apiKeyConfigs', configs)
 }
 
 const markAsPublicKey = () => {
@@ -1815,7 +1859,8 @@ const saveMultiplier = async () => {
     row.ineligibleReason = response.reason
     row.multiplierUpdatedAt = response.updatedAt
     row.multiplierExpiresAt = response.expiresAt
-    multiplierDialog.value = false
+    syncMultiplierResponseToConfigs(row, response)
+    closeMultiplierEditor()
   } catch (error) {
     multiplierError.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -1826,12 +1871,6 @@ const saveMultiplier = async () => {
 // 分组模型策略 / Key 倍率内联对话框默认快捷键（Esc 取消走 Vuetify 原生，仅关本层）
 useDialogHotkeys(groupModelDialog, {
   confirm: () => submitGroupModelDisable(),
-})
-useDialogHotkeys(multiplierDialog, {
-  confirm: () => {
-    if (multiplierSaving.value) return
-    void saveMultiplier()
-  },
 })
 
 const toggleCredentialKey = (key: string) => {
