@@ -488,7 +488,7 @@ AutopilotDiagnosePanel:
 - 添加 API 密钥（`App.vue:610`）：`newApiKey` 输入，Enter 添加。
 - 通用确认对话框（`App.vue:636`）：`dialogStore.confirm({message,confirmText,cancelText,color})` 返回 Promise。
 - 认证登录（`App.vue:18`）+ 自动认证 overlay（`App.vue:4`）：`showAuthDialog` computed。
-- 分组模型策略 / Key 倍率（`ApiKeyManagementSection.vue:1295`/`:1347`）：`openGroupModelEditor`/`submitGroupModelDisable`；`openMultiplierEditor`/`saveMultiplier`。倍率编辑入口对全部可编辑 key 可见（未设置倍率时仅显示设置按钮，不产生空 chips）。倍率输入经 `parseMultiplierInput` 安全转 JSON 数字（`Number()` 转换支持常见小数倍率，非有限/负值抛错阻断提交，241de1f5）；Key 级「倍率上限」输入已随渠道级统一移除——弹窗以只读文本回显渠道上限（prop `channelMaxGroupMultiplier` 由 EditChannelModal 传入，显示「渠道倍率上限: x / 未启用」），保存 payload 仅 `groupMultiplier + consumptionPolicy`；两对话框取消/确认按钮带 Esc 与 ⌘/Ctrl+Enter 快捷键提示 chip（同提交，快捷键本身走 §15 全局栈）。
+- 分组模型策略 / Key 倍率（`ApiKeyManagementSection.vue:1295`/`:1347`）：`openGroupModelEditor`/`submitGroupModelDisable`；`openMultiplierEditor`/`saveMultiplier`。倍率编辑入口对全部可编辑 key 可见（未设置倍率时仅显示设置按钮，不产生空 chips）。倍率输入经 `parseMultiplierInput` 安全转 JSON 数字（`Number()` 转换支持常见小数倍率，非有限/负值抛错阻断提交，241de1f5）；倍率设置已从独立弹窗改为 key 行下方行内展开面板（`expandedMultiplierKey` 一次一行，模式同凭证明细展开），面板以只读文本回显渠道上限（prop `channelMaxGroupMultiplier` 由 EditChannelModal 传入），保存 payload 仅 `groupMultiplier + consumptionPolicy`，保存成功后 `syncMultiplierResponseToConfigs` 把响应回写外层表单 `apiKeyConfigs` 快照（防渠道编辑保存时旧快照覆盖，后端 merge 回填为二道防线）；两对话框取消/确认按钮带 Esc 与 ⌘/Ctrl+Enter 快捷键提示 chip（同提交，快捷键本身走 §15 全局栈）。
 - 计费条款 / 订阅关联渠道 / 同步结果（`SubscriptionsView.vue:49`/`:64`/`:102`）：`billingDialog`（四字段 paymentAmount/paymentUnit/creditAmount/creditUnit，a96098da 统一币种/金额模型）、`linkDialog`（v-select 选 `linkableChannels` + 已关联 channelUid chips 逐个解绑 `unlinkChannel`，入口 SubscriptionPlanTable 行操作）、`syncDialog`。
 
 布局示意图（按出现顺序，宽度标注在图右下）：
@@ -522,18 +522,19 @@ AutopilotDiagnosePanel:
 │ [tune-variant] 分组模型策略 │        │[取消 Esc][确认 ⌘⏎]   │
 │ sk-xx*** 〔分组 chip〕同组 n │        └──────────────────────┘  文案/色可覆盖
 │ 模型 [combobox·autofocus]   │
-│ 备注（可选）[text]           │       Key 倍率（520）:
-│      [取消][禁用模型 warning]│       ┌────────────────────────┐
-└────────────────────────────┘        │ Key 倍率设置            │
-                                      │ 消耗策略 [select·clearable]│
-billingDialog 到账规则（560）:         │ 分组倍率 [num·new_api 禁用]│
-┌────────────────────────────┐        │ [shield] 渠道倍率上限: x/未启用│
-│ 到账规则 {displayName}      │        │ (⚠ opportunistic 提示)   │
-│ 支付金额│支付单位│到账金额│到账单位│  │ (error alert)            │
-│ (error alert·409 版本冲突)   │        ├────────────────────────┤
-├────────────────────────────┤        │[标记公开/临时][取消][保存]│
-│[重置规则 error][取消][保存] │        └────────────────────────┘
-└────────────────────────────┘         左下「标记公开/临时」仅非 new_api 来源；Key 级「倍率上限」输入已随渠道级统一移除（上限在渠道编辑计费区设置）
+                                      Key 倍率（行内展开，非对话框）:
+                                      ┌────────────────────────┐
+                                      │ 消耗策略[select]│分组倍率[num]│
+                                      │ [shield] 渠道倍率上限:x/未启用│
+                                      │ (⚠ opportunistic 提示)   │
+                                      │ (error alert)            │
+                                      ├────────────────────────┤
+                                      │[标记公开/临时][取消][保存]│
+                                      └────────────────────────┘
+                                       倍率按钮点击在 key 行下方 v-expand-transition 展开
+                                       （同 volcengine 凭证明细模式），一次一行；
+                                       「标记公开/临时」仅非 new_api 来源；不再注册
+                                       对话框快捷键（原 520 弹窗已移除）
 
 linkDialog 绑定渠道（560）:            syncDialog 同步结果（760）:
 ┌────────────────────────────┐        ┌──────────────────────────────┐
@@ -573,7 +574,7 @@ SubscriptionsView ─ 内嵌 NewApiSubscriptionForm；billingDialog / syncDialog
 
 - 状态管理：`dialogStore`（`stores/dialog.ts`）持有 `showAddChannelModal`/`showEditChannelModal`/`editingChannel`/`showAddKeyModal`/确认对话框状态 + `confirm()` Promise 化封装。
 - 快捷键：对话框普遍 Esc 关闭、⌘/Ctrl+Enter 提交。
-- 多级对话框：对话框之上再展开新对话框时（如 EditChannelModal → 分组模型策略/Key 倍率、ChannelLogsDialog → AutopilotTraceDetailDialog），新对话框必须自带默认确认/取消快捷键（Esc 取消、⌘/Ctrl+Enter 确认），不得要求用户先关闭上层再操作底层；快捷键只作用于最上层对话框——全局 keydown 监听（`window`/`document`）须先确认自身处于栈顶（不存在更上层已打开的对话框）才响应，禁止一次按键同时关闭或提交多层对话框。实现：`frontend/src/composables/useDialogHotkeys.ts` 全局快捷键栈，各对话框经 `useDialogHotkeys(activeRef, { esc, confirm, plainEnter })` 注册（栈序=打开顺序，仅栈顶分发，`flush: 'sync'` 即开即用）；非 persistent 对话框的 Esc 关闭由 Vuetify overlay 栈原生处理（VOverlay `globalTop` 仅关最上层），persistent 或需自定义关闭语义的对话框才注册 `esc` 回调。已接线：AddChannelModal、EditChannelModal、熔断器/添加密钥/通用确认（useAppController）、分组模型策略/Key 倍率（⌘Enter 提交）、NewApiQuickAddDialog（persistent，Esc 取消 + ⌘Enter 触发表单当前步骤）、billingDialog/linkDialog（⌘Enter 保存/绑定）、UserGuideDialog（裸 Enter 前进）；ChannelLogsDialog/CapabilityTestDialog 的冗余自建 Esc 监听已删除，交回 Vuetify 原生。
+- 多级对话框：对话框之上再展开新对话框时（如 EditChannelModal → 分组模型策略/Key 倍率、ChannelLogsDialog → AutopilotTraceDetailDialog），新对话框必须自带默认确认/取消快捷键（Esc 取消、⌘/Ctrl+Enter 确认），不得要求用户先关闭上层再操作底层；快捷键只作用于最上层对话框——全局 keydown 监听（`window`/`document`）须先确认自身处于栈顶（不存在更上层已打开的对话框）才响应，禁止一次按键同时关闭或提交多层对话框。实现：`frontend/src/composables/useDialogHotkeys.ts` 全局快捷键栈，各对话框经 `useDialogHotkeys(activeRef, { esc, confirm, plainEnter })` 注册（栈序=打开顺序，仅栈顶分发，`flush: 'sync'` 即开即用）；非 persistent 对话框的 Esc 关闭由 Vuetify overlay 栈原生处理（VOverlay `globalTop` 仅关最上层），persistent 或需自定义关闭语义的对话框才注册 `esc` 回调。已接线：AddChannelModal、EditChannelModal、熔断器/添加密钥/通用确认（useAppController）、分组模型策略（⌘Enter 提交）；Key 倍率已改行内展开不注册对话框快捷键、NewApiQuickAddDialog（persistent，Esc 取消 + ⌘Enter 触发表单当前步骤）、billingDialog/linkDialog（⌘Enter 保存/绑定）、UserGuideDialog（裸 Enter 前进）；ChannelLogsDialog/CapabilityTestDialog 的冗余自建 Esc 监听已删除，交回 Vuetify 原生。
 - 后端交互统一经 `services/api.ts` 与 `services/autopilot-api.ts`。
 - 校验模式：本地 computed 校验 + Vuetify `formRef.validate()` 规则 + 内联 error alert。
 
