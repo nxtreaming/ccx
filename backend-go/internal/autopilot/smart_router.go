@@ -1531,9 +1531,10 @@ func (r *SmartRouter) exactModelRuntimeViable(upstream *config.UpstreamConfig, p
 	}
 
 	deps := EndpointPolicyDeps{
-		ProfileStore:  r.profileStore,
-		ModelResolver: r.modelResolver,
-		APIKeyConfigs: config.NormalizeAPIKeyConfigsForView(*upstream),
+		ProfileStore:              r.profileStore,
+		ModelResolver:             r.modelResolver,
+		APIKeyConfigs:             config.NormalizeAPIKeyConfigsForView(*upstream),
+		ChannelMaxGroupMultiplier: upstream.MaxGroupMultiplier,
 	}
 	if r.configManager != nil {
 		deps.GetRoutingCfg = func() config.AutopilotRoutingConfig { return r.configManager.GetAutopilotRouting() }
@@ -1939,7 +1940,7 @@ func (r *SmartRouter) buildChannelEntryForKey(
 			keyCfgs = config.NormalizeAPIKeyConfigsForView(*upstream)
 		}
 		for _, cfg := range keyCfgs {
-			eligibility := config.EvaluateAPIKeyMultiplierEligibility(cfg, r.currentTime())
+			eligibility := config.EvaluateAPIKeyMultiplierEligibility(cfg, upstream.MaxGroupMultiplier, r.currentTime())
 			if !eligibility.Eligible {
 				continue
 			}

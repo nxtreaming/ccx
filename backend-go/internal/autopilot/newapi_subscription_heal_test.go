@@ -51,7 +51,6 @@ func healDesired(tokenID int64, group string) newApiDesiredKey {
 		status:    newApiSyncStatusFresh,
 		tokenID:   tokenID,
 		ratio:     1,
-		limit:     1,
 		updatedAt: time.Now(),
 	}
 }

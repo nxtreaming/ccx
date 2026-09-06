@@ -673,9 +673,13 @@ func TestHandleNewApiProvision_AutoCreatesOnlyEligibleGroupKeys(t *testing.T) {
 	if len(cfg.Upstream) != 1 || len(cfg.Upstream[0].APIKeys) != 2 || len(cfg.Upstream[0].APIKeyConfigs) != 2 {
 		t.Fatalf("渠道未绑定全部合格分组 key: %+v", cfg.Upstream)
 	}
+	channelMax := cfg.Upstream[0].MaxGroupMultiplier
+	if channelMax == nil || *channelMax != limit {
+		t.Fatalf("渠道未持久化接入阈值作为渠道级分组倍率上限: %+v", channelMax)
+	}
 	for _, keyConfig := range cfg.Upstream[0].APIKeyConfigs {
-		if keyConfig.QuotaGroup == "premium" || keyConfig.GroupMultiplier == nil || keyConfig.MaxGroupMultiplier == nil || *keyConfig.GroupMultiplier > *keyConfig.MaxGroupMultiplier {
-			t.Fatalf("渠道包含超限或不受保护的 key 配置: %+v", keyConfig)
+		if keyConfig.QuotaGroup == "premium" || keyConfig.GroupMultiplier == nil || keyConfig.MaxGroupMultiplier != nil || *keyConfig.GroupMultiplier > *channelMax {
+			t.Fatalf("渠道包含超限或残留 key 级上限的 key 配置: %+v", keyConfig)
 		}
 	}
 }

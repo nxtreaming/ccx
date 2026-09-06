@@ -139,6 +139,11 @@ type UpstreamConfig struct {
 	ChannelCreditCurrency  string   `json:"channelCreditCurrency,omitempty"`  // 渠道显示/计价币种（如 USD）
 	ChannelCreditAmount    *float64 `json:"channelCreditAmount,omitempty"`    // 渠道到账金额
 
+	// MaxGroupMultiplier 渠道级分组倍率安全上限：本渠道 Key 声明的 GroupMultiplier
+	// 超过该值时自动退出调度（倍率回落后自动恢复）。nil=不启用闸门，Key 倍率仅用于成本折算。
+	// 这是唯一运行时真源；Key 级同名字段已废弃（存量数据加载期迁移到此处后清空）。
+	MaxGroupMultiplier *float64 `json:"maxGroupMultiplier,omitempty"` // 最高分组倍率上限（如 1=不超过标准倍率）
+
 	// Vision 能力配置
 	NoVision            bool     `json:"noVision,omitempty"`            // 整个渠道不支持图片输入
 	NoVisionModels      []string `json:"noVisionModels,omitempty"`      // 不支持图片输入的模型列表（匹配 modelMapping 后的实际模型名）
@@ -288,9 +293,12 @@ type APIKeyConfig struct {
 	BaseURL    string `json:"baseUrl,omitempty"`
 	Enabled    *bool  `json:"enabled,omitempty"`
 	QuotaGroup string `json:"quotaGroup,omitempty"`
-	// GroupMultiplier 和 MaxGroupMultiplier 是自动接入的成本安全闸门。
-	// 两者同时存在时，调度只会使用倍率不超过上限的 Key；任一字段缺失则保持历史 Key 的兼容行为。
-	GroupMultiplier    *float64 `json:"groupMultiplier,omitempty"`
+	// GroupMultiplier 是该 Key 所属上游分组的成本倍率（成本折算与调度偏好使用）。
+	// 是否允许参与调度由渠道级 UpstreamConfig.MaxGroupMultiplier 统一判定（nil=不启用闸门）。
+	GroupMultiplier *float64 `json:"groupMultiplier,omitempty"`
+	// MaxGroupMultiplier 已废弃：上限统一为渠道级 UpstreamConfig.MaxGroupMultiplier。
+	// 字段仅为兼容读取旧配置保留；加载期 ensureChannelGroupMultiplierLimits 会把存量值
+	// 聚合提升到渠道级后清空，运行时不再参与任何判定。
 	MaxGroupMultiplier *float64 `json:"maxGroupMultiplier,omitempty"`
 	// ConsumptionPolicy Key 级消耗策略：normal（常规）或 opportunistic（机会性优先消耗）。
 	ConsumptionPolicy        KeyConsumptionPolicy `json:"consumptionPolicy,omitempty"`
@@ -1331,6 +1339,8 @@ type UpstreamUpdate struct {
 	ChannelPaymentAmount   *float64 `json:"channelPaymentAmount"`   // 充值金额
 	ChannelCreditCurrency  *string  `json:"channelCreditCurrency"`  // 渠道计价币种
 	ChannelCreditAmount    *float64 `json:"channelCreditAmount"`    // 渠道到账金额
+	// 渠道级分组倍率上限（nil=不修改；0=清除即不启用闸门）
+	MaxGroupMultiplier *float64 `json:"maxGroupMultiplier"` // 最高分组倍率上限
 
 	// Vision 能力配置
 	NoVision            *bool    `json:"noVision"`
@@ -1685,7 +1695,10 @@ func (cm *ConfigManager) GetAdminAPIKey(upstream *UpstreamConfig, failedKeys map
 		if failedKeys[disabledKey.Key] {
 			continue
 		}
-		if disabledKey.Config != nil && !IsAPIKeyConfigGroupMultiplierAllowed(*disabledKey.Config) {
+		// 已拉黑密钥的配置挂在 DisabledAPIKeys[].Config（不在 APIKeyConfigs），
+		// 直接按渠道级上限判定，避免方法内查不到配置而误放行。
+		if disabledKey.Config != nil &&
+			!EvaluateAPIKeyMultiplierEligibility(*disabledKey.Config, upstream.MaxGroupMultiplier, time.Now()).Eligible {
 			continue
 		}
 		log.Printf("[%s-Key] 警告: 活跃密钥不可用，临时借用已拉黑密钥用于管理操作: %s", apiType, utils.MaskAPIKey(disabledKey.Key))

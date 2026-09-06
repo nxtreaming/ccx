@@ -551,13 +551,11 @@ func handleNewApiProvision(deps *NewApiRouteDeps) gin.HandlerFunc {
 				profileKeys = append(profileKeys, key.NewApiProvisionedKey)
 				apiKeys = append(apiKeys, key.Key)
 				ratio := key.GroupMultiplier
-				limit := maxGroupMultiplier
 				apiKeyConfigs = append(apiKeyConfigs, config.APIKeyConfig{
 					Key:                   key.Key,
 					Name:                  "new-api:" + key.Group,
 					QuotaGroup:            key.Group,
 					GroupMultiplier:       &ratio,
-					MaxGroupMultiplier:    &limit,
 					SourceSubscriptionUID: req.SubscriptionUID,
 				})
 				if !key.Reused {
@@ -645,13 +643,11 @@ func handleNewApiProvision(deps *NewApiRouteDeps) gin.HandlerFunc {
 					existingKeys[key.Key] = struct{}{}
 					mergedKeys = append(mergedKeys, key.Key)
 					ratio := key.GroupMultiplier
-					limit := maxGroupMultiplier
 					mergedConfigs = append(mergedConfigs, config.APIKeyConfig{
-						Key:                key.Key,
-						Name:               "new-api:" + key.Group,
-						QuotaGroup:         key.Group,
-						GroupMultiplier:    &ratio,
-						MaxGroupMultiplier: &limit,
+						Key:             key.Key,
+						Name:            "new-api:" + key.Group,
+						QuotaGroup:      key.Group,
+						GroupMultiplier: &ratio,
 					})
 				}
 				autoManaged := true
@@ -661,6 +657,12 @@ func handleNewApiProvision(deps *NewApiRouteDeps) gin.HandlerFunc {
 					APIKeyConfigs:   mergedConfigs,
 					AutoManaged:     &autoManaged,
 					AutoManagedKind: &newApiKind,
+				}
+				// 渠道级上限是唯一真源：仅在目标渠道尚未设置时写入本次接入阈值，
+				// 不覆盖用户已在渠道编辑里调整过的值。
+				if target.MaxGroupMultiplier == nil {
+					initialLimit := maxGroupMultiplier
+					updates.MaxGroupMultiplier = &initialLimit
 				}
 				// 绑定请求显式携带代理设置时，同步到合并目标渠道
 				if trimmedProxy := strings.TrimSpace(req.ProxyURL); trimmedProxy != "" {
@@ -681,6 +683,7 @@ func handleNewApiProvision(deps *NewApiRouteDeps) gin.HandlerFunc {
 				// 新建上游渠道
 				serviceType := kindToDefaultServiceType(req.ChannelKind)
 				channelUID = config.GenerateChannelUID()
+				channelMaxLimit := maxGroupMultiplier
 				upstream := config.UpstreamConfig{
 					Name:              channelName,
 					ChannelUID:        channelUID,
@@ -698,6 +701,8 @@ func handleNewApiProvision(deps *NewApiRouteDeps) gin.HandlerFunc {
 					OriginTier:        "second",
 					ProxyURL:          strings.TrimSpace(req.ProxyURL),
 					ProxyPreferDirect: req.ProxyPreferDirect,
+					// 接入阈值作为渠道级分组倍率上限的初始值；后续调整走渠道编辑。
+					MaxGroupMultiplier: &channelMaxLimit,
 				}
 
 				switch req.ChannelKind {

@@ -155,7 +155,11 @@ func handleAddSubscriptionAccount(deps *NewApiRouteDeps) gin.HandlerFunc {
 				c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("无法获取该账号分组倍率，已阻止建 key: %v", gErr)})
 				return
 			}
+			// 建 key 阈值：请求显式携带优先，缺省用渠道级上限（真源），最后回退订阅接入初始值。
 			maxGroupMultiplier := req.MaxGroupMultiplier
+			if maxGroupMultiplier == nil && deps != nil && deps.SyncService != nil {
+				maxGroupMultiplier = deps.SyncService.linkedChannelMaxGroupMultiplier(profile)
+			}
 			if maxGroupMultiplier == nil {
 				maxGroupMultiplier = profile.MaxGroupMultiplier
 			}
