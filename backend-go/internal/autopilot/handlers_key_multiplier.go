@@ -203,7 +203,9 @@ func handlePatchKeyMultiplier(cfgManager *config.ConfigManager) gin.HandlerFunc 
 		}
 
 		response := buildKeyMultiplierResponse(keyUID, next, upstream.MaxGroupMultiplier, time.Now())
-		updates := config.UpstreamUpdate{APIKeyConfigs: patchAPIKeyConfigAt(upstream.APIKeyConfigs, cfgIndex, next)}
+		// 精确写语义：next 是从当前值 clone 后的完整意图（含显式清除），
+		// 必须绕过渠道编辑表单的 merge 回填，否则清除倍率会被旧值填回。
+		updates := config.UpstreamUpdate{APIKeyConfigs: patchAPIKeyConfigAt(upstream.APIKeyConfigs, cfgIndex, next), SkipAPIKeyConfigMerge: true}
 		if err := updateUpstreamByType(cfgManager, apiType, channelIndex, updates); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

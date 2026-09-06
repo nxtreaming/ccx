@@ -948,14 +948,20 @@ func applyModelCapabilityUpdates(upstream *UpstreamConfig, updates UpstreamUpdat
 }
 
 // applyAPIKeyConfigUpdate 根据 UpstreamUpdate 同步 upstream.APIKeyConfigs：
-//   - updates.APIKeyConfigs != nil：以新值为准，按当前 APIKeys 归一化（保留 orphan）
+//   - updates.APIKeyConfigs != nil：以新值为准，按当前 APIKeys 归一化（保留 orphan）；
+//     默认经 mergeAndNormalizeAPIKeyConfigs 做表单合并（托管身份/倍率元数据缺省回填），
+//     SkipAPIKeyConfigMerge=true 时跳过合并直接替换（Key 倍率端点等精确写语义）
 //   - updates.APIKeyConfigs == nil 但 updates.APIKeys != nil：仅按新 APIKeys 重新归一化原有 configs
 //   - 两者都为 nil：不动 APIKeyConfigs
 //
 // 六类渠道 Update 函数共用，避免新增字段时遗漏其中某一处。
 func applyAPIKeyConfigUpdate(upstream *UpstreamConfig, updates UpstreamUpdate) {
 	if updates.APIKeyConfigs != nil {
-		upstream.APIKeyConfigs = mergeAndNormalizeAPIKeyConfigs(upstream.APIKeys, upstream.APIKeyConfigs, updates.APIKeyConfigs)
+		if updates.SkipAPIKeyConfigMerge {
+			upstream.APIKeyConfigs = normalizeAPIKeyConfigs(upstream.APIKeys, updates.APIKeyConfigs)
+		} else {
+			upstream.APIKeyConfigs = mergeAndNormalizeAPIKeyConfigs(upstream.APIKeys, upstream.APIKeyConfigs, updates.APIKeyConfigs)
+		}
 	} else if updates.APIKeys != nil {
 		upstream.APIKeyConfigs = normalizeAPIKeyConfigs(upstream.APIKeys, upstream.APIKeyConfigs)
 	}

@@ -854,6 +854,21 @@ func mergeAPIKeyConfig(existing *APIKeyConfig, incoming APIKeyConfig) APIKeyConf
 	if merged.ConsumptionPolicy == "" {
 		merged.ConsumptionPolicy = existing.ConsumptionPolicy
 	}
+	// 倍率核心元数据由 Key 倍率编辑端点/同步服务管理，渠道编辑表单只是旧快照。
+	// incoming 未携带（零值）时保留 existing，否则渠道编辑保存会把内嵌编辑刚落盘的
+	// 倍率静默覆盖丢失（与备注复活同款「外层表单旧快照覆盖」模式）。
+	// 渠道编辑没有清空倍率的显式入口；Key 倍率端点的显式清除走 SkipAPIKeyConfigMerge
+	// 绕过本合并，不受回填影响。展示性字段（时间戳/SyncError）不回填：同步路径
+	// 会显式写空串/nil，回填会导致旧错误与过期时间残留。
+	if merged.GroupMultiplier == nil {
+		merged.GroupMultiplier = existing.GroupMultiplier
+	}
+	if strings.TrimSpace(merged.MultiplierSource) == "" {
+		merged.MultiplierSource = existing.MultiplierSource
+	}
+	if strings.TrimSpace(merged.MultiplierSyncStatus) == "" {
+		merged.MultiplierSyncStatus = existing.MultiplierSyncStatus
+	}
 	return merged
 }
 
@@ -1354,6 +1369,10 @@ type UpstreamUpdate struct {
 	AutoManagedKind *string    `json:"autoManagedKind"`
 	// 用户自定义标签（nil=不修改，空切片=清空标签）
 	Tags []string `json:"tags"`
+	// SkipAPIKeyConfigMerge 为 true 时 APIKeyConfigs 直接归一化替换、不做表单合并
+	// （mergeAPIKeyConfig 的托管身份/倍率回填），供 Key 倍率端点等「精确写」语义使用。
+	// JSON 不暴露：只允许服务端内部构造。
+	SkipAPIKeyConfigMerge bool `json:"-"`
 }
 
 // Config 配置结构
