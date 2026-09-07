@@ -1213,7 +1213,6 @@ export interface ExchangeRatesReplaceRequest {
 
 export interface KeyMultiplierPatch {
   groupMultiplier?: number | null
-  maxGroupMultiplier?: number | null
   consumptionPolicy?: 'normal' | 'opportunistic' | null
 }
 
