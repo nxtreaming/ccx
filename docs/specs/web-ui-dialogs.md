@@ -82,7 +82,7 @@
   - emits：`update:show`、`save(channel, options?, onComplete?)`、`error`、`success`、`updated`、`update:api-key-configs`
 - 分区（`useEditChannelSectionNav.ts`，侧导航固定三项：basic/auth/custom）：
   1. basic（基础信息）— `BasicInfoSection`（多行 baseUrls（条件可编辑，见下）、官网 website + 快捷按钮、渠道备注输入（12e52cf9 恢复，≤10 字符，与渠道名称解耦））+ `ProtocolModelAvailability`（协议模型清单/重新发现）
-  2. auth（认证管理）— `ApiKeyManagementSection`（密钥增删、**拖拽排序与置顶/置底**、复制、暂停/恢复、拉黑恢复、**每 Key 模型数 chip**、分组模型排除（行内）、Key 倍率（行内）、provider 凭证如 volcengine/kimi/mimo/compshare/minimax、copilot OAuth）
+  2. auth（认证管理）— `ApiKeyManagementSection`（密钥增删、**拖拽排序与置顶/置底**、复制、暂停/恢复、拉黑恢复、**每 Key 模型数 chip**、Key 统一详情（倍率+模型排除，行内展开）、provider 凭证如 volcengine/kimi/mimo/compshare/minimax、copilot OAuth）
   3. custom（自定义参数）— 代理服务器 `form.proxyUrl`（v-text-field，clearable，`mdi-vpn` 前置图标）+ **代理直连优先开关 `form.proxyPreferDirect`**（876eaf7e，仅填写代理后有意义）+ `CustomHeadersSection` + **渠道计费四字段**（充值币种/充值金额/渠道币种/到账金额）
   - accounts 区（仅 new-api / generic 托管，`EditChannelModal.vue:107` 的 `v-if`）仍在 DOM 中渲染 `NewApiAccountPanel`，但**不进侧导航**
   - redirect / advanced 分区已随 09c4996d「白名单字段精简」删除：`ModelMappingSection`、`ModelCapabilitySection`、`EmbeddingCompatibilitySection`、`SupportedModelsFilter`、`AdvancedOptionsSection`、`TransportConfigGroup`、`StreamTimeoutSection`、`RateLimitGroup` 共 8 个子组件整体移除
@@ -91,7 +91,7 @@
 - 渠道计费四字段（4ab0b99e → 49f28b3e → 5e976904 最终形态）：`channelPaymentCurrency`（充值币种，如 LDC/CNY/USD）、`channelPaymentAmount`（充值金额）、`channelCreditCurrency`（渠道币种，如 USD）、`channelCreditAmount`（到账金额）；空值/非正数归 0（不参与计算），后端按全局汇率图计算 `EffectiveMultiplier = (充值金额×充值币价)/(到账金额×渠道币价)` 并复用 `ResolveEffectiveCostUSD`
 - 主要状态流转：
   - `watch(props.show)`：打开时 `dialogMode = channel ? 'edit' : 'create'`，编辑走 `loadChannelData(channel)`，新建走 `resetForm()`；`nextTick(attachScrollListener)` 绑定滚动高亮。
-  - 编辑打开且渠道有任何 Key（含禁用 Key）即 `nextTick(fetchTargetModels())` 预拉上游模型（eee81e0b，恢复每 Key 模型数 chip 展示）；分组模型排除行内展开时经 `ensure-models-loaded` 懒加载兜底。
+  - 编辑打开且渠道有任何 Key（含禁用 Key）即 `nextTick(fetchTargetModels())` 预拉上游模型（eee81e0b，恢复每 Key 模型数 chip 展示）；Key 统一详情面板展开时经 `ensure-models-loaded` 懒加载兜底。
   - `baseUrlsText` watch → `syncBaseUrlsFormState` 去重 + `extractChannelNamePrefix` 自动派生渠道名。去重语义经 6cda4596/d300b2bb 修正：转义路径保留原样，带 `#` 的完整路径 URL 不与域名根条目去重合并（`utils/base-url-semantics.test.ts`）。
   - `handleSubmit`：`formRef.validate()` → `buildSubmitPayload` → `emit('save', …, onComplete)`。
 - 校验规则：`isFormValid` 只综合三项——serviceType 非空、baseUrls（仅 `isEditableBaseUrlsChannel` 时要求非空且逐行合法 URL）、apiKeys（copilot 免除）；模型能力错误不再参与。
@@ -488,9 +488,9 @@ AutopilotDiagnosePanel:
 - 添加 API 密钥（`App.vue:610`）：`newApiKey` 输入，Enter 添加。
 - 通用确认对话框（`App.vue:636`）：`dialogStore.confirm({message,confirmText,cancelText,color})` 返回 Promise。
 - 认证登录（`App.vue:18`）+ 自动认证 overlay（`App.vue:4`）：`showAuthDialog` computed。
-- 分组模型排除 / Key 倍率（`ApiKeyManagementSection.vue`）：均已是 key 行下方行内展开面板（`expandedGroupModelKey` / `expandedMultiplierKey` 一次一行，入口按钮 toggle 再点收起，模式同凭证明细展开，58d41386 / d54c0421）。
-  - **Key 倍率（去按钮化，变更即保存）**：入口对全部可编辑 key 可见（未设置倍率时仅显示设置按钮，不产生空 chips）。面板仅消耗策略下拉 + 分组倍率数字框：策略**选择即保存**（`@update:model-value`）、倍率**失焦/回车定稿即保存**（`@change`），均直接 PATCH key multiplier 端点；输入经 `parseMultiplierInput` 安全转 JSON 数字（非有限/负值抛错阻断，241de1f5）。保存成功不自动收起；保存中 12px spinner + caption，失败 error alert 保留。渠道上限仅启用时作数字框 hint（`channelMaxGroupMultiplierHint`，未启用不显示）；「标记公开 Key」按钮已删，语义由用户自选「优先消耗」策略表达。保存成功后 `syncMultiplierResponseToConfigs` 把响应回写外层表单 `apiKeyConfigs` 快照（防渠道编辑保存时旧快照覆盖，后端 merge 回填为二道防线）。
-  - **分组模型排除（模型定稿即提交）**：行入口 tune 图标按钮（带 aria-label）toggle 展开。面板含上下文 caption（key 掩码·分组 chip·同组影响 key 数）+ 模型 combobox + 备注 input；模型**选定/手输定稿即** emit `disable-group-model` 提交（备注需先于模型填写，清空不触发），提交后面板收起；误排通过下方记录列表的恢复按钮撤销。无取消/确认按钮。
+- 分组模型排除 / Key 倍率（`ApiKeyManagementSection.vue`）：合并为 **Key 行统一详情面板**——行尾 chevron 按钮（渠道列表同款下箭头，带 aria-label）toggle 展开，一次一行（`expandedDetailKey`），同块承载两组输入（倍率在上、divider、排除在下），展开时初始化倍率表单并 `ensure-models-loaded` 懒拉模型。
+  - **Key 倍率（去按钮化，变更即保存）**：统一面板上半区，仅消耗策略下拉 + 分组倍率数字框：策略**选择即保存**（`@update:model-value`）、倍率**失焦/回车定稿即保存**（`@change`），均直接 PATCH key multiplier 端点；输入经 `parseMultiplierInput` 安全转 JSON 数字（非有限/负值抛错阻断，241de1f5）。保存成功不自动收起；保存中 12px spinner + caption，失败 error alert 保留。渠道上限仅启用时作数字框 hint（`channelMaxGroupMultiplierHint`，未启用不显示）；「标记公开 Key」按钮已删，语义由用户自选「优先消耗」策略表达。保存成功后 `syncMultiplierResponseToConfigs` 把响应回写外层表单 `apiKeyConfigs` 快照（防渠道编辑保存时旧快照覆盖，后端 merge 回填为二道防线）。
+  - **分组模型排除（模型定稿即提交）**：统一面板下半区（divider 隔开），上下文 caption（key 掩码·分组 chip·同组影响 key 数）提到面板顶部共享。模型 combobox + 备注 input；模型**选定/手输定稿即** emit `disable-group-model` 提交（备注需先于模型填写，清空不触发），提交后整个面板收起；误排通过下方记录列表的恢复按钮撤销。无取消/确认按钮。
 - 计费条款 / 订阅关联渠道 / 同步结果（`SubscriptionsView.vue:49`/`:64`/`:102`）：`billingDialog`（四字段 paymentAmount/paymentUnit/creditAmount/creditUnit，a96098da 统一币种/金额模型）、`linkDialog`（v-select 选 `linkableChannels` + 已关联 channelUid chips 逐个解绑 `unlinkChannel`，入口 SubscriptionPlanTable 行操作）、`syncDialog`。
 
 布局示意图（按出现顺序，宽度标注在图右下）：
@@ -519,19 +519,27 @@ AutopilotDiagnosePanel:
 └───────────────────────────────┘     ┌──────────────────────┐
   三组原生 range 滑块+当前值+刻度      │ [alert-circle 动态色] │
                                       │ 请确认                │
-分组模型排除（行内展开，非对话框）:    Key 倍率（行内展开，非对话框）:
-┌──────────────────────────┐  ┌──────────────────────────┐
-│ sk-xx*** 〔分组chip〕同组n │  │ 消耗策略[select] 分组倍率[num]│
-│ 模型[combobox] 备注[input] │  │ num框hint:渠道上限x,超出 │
-│ (hint:选定即排除,可在下方   │  │  自动退出调度;未启用时不显示│
-│  记录恢复,备注先填)        │  │ (⚠ opportunistic 提示)    │
-└──────────────────────────┘  │ (error alert)             │
- tune按钮(带aria-label)toggle  │ ◌保存中…/改动即时保存      │
- 再点收起;模型定稿即emit提交   └──────────────────────────┘
- 并收起;无取消/确认按钮,        倍率按钮toggle再点收起;策略
- 记录列表「恢复」兜底误排        选择即存/数字失焦定稿即存
-                               (PATCH端点);成功不自动收起;
-                               无保存/取消/标记公开按钮
+Key 行统一详情面板（行内展开，单一入口）:
+┌────────────────────────────────────┐
+│ sk-xx*** 〔分组chip〕同组影响n个key  │
+│ ── Key 倍率（变更即保存）──          │
+│ 消耗策略[select]  分组倍率[num]      │
+│  num框hint:渠道上限x,超出自动退出    │
+│  调度;未启用时不显示                 │
+│  (⚠ opportunistic 提示) (error)     │
+│  ◌保存中…/改动即时保存              │
+│ ── divider ──                       │
+│ ── 分组模型排除（定稿即提交）──      │
+│ 模型[combobox]  备注[input]         │
+│  (hint:选定即排除,可在下方记录恢复,  │
+│   备注先填)                         │
+└────────────────────────────────────┘
+ 行尾 chevron 按钮(带aria-label,渠道列
+ 表同款下箭头)toggle 再点收起;策略选择
+ 即存/数字失焦定稿即存(PATCH端点);模型
+ 定稿即emit提交并收起整个面板;误排走记
+ 录列表「恢复」兜底;无保存/取消/标记
+ 公开/确认按钮
 
 linkDialog 绑定渠道（560）:            syncDialog 同步结果（760）:
 ┌────────────────────────────┐        ┌──────────────────────────────┐

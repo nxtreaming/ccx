@@ -336,10 +336,6 @@
                       {{ row.eligible === false ? (row.ineligibleReason || t('subscription.keyMultiplier.ineligible')) : t('subscription.keyMultiplier.eligible') }}
                     </span>
                     </template>
-                    <!-- 倍率编辑入口对未设置倍率的 key 同样可见（否则首次设置无入口）；点击在行下方展开设置 -->
-                    <v-btn v-if="row.keyUid && channelUid && channelKind" size="x-small" variant="tonal" color="secondary" :prepend-icon="expandedMultiplierKey === row.key ? 'mdi-chevron-up' : 'mdi-scale-balance'" @click="toggleMultiplierEditor(row)">
-                      {{ (row.multiplierSource || row.groupMultiplier != null || row.maxGroupMultiplier != null) ? t('app.actions.edit') : t('subscription.keyMultiplier.title') }}
-                    </v-btn>
                   </div>
                 </v-list-item-subtitle>
                 <v-list-item-subtitle v-if="row.volcengineCredential" class="mt-1 text-caption">
@@ -371,9 +367,10 @@
 
                 <template #append>
                   <div class="d-flex align-center ga-1" @click.stop>
+                    <!-- 统一详情入口（渠道列表同款下箭头）：展开后同块承载 Key 倍率与分组模型排除 -->
                     <v-tooltip
-                      v-if="!row.disabled"
-                      :text="t('channelCard.groupModelPolicy')"
+                      v-if="!row.disabled && row.keyUid && channelUid && channelKind"
+                      :text="t('channelCard.keyDetail')"
                       location="top"
                       :open-delay="150"
                       content-class="ccx-tooltip"
@@ -381,14 +378,14 @@
                       <template #activator="{ props: tooltipProps }">
                         <v-btn
                           v-bind="tooltipProps"
-                          :aria-label="t('channelCard.groupModelPolicy')"
+                          :aria-label="t('channelCard.keyDetail')"
                           size="small"
-                          color="secondary"
+                          :color="expandedDetailKey === row.key ? 'primary' : 'default'"
                           icon
                           variant="text"
-                          @click="toggleGroupModelEditor(row)"
+                          @click="toggleKeyDetail(row)"
                         >
-                          <v-icon size="small">mdi-tune-variant</v-icon>
+                          <v-icon size="small">{{ expandedDetailKey === row.key ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
                         </v-btn>
                       </template>
                     </v-tooltip>
@@ -553,7 +550,15 @@
               </v-list-item>
 
               <v-expand-transition>
-                <div v-if="row.keyUid && channelUid && channelKind && expandedMultiplierKey === row.key" class="volcengine-key-detail px-4 pt-3 pb-4">
+                <!-- Key 行统一详情面板：倍率（变更即保存）与分组模型排除（模型定稿即提交）同块展示 -->
+                <div v-if="row.keyUid && channelUid && channelKind && expandedDetailKey === row.key" class="volcengine-key-detail px-4 pt-3 pb-4">
+                  <div class="text-caption text-medium-emphasis mb-2">
+                    <code>{{ maskApiKey(row.key) }}</code>
+                    <v-chip size="x-small" color="secondary" variant="tonal" class="ml-2">
+                      {{ row.quotaGroup || t('channelCard.ungrouped') }}
+                    </v-chip>
+                    <span class="ml-2">{{ t('channelCard.affectedGroupKeys', { count: groupModelAffectedCount }) }}</span>
+                  </div>
                   <v-row dense align="center">
                     <v-col cols="12" sm="6">
                       <v-select
@@ -595,24 +600,16 @@
                     {{ t('subscription.keyMultiplier.policyHint') }}
                   </v-alert>
                   <v-alert v-if="multiplierError" color="error" variant="tonal" density="compact" class="mt-3">{{ multiplierError }}</v-alert>
-                  <!-- 无保存/取消按钮：值定稿即自动保存（下拉选择即存、数字框失焦/回车定稿即存），
-                       收起走行入口按钮的再次点击（toggle）；「公开 Key」由用户自选消耗策略表达。 -->
+                  <!-- 无保存/取消按钮：值定稿即自动保存（下拉选择即存、数字框失焦/回车定稿即存）；
+                       「公开 Key」由用户自选消耗策略表达。 -->
                   <div class="d-flex align-center ga-2 mt-3 text-caption text-medium-emphasis">
                     <v-progress-circular v-if="multiplierSaving" size="12" width="2" indeterminate />
                     <span>{{ multiplierSaving ? t('subscription.keyMultiplier.saving') : t('subscription.keyMultiplier.autosaveHint') }}</span>
                   </div>
-                </div>
-              </v-expand-transition>
 
-              <v-expand-transition>
-                <div v-if="expandedGroupModelKey === row.key" class="volcengine-key-detail px-4 pt-3 pb-4">
-                  <div class="d-flex align-center ga-2 flex-wrap text-caption text-medium-emphasis mb-3">
-                    <code>{{ maskApiKey(row.key) }}</code>
-                    <v-chip size="x-small" color="secondary" variant="tonal">
-                      {{ row.quotaGroup || t('channelCard.ungrouped') }}
-                    </v-chip>
-                    <span>{{ t('channelCard.affectedGroupKeys', { count: groupModelAffectedCount }) }}</span>
-                  </div>
+                  <v-divider class="my-3" />
+
+                  <div class="text-subtitle-2 font-weight-medium mb-1">{{ t('channelCard.groupModelPolicy') }}</div>
                   <v-row dense>
                     <v-col cols="12" sm="6">
                       <v-combobox
@@ -640,7 +637,7 @@
                       />
                     </v-col>
                   </v-row>
-                  <!-- 无确认按钮：模型选定即排除（备注需先填），误排可在下方记录中恢复；收起走行入口 toggle。 -->
+                  <!-- 无确认按钮：模型选定即排除（备注需先填），误排可在下方记录中恢复；收起走统一入口 toggle。 -->
                   <div class="text-caption text-medium-emphasis mt-2">{{ t('channelCard.groupModelInlineHint') }}</div>
                 </div>
               </v-expand-transition>
@@ -1521,8 +1518,8 @@ const duplicateKeyIndex = ref<number | null>(null)
 const copiedKey = ref('')
 const groupModelEditing = ref<ChannelApiKeyRow | null>(null)
 const groupModelForm = ref({ model: '', note: '' })
-const expandedGroupModelKey = ref<string | null>(null)
-const expandedMultiplierKey = ref<string | null>(null)
+// Key 行统一详情展开（倍率 + 分组模型排除同一块）：一次只展开一行，切换即重置编辑态。
+const expandedDetailKey = ref<string | null>(null)
 const multiplierSaving = ref(false)
 const multiplierError = ref('')
 const multiplierEditing = ref<ChannelApiKeyRow | null>(null)
@@ -1734,23 +1731,6 @@ const groupModelAffectedCount = computed(() => {
   return keyRows.value.filter(row => (row.quotaGroup || '') === group && !row.disabled).length
 })
 
-// 分组模型排除在行下方展开（替代旧弹窗）：一次只展开一行，切换即重置编辑态。
-const toggleGroupModelEditor = (row: ChannelApiKeyRow) => {
-  if (expandedGroupModelKey.value === row.key) {
-    closeGroupModelEditor()
-    return
-  }
-  groupModelEditing.value = row
-  groupModelForm.value = { model: '', note: '' }
-  emit('ensure-models-loaded')
-  expandedGroupModelKey.value = row.key
-}
-
-const closeGroupModelEditor = () => {
-  expandedGroupModelKey.value = null
-  groupModelEditing.value = null
-}
-
 // 模型选定（combobox 选择/手输回车定稿）即提交排除；备注需先于模型填写。
 // 清空（clearable → null）不触发。误排可通过下方记录列表的恢复按钮撤销。
 const submitGroupModelDisable = (model: unknown = groupModelForm.value.model) => {
@@ -1758,7 +1738,7 @@ const submitGroupModelDisable = (model: unknown = groupModelForm.value.model) =>
   const trimmed = (model ?? '').toString().trim()
   if (!row || !trimmed) return
   emit('disable-group-model', row.key, trimmed, groupModelForm.value.note.trim() || undefined)
-  closeGroupModelEditor()
+  closeKeyDetail()
 }
 
 const multiplierStatusColor = (status?: string) => status === 'fresh' || status === 'manual' ? 'success' : status === 'over_limit' || status === 'sync_error' || status === 'relink_required' ? 'error' : 'warning'
@@ -1773,20 +1753,25 @@ const openMultiplierEditor = (row: ChannelApiKeyRow) => {
   multiplierError.value = ''
 }
 
-// Key 倍率设置在行下方展开（替代旧弹窗）：一次只展开一行，切换即重置编辑态。
-const toggleMultiplierEditor = (row: ChannelApiKeyRow) => {
-  if (expandedMultiplierKey.value === row.key) {
-    closeMultiplierEditor()
+// Key 行统一详情展开（替代旧弹窗与两个独立入口）：一次只展开一行，切换即重置编辑态。
+// 面板同时承载 Key 倍率（变更即保存）与分组模型排除（模型定稿即提交）两组输入。
+const toggleKeyDetail = (row: ChannelApiKeyRow) => {
+  if (expandedDetailKey.value === row.key) {
+    closeKeyDetail()
     return
   }
   openMultiplierEditor(row)
-  expandedMultiplierKey.value = row.key
+  groupModelEditing.value = row
+  groupModelForm.value = { model: '', note: '' }
+  emit('ensure-models-loaded')
+  expandedDetailKey.value = row.key
 }
 
-const closeMultiplierEditor = () => {
-  expandedMultiplierKey.value = null
+const closeKeyDetail = () => {
+  expandedDetailKey.value = null
   multiplierEditing.value = null
   multiplierError.value = ''
+  groupModelEditing.value = null
 }
 
 // 分组倍率输入框 hint：仅在渠道启用上限时提示（未启用时不解释闸门语义，避免噪声）。

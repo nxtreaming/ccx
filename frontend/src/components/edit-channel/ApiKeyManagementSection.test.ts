@@ -163,7 +163,7 @@ describe('ApiKeyManagementSection', () => {
       channelKind: 'messages',
     })
     await nextTick()
-    await wrapper.find('button').trigger('click')
+    await wrapper.find('[aria-label="channelCard.keyDetail"]').trigger('click')
     await nextTick()
 
     const select = wrapper.findComponent(selectStub)
@@ -180,7 +180,7 @@ describe('ApiKeyManagementSection', () => {
       channelKind: 'messages',
     })
     await nextTick()
-    await wrapper.find('button').trigger('click')
+    await wrapper.find('[aria-label="channelCard.keyDetail"]').trigger('click')
     await nextTick()
 
     // 消耗策略选择即定稿保存，无需保存按钮
@@ -207,7 +207,7 @@ describe('ApiKeyManagementSection', () => {
       channelKind: 'messages',
     })
     await nextTick()
-    await wrapper.find('button').trigger('click')
+    await wrapper.find('[aria-label="channelCard.keyDetail"]').trigger('click')
     await nextTick()
 
     const multiplierInputs = wrapper.findAllComponents(inputStub)
@@ -241,10 +241,9 @@ describe('ApiKeyManagementSection', () => {
     })
     await nextTick()
     // 倍率设置从弹窗改为行下展开：点击倍率按钮出现内联面板
-    const multiplierBtn = wrapper.findAllComponents(buttonStub)
-      .find(b => b.text().includes('app.actions.edit') || b.text().includes('subscription.keyMultiplier.title'))
-    expect(multiplierBtn).toBeTruthy()
-    await multiplierBtn!.trigger('click')
+    const detailBtn = wrapper.find('[aria-label="channelCard.keyDetail"]')
+    expect(detailBtn.exists()).toBe(true)
+    await detailBtn.trigger('click')
     await nextTick()
 
     expect(wrapper.text()).toContain('subscription.keyMultiplier.policy')
@@ -407,7 +406,7 @@ describe('ApiKeyManagementSection', () => {
 })
 
 describe('分组模型排除行内化', () => {
-  it('tune 按钮行内展开，模型选定即提交且无对话框按钮', async () => {
+  it('统一详情按钮行内展开，模型选定即提交且无对话框按钮', async () => {
     const wrapper = mountSection({
       apiKeyConfigs: [
         { key: 'sk-1', keyUid: 'uid-1', quotaGroup: 'g1' },
@@ -417,7 +416,7 @@ describe('分组模型排除行内化', () => {
     })
     await nextTick()
 
-    const tuneBtn = wrapper.find('[aria-label="channelCard.groupModelPolicy"]')
+    const tuneBtn = wrapper.find('[aria-label="channelCard.keyDetail"]')
     expect(tuneBtn.exists()).toBe(true)
     await tuneBtn.trigger('click')
     await nextTick()
@@ -442,7 +441,7 @@ describe('分组模型排除行内化', () => {
     expect(wrapper.text()).not.toContain('channelCard.groupModelInlineHint')
   })
 
-  it('再次点击 tune 按钮收起行内面板（toggle）', async () => {
+  it('再次点击统一详情按钮收起面板（toggle）', async () => {
     const wrapper = mountSection({
       apiKeyConfigs: [
         { key: 'sk-1', keyUid: 'uid-1' },
@@ -452,7 +451,7 @@ describe('分组模型排除行内化', () => {
     })
     await nextTick()
 
-    const tuneBtn = wrapper.find('[aria-label="channelCard.groupModelPolicy"]')
+    const tuneBtn = wrapper.find('[aria-label="channelCard.keyDetail"]')
     await tuneBtn.trigger('click')
     await nextTick()
     expect(wrapper.text()).toContain('channelCard.groupModelInlineHint')
