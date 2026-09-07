@@ -59,6 +59,11 @@ const listItemStub = defineComponent({
   emits: ['click'],
   template: '<div v-bind="$attrs" @click="$emit(\'click\')"><slot name="prepend" /><slot /><slot name="append" /></div>',
 })
+const comboboxStub = defineComponent({
+  props: ['modelValue', 'items', 'label'],
+  emits: ['update:modelValue'],
+  template: '<div><input class="combobox-stub-input" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)" /></div>',
+})
 
 const mountSection = (props: Record<string, unknown> = {}) => mount(ApiKeyManagementSection, {
   props: {
@@ -81,7 +86,10 @@ const mountSection = (props: Record<string, unknown> = {}) => mount(ApiKeyManage
       VCardActions: passthroughStub,
       VIcon: passthroughStub,
       VChip: passthroughStub,
-      VTooltip: passthroughStub,
+      VTooltip: defineComponent({
+        // 渲染 activator slot（scope 提供 props 空对象），使 tooltip 内按钮可被定位
+        template: '<div><slot name="activator" :props="{}" /><slot /></div>',
+      }),
       VProgressCircular: passthroughStub,
       VProgressLinear: passthroughStub,
       VAlert: passthroughStub,
@@ -103,7 +111,7 @@ const mountSection = (props: Record<string, unknown> = {}) => mount(ApiKeyManage
       VBtn: buttonStub,
       VExpandTransition: passthroughStub,
       VDivider: passthroughStub,
-      VCombobox: passthroughStub,
+      VCombobox: comboboxStub,
       UsageQuotaRows: passthroughStub,
     },
   },
@@ -395,5 +403,63 @@ describe('ApiKeyManagementSection', () => {
     expect(reloadedAlphaRow.html()).toContain('kimiConsoleToken.configured')
     expect(reloadedAlphaRow.html()).toContain('kimiConsoleToken.validatedAt')
     expect(reloadedBetaRow.html()).not.toContain('kimiConsoleToken.configured')
+  })
+})
+
+describe('分组模型排除行内化', () => {
+  it('tune 按钮行内展开，模型选定即提交且无对话框按钮', async () => {
+    const wrapper = mountSection({
+      apiKeyConfigs: [
+        { key: 'sk-1', keyUid: 'uid-1', quotaGroup: 'g1' },
+      ],
+      channelUid: 'ch-1',
+      channelKind: 'messages',
+    })
+    await nextTick()
+
+    const tuneBtn = wrapper.find('[aria-label="channelCard.groupModelPolicy"]')
+    expect(tuneBtn.exists()).toBe(true)
+    await tuneBtn.trigger('click')
+    await nextTick()
+
+    // 行内面板展开：上下文 caption + 自动提交提示；无取消/禁用对话框按钮
+    expect(wrapper.text()).toContain('channelCard.affectedGroupKeys')
+    expect(wrapper.text()).toContain('channelCard.groupModelInlineHint')
+    const dialogButtons = wrapper.findAllComponents(buttonStub)
+      .filter(b => b.text().includes('channelCard.disableGroupModel') || b.text().includes('app.actions.cancel'))
+    expect(dialogButtons).toHaveLength(0)
+
+    // 模型定稿（combobox change）即提交排除事件，随后面板收起
+    const comboInput = wrapper.find('input.combobox-stub-input')
+    expect(comboInput.exists()).toBe(true)
+    await comboInput.setValue('kimi-k3')
+    await comboInput.trigger('change')
+    await nextTick()
+
+    const events = wrapper.emitted('disable-group-model')
+    expect(events).toBeTruthy()
+    expect(events![0]).toEqual(['sk-1', 'kimi-k3', undefined])
+    expect(wrapper.text()).not.toContain('channelCard.groupModelInlineHint')
+  })
+
+  it('再次点击 tune 按钮收起行内面板（toggle）', async () => {
+    const wrapper = mountSection({
+      apiKeyConfigs: [
+        { key: 'sk-1', keyUid: 'uid-1' },
+      ],
+      channelUid: 'ch-1',
+      channelKind: 'messages',
+    })
+    await nextTick()
+
+    const tuneBtn = wrapper.find('[aria-label="channelCard.groupModelPolicy"]')
+    await tuneBtn.trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('channelCard.groupModelInlineHint')
+
+    await tuneBtn.trigger('click')
+    await nextTick()
+    expect(wrapper.text()).not.toContain('channelCard.groupModelInlineHint')
+    expect(wrapper.emitted('disable-group-model')).toBeFalsy()
   })
 })

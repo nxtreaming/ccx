@@ -381,11 +381,12 @@
                       <template #activator="{ props: tooltipProps }">
                         <v-btn
                           v-bind="tooltipProps"
+                          :aria-label="t('channelCard.groupModelPolicy')"
                           size="small"
                           color="secondary"
                           icon
                           variant="text"
-                          @click="openGroupModelEditor(row)"
+                          @click="toggleGroupModelEditor(row)"
                         >
                           <v-icon size="small">mdi-tune-variant</v-icon>
                         </v-btn>
@@ -600,6 +601,47 @@
                     <v-progress-circular v-if="multiplierSaving" size="12" width="2" indeterminate />
                     <span>{{ multiplierSaving ? t('subscription.keyMultiplier.saving') : t('subscription.keyMultiplier.autosaveHint') }}</span>
                   </div>
+                </div>
+              </v-expand-transition>
+
+              <v-expand-transition>
+                <div v-if="expandedGroupModelKey === row.key" class="volcengine-key-detail px-4 pt-3 pb-4">
+                  <div class="d-flex align-center ga-2 flex-wrap text-caption text-medium-emphasis mb-3">
+                    <code>{{ maskApiKey(row.key) }}</code>
+                    <v-chip size="x-small" color="secondary" variant="tonal">
+                      {{ row.quotaGroup || t('channelCard.ungrouped') }}
+                    </v-chip>
+                    <span>{{ t('channelCard.affectedGroupKeys', { count: groupModelAffectedCount }) }}</span>
+                  </div>
+                  <v-row dense>
+                    <v-col cols="12" sm="6">
+                      <v-combobox
+                        v-model="groupModelForm.model"
+                        :items="modelOptions"
+                        item-title="title"
+                        item-value="value"
+                        :return-object="false"
+                        :label="t('channelCard.groupModelModel')"
+                        :placeholder="t('channelCard.groupModelModelPlaceholder')"
+                        variant="outlined"
+                        density="compact"
+                        clearable
+                        @update:model-value="submitGroupModelDisable"
+                      />
+                    </v-col>
+                    <v-col cols="12" sm="6">
+                      <v-text-field
+                        v-model="groupModelForm.note"
+                        :label="t('channelCard.groupModelNote')"
+                        :placeholder="t('channelCard.groupModelNotePlaceholder')"
+                        variant="outlined"
+                        density="compact"
+                        clearable
+                      />
+                    </v-col>
+                  </v-row>
+                  <!-- 无确认按钮：模型选定即排除（备注需先填），误排可在下方记录中恢复；收起走行入口 toggle。 -->
+                  <div class="text-caption text-medium-emphasis mt-2">{{ t('channelCard.groupModelInlineHint') }}</div>
                 </div>
               </v-expand-transition>
 
@@ -1377,66 +1419,11 @@
       </v-card-text>
     </v-card>
 
-    <v-dialog v-model="groupModelDialog" max-width="520">
-      <v-card>
-        <v-card-title class="d-flex align-center ga-2">
-          <v-icon color="secondary">mdi-tune-variant</v-icon>
-          {{ t('channelCard.groupModelPolicy') }}
-        </v-card-title>
-        <v-card-text class="d-flex flex-column ga-3">
-          <div class="d-flex align-center ga-2 flex-wrap text-caption text-medium-emphasis">
-            <code>{{ groupModelEditing ? maskApiKey(groupModelEditing.key) : '' }}</code>
-            <v-chip size="x-small" color="secondary" variant="tonal">
-              {{ groupModelEditing?.quotaGroup || t('channelCard.ungrouped') }}
-            </v-chip>
-            <span>{{ t('channelCard.affectedGroupKeys', { count: groupModelAffectedCount }) }}</span>
-          </div>
-          <v-combobox
-            v-model="groupModelForm.model"
-            :items="modelOptions"
-            item-title="title"
-            item-value="value"
-            :return-object="false"
-            :label="t('channelCard.groupModelModel')"
-            :placeholder="t('channelCard.groupModelModelPlaceholder')"
-            variant="outlined"
-            density="compact"
-            clearable
-            autofocus
-          />
-          <v-text-field
-            v-model="groupModelForm.note"
-            :label="t('channelCard.groupModelNote')"
-            :placeholder="t('channelCard.groupModelNotePlaceholder')"
-            variant="outlined"
-            density="compact"
-            clearable
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="groupModelDialog = false">
-            {{ t('app.actions.cancel') }}<span class="shortcut-hint ml-2 text-xs opacity-50">Esc</span>
-          </v-btn>
-          <v-btn
-            color="warning"
-            variant="tonal"
-            :loading="!!changingGroupModel"
-            :disabled="!groupModelForm.model.trim() || !!changingGroupModel"
-            @click="submitGroupModelDisable"
-          >
-            {{ t('channelCard.disableGroupModel') }}<span class="shortcut-hint ml-2 text-xs opacity-50">{{ isMac ? '⌘Enter' : 'Ctrl+Enter' }}</span>
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount, watch } from 'vue'
-import { useDialogHotkeys } from '../../composables/useDialogHotkeys'
 import { useI18n } from '../../i18n'
 import { ApiError, ApiService } from '../../services/api'
 import type {
@@ -1532,9 +1519,9 @@ const newApiKey = ref('')
 const apiKeyError = ref('')
 const duplicateKeyIndex = ref<number | null>(null)
 const copiedKey = ref('')
-const groupModelDialog = ref(false)
 const groupModelEditing = ref<ChannelApiKeyRow | null>(null)
 const groupModelForm = ref({ model: '', note: '' })
+const expandedGroupModelKey = ref<string | null>(null)
 const expandedMultiplierKey = ref<string | null>(null)
 const multiplierSaving = ref(false)
 const multiplierError = ref('')
@@ -1747,19 +1734,31 @@ const groupModelAffectedCount = computed(() => {
   return keyRows.value.filter(row => (row.quotaGroup || '') === group && !row.disabled).length
 })
 
-const openGroupModelEditor = (row: ChannelApiKeyRow) => {
+// 分组模型排除在行下方展开（替代旧弹窗）：一次只展开一行，切换即重置编辑态。
+const toggleGroupModelEditor = (row: ChannelApiKeyRow) => {
+  if (expandedGroupModelKey.value === row.key) {
+    closeGroupModelEditor()
+    return
+  }
   groupModelEditing.value = row
   groupModelForm.value = { model: '', note: '' }
   emit('ensure-models-loaded')
-  groupModelDialog.value = true
+  expandedGroupModelKey.value = row.key
 }
 
-const submitGroupModelDisable = () => {
+const closeGroupModelEditor = () => {
+  expandedGroupModelKey.value = null
+  groupModelEditing.value = null
+}
+
+// 模型选定（combobox 选择/手输回车定稿）即提交排除；备注需先于模型填写。
+// 清空（clearable → null）不触发。误排可通过下方记录列表的恢复按钮撤销。
+const submitGroupModelDisable = (model: unknown = groupModelForm.value.model) => {
   const row = groupModelEditing.value
-  const model = groupModelForm.value.model.trim()
-  if (!row || !model) return
-  emit('disable-group-model', row.key, model, groupModelForm.value.note.trim() || undefined)
-  groupModelDialog.value = false
+  const trimmed = (model ?? '').toString().trim()
+  if (!row || !trimmed) return
+  emit('disable-group-model', row.key, trimmed, groupModelForm.value.note.trim() || undefined)
+  closeGroupModelEditor()
 }
 
 const multiplierStatusColor = (status?: string) => status === 'fresh' || status === 'manual' ? 'success' : status === 'over_limit' || status === 'sync_error' || status === 'relink_required' ? 'error' : 'warning'
@@ -1855,11 +1854,6 @@ const saveMultiplier = async () => {
     multiplierSaving.value = false
   }
 }
-
-// 分组模型策略 / Key 倍率内联对话框默认快捷键（Esc 取消走 Vuetify 原生，仅关本层）
-useDialogHotkeys(groupModelDialog, {
-  confirm: () => submitGroupModelDisable(),
-})
 
 const toggleCredentialKey = (key: string) => {
   expandedCredentialKey.value = expandedCredentialKey.value === key ? null : key

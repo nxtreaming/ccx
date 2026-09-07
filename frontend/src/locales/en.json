@@ -1621,5 +1621,6 @@
   "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
   "subscription.keyMultiplier.saving": "Saving…",
   "subscription.keyMultiplier.autosaveHint": "Changes save instantly; click the entry button again to collapse",
-  "subscription.keyMultiplier.channelLimitHint": "Channel limit {limit}; over-limit keys drop from routing"
+  "subscription.keyMultiplier.channelLimitHint": "Channel limit {limit}; over-limit keys drop from routing",
+  "channelCard.groupModelInlineHint": "Picking or entering a model excludes it for this group immediately; fill the note before the model; mistakes can be restored in the records below"
 }

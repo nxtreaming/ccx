@@ -1621,5 +1621,6 @@
   "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
   "subscription.keyMultiplier.saving": "保存中…",
   "subscription.keyMultiplier.autosaveHint": "改动即时保存，再次点击入口按钮可收起",
-  "subscription.keyMultiplier.channelLimitHint": "渠道上限 {limit}，超出自动退出调度"
+  "subscription.keyMultiplier.channelLimitHint": "渠道上限 {limit}，超出自动退出调度",
+  "channelCard.groupModelInlineHint": "选定或输入模型即排除该分组对此模型的调用；备注需先于模型填写，误排可在下方记录中恢复"
 }

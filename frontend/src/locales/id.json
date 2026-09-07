@@ -1621,5 +1621,6 @@
   "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
   "subscription.keyMultiplier.saving": "Menyimpan…",
   "subscription.keyMultiplier.autosaveHint": "Perubahan tersimpan otomatis; klik tombol entri lagi untuk menutup",
-  "subscription.keyMultiplier.channelLimitHint": "Batas kanal {limit}; key yang melebihi keluar dari routing"
+  "subscription.keyMultiplier.channelLimitHint": "Batas kanal {limit}; key yang melebihi keluar dari routing",
+  "channelCard.groupModelInlineHint": "Memilih atau mengetik model langsung mengecualikannya untuk grup ini; isi catatan sebelum model; kesalahan dapat dipulihkan di catatan di bawah"
 }
