@@ -1544,9 +1544,6 @@
   "subscription.keyMultiplier.group": "分组",
   "subscription.keyMultiplier.value": "分组倍率",
   "subscription.keyMultiplier.max": "倍率上限",
-  "subscription.keyMultiplier.channelMax": "渠道倍率上限",
-  "subscription.keyMultiplier.channelMaxDisabled": "未启用（超限 Key 不自动停用）",
-  "subscription.keyMultiplier.channelMaxHint": "上限统一在渠道编辑中设置；超过渠道上限的 Key 自动退出调度",
   "subscription.keyMultiplier.eligible": "可参与路由",
   "subscription.keyMultiplier.ineligible": "不可参与路由",
   "subscription.field.version": "版本",
@@ -1615,12 +1612,14 @@
   "subscription.keyMultiplier.policy": "消耗策略",
   "subscription.keyMultiplier.policyNormal": "常规",
   "subscription.keyMultiplier.policyOpportunistic": "优先消耗（公开或即将过期）",
-  "subscription.keyMultiplier.markPublic": "标记为公开/临时 Key",
   "subscription.keyMultiplier.policyHint": "公开/临时 Key 可能被其他人耗尽或快速失效；系统会在失败时自动回退到稳定 Key。",
   "subscription.keyMultiplier.policyChip": "公开/临时",
   "subscription.keyMultiplier.effectiveCostClass": "成本等级",
   "costReport.col.compressionSavings": "压缩节省",
   "costReport.compressionsSavingHint": "请求侧 tool 输出压缩节省的 token",
   "costReport.csv.compressionOriginalTokens": "compressionOriginalTokens",
-  "costReport.csv.compressionSavedTokens": "compressionSavedTokens"
+  "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
+  "subscription.keyMultiplier.saving": "保存中…",
+  "subscription.keyMultiplier.autosaveHint": "改动即时保存，再次点击入口按钮可收起",
+  "subscription.keyMultiplier.channelLimitHint": "渠道上限 {limit}，超出自动退出调度"
 }

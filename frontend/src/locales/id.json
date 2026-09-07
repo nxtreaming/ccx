@@ -1544,9 +1544,6 @@
   "subscription.keyMultiplier.group": "Group",
   "subscription.keyMultiplier.value": "Group multiplier",
   "subscription.keyMultiplier.max": "Maximum multiplier",
-  "subscription.keyMultiplier.channelMax": "Batas pengali kanal",
-  "subscription.keyMultiplier.channelMaxDisabled": "nonaktif (key melebihi batas tidak dinonaktifkan otomatis)",
-  "subscription.keyMultiplier.channelMaxHint": "Batas diatur di tingkat kanal; key yang melebihi otomatis keluar dari routing",
   "subscription.keyMultiplier.eligible": "Eligible",
   "subscription.keyMultiplier.ineligible": "Ineligible",
   "subscription.field.version": "Version",
@@ -1615,12 +1612,14 @@
   "subscription.keyMultiplier.policy": "Kebijakan konsumsi",
   "subscription.keyMultiplier.policyNormal": "Normal",
   "subscription.keyMultiplier.policyOpportunistic": "Prioritaskan (publik atau akan kedaluwarsa)",
-  "subscription.keyMultiplier.markPublic": "Tandai sebagai kunci publik/temporer",
   "subscription.keyMultiplier.policyHint": "Kunci publik/temporer dapat habis atau kedaluwarsa dengan cepat; sistem akan kembali ke kunci stabil saat gagal.",
   "subscription.keyMultiplier.policyChip": "Publik/Temporer",
   "subscription.keyMultiplier.effectiveCostClass": "Kelas biaya",
   "costReport.col.compressionSavings": "Kompresi Drop",
   "costReport.compressionsSavingHint": "Token yang dihemat oleh kompresi output tool sisi request",
   "costReport.csv.compressionOriginalTokens": "compressionOriginalTokens",
-  "costReport.csv.compressionSavedTokens": "compressionSavedTokens"
+  "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
+  "subscription.keyMultiplier.saving": "Menyimpan…",
+  "subscription.keyMultiplier.autosaveHint": "Perubahan tersimpan otomatis; klik tombol entri lagi untuk menutup",
+  "subscription.keyMultiplier.channelLimitHint": "Batas kanal {limit}; key yang melebihi keluar dari routing"
 }

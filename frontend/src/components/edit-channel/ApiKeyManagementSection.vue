@@ -554,7 +554,7 @@
               <v-expand-transition>
                 <div v-if="row.keyUid && channelUid && channelKind && expandedMultiplierKey === row.key" class="volcengine-key-detail px-4 pt-3 pb-4">
                   <v-row dense align="center">
-                    <v-col cols="12" sm="4">
+                    <v-col cols="12" sm="6">
                       <v-select
                         v-model="multiplierForm.consumptionPolicy"
                         :items="consumptionPolicyOptions"
@@ -565,9 +565,10 @@
                         variant="outlined"
                         density="compact"
                         hide-details
+                        @update:model-value="saveMultiplier"
                       />
                     </v-col>
-                    <v-col cols="12" sm="4">
+                    <v-col cols="12" sm="6">
                       <v-text-field
                         v-model="multiplierForm.groupMultiplier"
                         type="number"
@@ -575,14 +576,12 @@
                         step="any"
                         :disabled="multiplierEditing?.multiplierSource === 'new_api'"
                         :label="t('subscription.keyMultiplier.value')"
+                        :hint="channelMaxGroupMultiplierHint"
+                        persistent-hint
                         variant="outlined"
                         density="compact"
-                        hide-details
+                        @change="saveMultiplier"
                       />
-                    </v-col>
-                    <v-col cols="12" sm="4" class="d-flex align-center text-caption text-medium-emphasis ga-1">
-                      <v-icon size="16" color="primary">mdi-shield-half-full</v-icon>
-                      <span>{{ t('subscription.keyMultiplier.channelMax') }}: {{ props.channelMaxGroupMultiplier ?? t('subscription.keyMultiplier.channelMaxDisabled') }}</span>
                     </v-col>
                   </v-row>
                   <v-alert
@@ -595,23 +594,11 @@
                     {{ t('subscription.keyMultiplier.policyHint') }}
                   </v-alert>
                   <v-alert v-if="multiplierError" color="error" variant="tonal" density="compact" class="mt-3">{{ multiplierError }}</v-alert>
-                  <div class="d-flex align-center ga-2 mt-3 flex-wrap">
-                    <v-btn
-                      v-if="multiplierEditing?.multiplierSource !== 'new_api'"
-                      size="small"
-                      variant="text"
-                      color="warning"
-                      @click="markAsPublicKey"
-                    >
-                      {{ t('subscription.keyMultiplier.markPublic') }}
-                    </v-btn>
-                    <v-spacer />
-                    <v-btn size="small" variant="text" @click="closeMultiplierEditor">
-                      {{ t('app.actions.cancel') }}
-                    </v-btn>
-                    <v-btn size="small" color="primary" variant="tonal" :loading="multiplierSaving" @click="saveMultiplier">
-                      {{ t('app.actions.save') }}
-                    </v-btn>
+                  <!-- 无保存/取消按钮：值定稿即自动保存（下拉选择即存、数字框失焦/回车定稿即存），
+                       收起走行入口按钮的再次点击（toggle）；「公开 Key」由用户自选消耗策略表达。 -->
+                  <div class="d-flex align-center ga-2 mt-3 text-caption text-medium-emphasis">
+                    <v-progress-circular v-if="multiplierSaving" size="12" width="2" indeterminate />
+                    <span>{{ multiplierSaving ? t('subscription.keyMultiplier.saving') : t('subscription.keyMultiplier.autosaveHint') }}</span>
                   </div>
                 </div>
               </v-expand-transition>
@@ -1803,6 +1790,13 @@ const closeMultiplierEditor = () => {
   multiplierError.value = ''
 }
 
+// 分组倍率输入框 hint：仅在渠道启用上限时提示（未启用时不解释闸门语义，避免噪声）。
+const channelMaxGroupMultiplierHint = computed(() => {
+  const limit = Number(props.channelMaxGroupMultiplier)
+  if (!Number.isFinite(limit) || limit <= 0) return ''
+  return t('subscription.keyMultiplier.channelLimitHint', { limit })
+})
+
 // 把倍率端点响应同步回外层渠道编辑表单的 apiKeyConfigs 快照：
 // 内嵌编辑直接 PATCH 落盘，若不回写，之后点渠道编辑「保存」会把旧快照发回后端
 // （后端 merge 已做缺省回填防御，此处保证表单与后端一致、避免旧值覆盖窗口）。
@@ -1823,13 +1817,6 @@ const syncMultiplierResponseToConfigs = (row: ChannelApiKeyRow, response: { grou
     }
   })
   emit('update:apiKeyConfigs', configs)
-}
-
-const markAsPublicKey = () => {
-  multiplierForm.value = {
-    groupMultiplier: 0,
-    consumptionPolicy: 'opportunistic',
-  }
 }
 
 const parseMultiplierInput = (value: number | string | null): number | null => {
@@ -1860,7 +1847,8 @@ const saveMultiplier = async () => {
     row.multiplierUpdatedAt = response.updatedAt
     row.multiplierExpiresAt = response.expiresAt
     syncMultiplierResponseToConfigs(row, response)
-    closeMultiplierEditor()
+    // 不自动收起：变更即保存模式下保留展开态，便于继续调整其他字段；
+    // 收起由用户再次点击行入口按钮（toggle）完成。
   } catch (error) {
     multiplierError.value = error instanceof Error ? error.message : String(error)
   } finally {

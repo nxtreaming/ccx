@@ -1544,9 +1544,6 @@
   "subscription.keyMultiplier.group": "Group",
   "subscription.keyMultiplier.value": "Group multiplier",
   "subscription.keyMultiplier.max": "Maximum multiplier",
-  "subscription.keyMultiplier.channelMax": "Channel max multiplier",
-  "subscription.keyMultiplier.channelMaxDisabled": "disabled (over-limit keys not auto-disabled)",
-  "subscription.keyMultiplier.channelMaxHint": "The limit is set at channel level; keys exceeding it auto-drop from routing",
   "subscription.keyMultiplier.eligible": "Eligible",
   "subscription.keyMultiplier.ineligible": "Ineligible",
   "subscription.field.version": "Version",
@@ -1615,12 +1612,14 @@
   "subscription.keyMultiplier.policy": "Consumption policy",
   "subscription.keyMultiplier.policyNormal": "Normal",
   "subscription.keyMultiplier.policyOpportunistic": "Use first (public or expiring)",
-  "subscription.keyMultiplier.markPublic": "Mark as public/temp key",
   "subscription.keyMultiplier.policyHint": "Public/temp keys may be exhausted or expire quickly; the system will fall back to stable keys on failure.",
   "subscription.keyMultiplier.policyChip": "Public/Temp",
   "subscription.keyMultiplier.effectiveCostClass": "Cost class",
   "costReport.col.compressionSavings": "Compression Saved",
   "costReport.compressionsSavingHint": "Tokens saved by request-side tool output compression",
   "costReport.csv.compressionOriginalTokens": "compressionOriginalTokens",
-  "costReport.csv.compressionSavedTokens": "compressionSavedTokens"
+  "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
+  "subscription.keyMultiplier.saving": "Saving…",
+  "subscription.keyMultiplier.autosaveHint": "Changes save instantly; click the entry button again to collapse",
+  "subscription.keyMultiplier.channelLimitHint": "Channel limit {limit}; over-limit keys drop from routing"
 }

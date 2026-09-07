@@ -163,7 +163,7 @@ describe('ApiKeyManagementSection', () => {
     expect(select.props('modelValue')).toBe('normal')
   })
 
-  it('mark public key shortcut prefills zero and opportunistic', async () => {
+  it('saves multiplier with consumption policy on policy change (no save button)', async () => {
     const wrapper = mountSection({
       apiKeyConfigs: [
         { key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, maxGroupMultiplier: 2 },
@@ -175,33 +175,10 @@ describe('ApiKeyManagementSection', () => {
     await wrapper.find('button').trigger('click')
     await nextTick()
 
-    const markButton = wrapper.findAllComponents(buttonStub)
-      .find(b => b.text().includes('subscription.keyMultiplier.markPublic'))
-    expect(markButton).toBeTruthy()
-    await markButton!.trigger('click')
-    await nextTick()
-
-    expect(wrapper.findComponent(selectStub).props('modelValue')).toBe('opportunistic')
-  })
-
-  it('saves multiplier with consumption policy and applies response fields', async () => {
-    const wrapper = mountSection({
-      apiKeyConfigs: [
-        { key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, maxGroupMultiplier: 2 },
-      ],
-      channelUid: 'ch-1',
-      channelKind: 'messages',
-    })
-    await nextTick()
-    await wrapper.find('button').trigger('click')
-    await nextTick()
-
+    // 消耗策略选择即定稿保存，无需保存按钮
     const select = wrapper.findComponent(selectStub)
     await select.find('select').setValue('opportunistic')
 
-    const saveButton = wrapper.findAllComponents(buttonStub)
-      .find(b => b.text().includes('app.actions.save'))
-    await saveButton!.trigger('click')
     await vi.waitFor(() => expect(apiMocks.patchKeyMultiplier).toHaveBeenCalled())
 
     expect(apiMocks.patchKeyMultiplier).toHaveBeenCalledWith(
@@ -213,7 +190,7 @@ describe('ApiKeyManagementSection', () => {
     expect(apiMocks.patchKeyMultiplier.mock.calls[0][3]).not.toHaveProperty('maxGroupMultiplier')
   })
 
-  it('converts decimal multiplier inputs to JSON numbers before saving', async () => {
+  it('converts decimal multiplier inputs to JSON numbers on field commit', async () => {
     const wrapper = mountSection({
       apiKeyConfigs: [
         { key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, maxGroupMultiplier: 2 },
@@ -227,14 +204,13 @@ describe('ApiKeyManagementSection', () => {
 
     const multiplierInputs = wrapper.findAllComponents(inputStub)
       .filter(input => input.props('type') === 'number')
-    // 倍率上限已统一为渠道级：Key 倍率弹窗只剩分组倍率一个数字输入。
+    // 倍率上限已统一为渠道级：Key 倍率编辑只剩分组倍率一个数字输入。
     expect(multiplierInputs).toHaveLength(1)
     await multiplierInputs[0].vm.$emit('update:modelValue', '0.15')
     await nextTick()
+    // 数字框失焦/回车定稿（change 事件）即触发保存
+    await multiplierInputs[0].vm.$emit('change', '0.15')
 
-    const saveButton = wrapper.findAllComponents(buttonStub)
-      .find(b => b.text().includes('app.actions.save'))
-    await saveButton!.trigger('click')
     await vi.waitFor(() => expect(apiMocks.patchKeyMultiplier).toHaveBeenCalled())
 
     expect(apiMocks.patchKeyMultiplier).toHaveBeenCalledWith(
@@ -247,7 +223,7 @@ describe('ApiKeyManagementSection', () => {
     expect(apiMocks.patchKeyMultiplier.mock.calls[0][3]).not.toHaveProperty('maxGroupMultiplier')
   })
 
-  it('expands multiplier editor inline under the key row', async () => {
+  it('expands multiplier editor inline without save/cancel/mark-public buttons', async () => {
     const wrapper = mountSection({
       apiKeyConfigs: [
         { key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, maxGroupMultiplier: 2 },
@@ -256,7 +232,7 @@ describe('ApiKeyManagementSection', () => {
       channelKind: 'messages',
     })
     await nextTick()
-    // 倍率设置从弹窗改为行下展开：点击倍率按钮出现内联面板与保存/取消
+    // 倍率设置从弹窗改为行下展开：点击倍率按钮出现内联面板
     const multiplierBtn = wrapper.findAllComponents(buttonStub)
       .find(b => b.text().includes('app.actions.edit') || b.text().includes('subscription.keyMultiplier.title'))
     expect(multiplierBtn).toBeTruthy()
@@ -265,26 +241,11 @@ describe('ApiKeyManagementSection', () => {
 
     expect(wrapper.text()).toContain('subscription.keyMultiplier.policy')
     expect(wrapper.text()).toContain('subscription.keyMultiplier.value')
-    const actions = wrapper.findAllComponents(buttonStub)
-      .filter(b => b.text().includes('app.actions.save') || b.text().includes('app.actions.cancel'))
-    expect(actions.length).toBeGreaterThanOrEqual(2)
-  })
-
-  it('does not show mark-public shortcut for new_api keys', async () => {
-    const wrapper = mountSection({
-      apiKeyConfigs: [
-        { key: 'sk-1', keyUid: 'uid-1', multiplierSource: 'new_api', groupMultiplier: 0.5, maxGroupMultiplier: 1 },
-      ],
-      channelUid: 'ch-1',
-      channelKind: 'messages',
-    })
-    await nextTick()
-    await wrapper.find('button').trigger('click')
-    await nextTick()
-
-    const markButton = wrapper.findAllComponents(buttonStub)
-      .find(b => b.text().includes('subscription.keyMultiplier.markPublic'))
-    expect(markButton).toBeFalsy()
+    // 变更即保存：无保存/取消/标记公开按钮，展示自动保存提示
+    const actionButtons = wrapper.findAllComponents(buttonStub)
+      .filter(b => ['app.actions.save', 'app.actions.cancel', 'subscription.keyMultiplier.markPublic'].some(k => b.text().includes(k)))
+    expect(actionButtons).toHaveLength(0)
+    expect(wrapper.text()).toContain('subscription.keyMultiplier.autosaveHint')
   })
 
   it('keeps Kimi credential bound to the correct key row after save and reload with reversed credential order', async () => {
