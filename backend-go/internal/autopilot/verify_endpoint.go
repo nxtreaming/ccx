@@ -142,6 +142,8 @@ func channelKeyProbeDesc(kind string) string {
 // 策略：任一候选地址探测通过即整体通过；全部失败时按失败类型分类——
 // 全部为 401/403 视为 key 无效（AuthFailed=true），其余情况（超时/网络/5xx 等）
 // 只说明探测未通过，不能证明 key 无效（AuthFailed=false，由调用方降级或阻断）。
+// 例外：推理探针被 403 拒时用 GET /v1/models 复核鉴权，通过则不判失败
+// （403 可能只是占位模型无权限/无渠道，key 本身有效）。
 func verifyChannelKey(ctx context.Context, kind string, upstream config.UpstreamConfig, apiKey string) error {
 	baseURLs := upstream.BaseURLsForKey(apiKey)
 	if len(baseURLs) == 0 {
@@ -179,6 +181,14 @@ func verifyChannelKey(ctx context.Context, kind string, upstream config.Upstream
 		}
 		if result.OK {
 			return nil
+		}
+		// 403 只说明「已认证但被拒」：new-api 系对无权限/无可用渠道的占位模型同样返回 403，
+		// 不能据此断言 key 无效——同 key 拉模型列表往往正常（routex 等站点实测）。
+		// 用 GET /v1/models 按 key 复核，通过即视为验证成功；401 是明确未认证，不复核。
+		if result.AuthFailed && result.StatusCode == http.StatusForbidden && probeDesc != modelsListProbeDesc {
+			if VerifyModelsListEndpoint(ctx, baseURL, apiKey, upstream.AuthHeader).OK {
+				return nil
+			}
 		}
 		if result.AuthFailed {
 			authFailedCount++
@@ -404,6 +414,13 @@ func verifyProviderRouteKeys(ctx context.Context, tmpl *config.ProviderTemplate,
 			if res.OK {
 				boundURL = cand.BaseURL
 				break
+			}
+			// 403 推理探针用模型列表复核鉴权（models 探针本身按 key 鉴权，无需复核）
+			if res.AuthFailed && res.StatusCode == http.StatusForbidden && !modelsListProbeForBaseURL(cand.BaseURL) {
+				if VerifyModelsListEndpoint(ctx, cand.BaseURL, apiKey, "").OK {
+					boundURL = cand.BaseURL
+					break
+				}
 			}
 			if res.AuthFailed {
 				authFailedCount++
