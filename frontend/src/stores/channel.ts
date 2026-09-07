@@ -18,6 +18,7 @@ import {
   normalizeChannelStatus,
   type LlmChannelKind,
 } from '@/utils/unifiedChannels'
+import { normalizeMaxGroupMultiplier } from '@/utils/channelPayload'
 
 /**
  * 渠道数据管理 Store
@@ -428,6 +429,14 @@ export const useChannelStore = defineStore('channel', () => {
         if (original && (channel.remark ?? '').trim() !== (original.remark ?? '').trim()) {
           await updateChannelByType(targetTab, editingChannelIndex, {
             remark: (channel.remark ?? '').trim(),
+          })
+        }
+        // 渠道级分组倍率上限属于单条协议渠道（UpstreamConfig），账号接口不承载；
+        // 变化时经单卡更新下发（<=0/清空发 0=清除，与 CostMultiplier 惯例一致）。
+        const nextMaxGroupMultiplier = normalizeMaxGroupMultiplier(channel.maxGroupMultiplier)
+        if (original && nextMaxGroupMultiplier !== normalizeMaxGroupMultiplier(original.maxGroupMultiplier)) {
+          await updateChannelByType(targetTab, editingChannelIndex, {
+            maxGroupMultiplier: nextMaxGroupMultiplier ?? 0,
           })
         }
       } else if (isChat) {
