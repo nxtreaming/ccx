@@ -1619,9 +1619,8 @@
   "costReport.compressionsSavingHint": "Tokens saved by request-side tool output compression",
   "costReport.csv.compressionOriginalTokens": "compressionOriginalTokens",
   "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
-  "subscription.keyMultiplier.saving": "Saving…",
-  "subscription.keyMultiplier.autosaveHint": "Changes save instantly; click the entry button again to collapse",
   "subscription.keyMultiplier.channelLimitHint": "Channel limit {limit}; over-limit keys drop from routing",
-  "channelCard.groupModelInlineHint": "Picking or entering a model excludes it for this group immediately; fill the note before the model; mistakes can be restored in the records below",
-  "channelCard.keyDetail": "Key details (multiplier / model exclusion)"
+  "channelCard.groupModelInlineHint": "Picking or entering a model stages the exclusion (fill the note first); it is submitted when the channel is saved. Staged items can be removed here and restored via the records below after saving",
+  "channelCard.keyDetail": "Key details (multiplier / model exclusion)",
+  "subscription.keyMultiplier.stagedHint": "Changes take effect when the channel is saved"
 }

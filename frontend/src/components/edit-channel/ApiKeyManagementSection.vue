@@ -571,7 +571,7 @@
                         variant="outlined"
                         density="compact"
                         hide-details
-                        @update:model-value="saveMultiplier"
+                        @update:model-value="applyMultiplierToConfigs"
                       />
                     </v-col>
                     <v-col cols="12" sm="6">
@@ -586,7 +586,7 @@
                         persistent-hint
                         variant="outlined"
                         density="compact"
-                        @change="saveMultiplier"
+                        @change="applyMultiplierToConfigs"
                       />
                     </v-col>
                   </v-row>
@@ -599,12 +599,10 @@
                   >
                     {{ t('subscription.keyMultiplier.policyHint') }}
                   </v-alert>
-                  <v-alert v-if="multiplierError" color="error" variant="tonal" density="compact" class="mt-3">{{ multiplierError }}</v-alert>
-                  <!-- 无保存/取消按钮：值定稿即自动保存（下拉选择即存、数字框失焦/回车定稿即存）；
-                       「公开 Key」由用户自选消耗策略表达。 -->
+                  <!-- 无独立保存按钮：改动暂存表单，随渠道主保存一并落盘；「公开 Key」由用户自选消耗策略表达。 -->
                   <div class="d-flex align-center ga-2 mt-3 text-caption text-medium-emphasis">
-                    <v-progress-circular v-if="multiplierSaving" size="12" width="2" indeterminate />
-                    <span>{{ multiplierSaving ? t('subscription.keyMultiplier.saving') : t('subscription.keyMultiplier.autosaveHint') }}</span>
+                    <v-icon size="14">mdi-content-save-clock-outline</v-icon>
+                    <span>{{ t('subscription.keyMultiplier.stagedHint') }}</span>
                   </div>
 
                   <v-divider class="my-3" />
@@ -637,8 +635,22 @@
                       />
                     </v-col>
                   </v-row>
-                  <!-- 无确认按钮：模型选定即排除（备注需先填），误排可在下方记录中恢复；收起走统一入口 toggle。 -->
+                  <!-- 无确认按钮：模型选定即暂存排除（备注需先填），随渠道主保存提交；误排可在此撤销或保存后经记录恢复。 -->
                   <div class="text-caption text-medium-emphasis mt-2">{{ t('channelCard.groupModelInlineHint') }}</div>
+                  <div v-if="pendingDisablesForEditingKey.length" class="d-flex flex-wrap ga-2 mt-2">
+                    <v-chip
+                      v-for="pending in pendingDisablesForEditingKey"
+                      :key="pending.model"
+                      size="small"
+                      color="warning"
+                      variant="tonal"
+                      closable
+                      @click:close="unstageGroupModelDisable(pending.key, pending.model)"
+                    >
+                      <v-icon start size="14">mdi-clock-outline</v-icon>
+                      {{ pending.model }}{{ pending.note ? ` · ${pending.note}` : '' }}
+                    </v-chip>
+                  </div>
                 </div>
               </v-expand-transition>
 
@@ -1472,6 +1484,7 @@ interface Props {
   disabledKeys: DisabledKeyInfo[]
   disabledKeyModels?: DisabledKeyModel[]
   disabledGroupModels?: DisabledGroupModelInfo[]
+  pendingGroupModelDisables?: Array<{ key: string; model: string; note?: string }>
   modelOptions?: Array<{ title: string; value: string }>
   apiKeyConfigs?: APIKeyConfig[]
   keyModelsStatus: Map<string, KeyModelsStatus>
@@ -1500,7 +1513,8 @@ const emit = defineEmits<{
   'update:proxyUrl': [string]
   'restore-key': [string]
   'restore-key-model': [string, string]
-  'disable-group-model': [string, string, string?]
+  'stage-group-model-disable': [string, string, string?]
+  'unstage-group-model-disable': [string, string]
   'restore-group-model': [DisabledGroupModelInfo]
   'remove-key': [string]
   'suspend-key': [string]
@@ -1520,8 +1534,6 @@ const groupModelEditing = ref<ChannelApiKeyRow | null>(null)
 const groupModelForm = ref({ model: '', note: '' })
 // Key 行统一详情展开（倍率 + 分组模型排除同一块）：一次只展开一行，切换即重置编辑态。
 const expandedDetailKey = ref<string | null>(null)
-const multiplierSaving = ref(false)
-const multiplierError = ref('')
 const multiplierEditing = ref<ChannelApiKeyRow | null>(null)
 const multiplierForm = ref<{ groupMultiplier: number | null; consumptionPolicy: 'normal' | 'opportunistic' | null }>({ groupMultiplier: null, consumptionPolicy: null })
 
@@ -1731,16 +1743,6 @@ const groupModelAffectedCount = computed(() => {
   return keyRows.value.filter(row => (row.quotaGroup || '') === group && !row.disabled).length
 })
 
-// 模型选定（combobox 选择/手输回车定稿）即提交排除；备注需先于模型填写。
-// 清空（clearable → null）不触发。误排可通过下方记录列表的恢复按钮撤销。
-const submitGroupModelDisable = (model: unknown = groupModelForm.value.model) => {
-  const row = groupModelEditing.value
-  const trimmed = (model ?? '').toString().trim()
-  if (!row || !trimmed) return
-  emit('disable-group-model', row.key, trimmed, groupModelForm.value.note.trim() || undefined)
-  closeKeyDetail()
-}
-
 const multiplierStatusColor = (status?: string) => status === 'fresh' || status === 'manual' ? 'success' : status === 'over_limit' || status === 'sync_error' || status === 'relink_required' ? 'error' : 'warning'
 
 const openMultiplierEditor = (row: ChannelApiKeyRow) => {
@@ -1750,11 +1752,10 @@ const openMultiplierEditor = (row: ChannelApiKeyRow) => {
     groupMultiplier: row.groupMultiplier ?? null,
     consumptionPolicy: policy,
   }
-  multiplierError.value = ''
 }
 
 // Key 行统一详情展开（替代旧弹窗与两个独立入口）：一次只展开一行，切换即重置编辑态。
-// 面板同时承载 Key 倍率（变更即保存）与分组模型排除（模型定稿即提交）两组输入。
+// 面板同时承载 Key 倍率（暂存表单，随渠道主保存落盘）与分组模型排除（暂存，主保存后提交）。
 const toggleKeyDetail = (row: ChannelApiKeyRow) => {
   if (expandedDetailKey.value === row.key) {
     closeKeyDetail()
@@ -1770,7 +1771,6 @@ const toggleKeyDetail = (row: ChannelApiKeyRow) => {
 const closeKeyDetail = () => {
   expandedDetailKey.value = null
   multiplierEditing.value = null
-  multiplierError.value = ''
   groupModelEditing.value = null
 }
 
@@ -1781,23 +1781,26 @@ const channelMaxGroupMultiplierHint = computed(() => {
   return t('subscription.keyMultiplier.channelLimitHint', { limit })
 })
 
-// 把倍率端点响应同步回外层渠道编辑表单的 apiKeyConfigs 快照：
-// 内嵌编辑直接 PATCH 落盘，若不回写，之后点渠道编辑「保存」会把旧快照发回后端
-// （后端 merge 已做缺省回填防御，此处保证表单与后端一致、避免旧值覆盖窗口）。
-const syncMultiplierResponseToConfigs = (row: ChannelApiKeyRow, response: { groupMultiplier?: number | null, maxMultiplier?: number | null, consumptionPolicy?: 'normal' | 'opportunistic' | null, status?: string, reason?: string, updatedAt?: string, expiresAt?: string }) => {
-  if (!props.apiKeyConfigs?.length) return
+// 倍率改动不即时落盘：写入外层渠道编辑表单的 apiKeyConfigs 快照，
+// 随渠道主保存一并提交（自定义渠道走渠道 PUT 的 apiKeyConfigs merge；
+// 托管渠道由 channel.ts 单卡更新补发）。行副标题 chips 经 props 回流即时反映新值。
+const applyMultiplierToConfigs = () => {
+  const row = multiplierEditing.value
+  if (!row || !props.apiKeyConfigs?.length) return
+  let groupMultiplier: number | null
+  try {
+    groupMultiplier = parseMultiplierInput(multiplierForm.value.groupMultiplier)
+  } catch {
+    return // 非法输入暂不暂存，保留上次合法值
+  }
   const configs = props.apiKeyConfigs.map(cfg => {
     const cfgId = cfg.keyUid ?? cfg.credentialUid
     if (cfgId !== row.keyUid && cfg.key !== row.key) return cfg
     return {
       ...cfg,
-      groupMultiplier: response.groupMultiplier ?? null,
+      groupMultiplier,
       maxGroupMultiplier: null,
-      consumptionPolicy: response.consumptionPolicy ?? undefined,
-      multiplierSyncStatus: response.status,
-      multiplierSyncError: response.reason,
-      multiplierUpdatedAt: response.updatedAt,
-      multiplierExpiresAt: response.expiresAt,
+      consumptionPolicy: multiplierForm.value.consumptionPolicy ?? undefined,
     }
   })
   emit('update:apiKeyConfigs', configs)
@@ -1810,35 +1813,24 @@ const parseMultiplierInput = (value: number | string | null): number | null => {
   return parsed
 }
 
-const saveMultiplier = async () => {
-  const row = multiplierEditing.value
-  if (!row?.keyUid || !props.channelUid || !props.channelKind) return
-  multiplierSaving.value = true
-  multiplierError.value = ''
-  try {
-    const body = row.multiplierSource === 'new_api'
-      ? { consumptionPolicy: multiplierForm.value.consumptionPolicy }
-      : { groupMultiplier: parseMultiplierInput(multiplierForm.value.groupMultiplier), consumptionPolicy: multiplierForm.value.consumptionPolicy }
-    const response = await apiService.patchKeyMultiplier(props.channelKind, props.channelUid, row.keyUid, body)
-    row.groupMultiplier = response.groupMultiplier ?? null
-    row.maxGroupMultiplier = response.maxMultiplier ?? null
-    row.consumptionPolicy = response.consumptionPolicy ?? null
-    row.effectiveCostClass = response.effectiveCostClass ?? undefined
-    row.multiplierSyncStatus = response.status
-    row.multiplierSyncError = response.reason
-    row.eligible = response.eligible
-    row.ineligibleReason = response.reason
-    row.multiplierUpdatedAt = response.updatedAt
-    row.multiplierExpiresAt = response.expiresAt
-    syncMultiplierResponseToConfigs(row, response)
-    // 不自动收起：变更即保存模式下保留展开态，便于继续调整其他字段；
-    // 收起由用户再次点击行入口按钮（toggle）完成。
-  } catch (error) {
-    multiplierError.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    multiplierSaving.value = false
-  }
+// 模型选定（combobox 选择/手输回车定稿）即暂存排除（不即时调端点），
+// 随渠道主保存成功后统一提交；暂存条目在面板中可撤销。清空（clearable → null）不触发。
+const submitGroupModelDisable = (model: unknown = groupModelForm.value.model) => {
+  const row = groupModelEditing.value
+  const trimmed = (model ?? '').toString().trim()
+  if (!row || !trimmed) return
+  emit('stage-group-model-disable', row.key, trimmed, groupModelForm.value.note.trim() || undefined)
+  groupModelForm.value = { model: '', note: '' }
 }
+
+const unstageGroupModelDisable = (key: string, model: string) => {
+  emit('unstage-group-model-disable', key, model)
+}
+
+// 当前展开 key 的暂存排除条目（展示于面板下半区，随主保存提交）。
+const pendingDisablesForEditingKey = computed(() =>
+  (props.pendingGroupModelDisables || []).filter(item => item.key === groupModelEditing.value?.key)
+)
 
 const toggleCredentialKey = (key: string) => {
   expandedCredentialKey.value = expandedCredentialKey.value === key ? null : key

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildManagedChannelPatch, listDroppedManagedChannelFields } from './managedChannelPatch'
+import { buildManagedChannelPatch, buildStagedKeyMultiplierConfigs, listDroppedManagedChannelFields } from './managedChannelPatch'
 import type { Channel } from '../services/api'
 
 const baseChannel = {
@@ -91,5 +91,50 @@ describe('listDroppedManagedChannelFields', () => {
       channelPaymentAmount: '100',
     })
     expect(dropped).toEqual([])
+  })
+})
+
+describe('buildStagedKeyMultiplierConfigs', () => {
+  const original = {
+    ...baseChannel,
+    apiKeyConfigs: [
+      { key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, consumptionPolicy: 'normal' },
+      { key: 'sk-2', keyUid: 'uid-2', groupMultiplier: 2 },
+    ],
+  } as unknown as Channel
+
+  it('倍率/策略无差异时返回 null', () => {
+    expect(buildStagedKeyMultiplierConfigs(original, {
+      ...original,
+      apiKeyConfigs: [{ key: 'sk-1', keyUid: 'uid-1', groupMultiplier: '1', consumptionPolicy: 'normal' }],
+    })).toBeNull()
+  })
+
+  it('倍率变化返回定位+倍率字段的 trimmed 配置', () => {
+    const staged = buildStagedKeyMultiplierConfigs(original, {
+      ...original,
+      apiKeyConfigs: [
+        { key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, consumptionPolicy: 'normal' },
+        { key: 'sk-2', keyUid: 'uid-2', groupMultiplier: 0.5, consumptionPolicy: 'opportunistic' },
+      ],
+    })
+    expect(staged).toEqual([
+      { key: 'sk-2', keyUid: 'uid-2', credentialUid: undefined, groupMultiplier: 0.5, consumptionPolicy: 'opportunistic' },
+    ])
+  })
+
+  it('清空倍率（null）也是有效差异', () => {
+    const staged = buildStagedKeyMultiplierConfigs(original, {
+      ...original,
+      apiKeyConfigs: [{ key: 'sk-1', keyUid: 'uid-1', groupMultiplier: null, consumptionPolicy: 'normal' }],
+    })
+    expect(staged).toEqual([
+      { key: 'sk-1', keyUid: 'uid-1', credentialUid: undefined, groupMultiplier: null, consumptionPolicy: 'normal' },
+    ])
+  })
+
+  it('original 为空或无 configs 时返回 null', () => {
+    expect(buildStagedKeyMultiplierConfigs(null, { apiKeyConfigs: [{ key: 'k' }] })).toBeNull()
+    expect(buildStagedKeyMultiplierConfigs(original, {})).toBeNull()
   })
 })

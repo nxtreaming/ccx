@@ -85,3 +85,46 @@ function looselyEqual(a: unknown, b: unknown): boolean {
   const nb = Number(b)
   return Number.isFinite(na) && Number.isFinite(nb) && na === nb
 }
+
+type KeyMultiplierConfigLike = {
+  key?: string
+  keyUid?: string
+  credentialUid?: string
+  groupMultiplier?: number | null
+  consumptionPolicy?: 'normal' | 'opportunistic' | null
+}
+
+/**
+ * 比较 Key 级倍率（groupMultiplier/consumptionPolicy）在编辑前后的差异，
+ * 返回需要随单卡更新补发的 trimmed apiKeyConfigs（仅定位字段+倍率字段，
+ * 避免覆盖托管凭证元数据）；无差异返回 null。托管账号保存链路专用。
+ */
+export function buildStagedKeyMultiplierConfigs(
+  original: Channel | null | undefined,
+  next: Record<string, unknown>,
+): Array<KeyMultiplierConfigLike> | null {
+  if (!original) return null
+  const originalConfigs = (original as unknown as Record<string, unknown>).apiKeyConfigs as KeyMultiplierConfigLike[] | undefined
+  const nextConfigs = next.apiKeyConfigs as KeyMultiplierConfigLike[] | undefined
+  if (!nextConfigs?.length) return null
+
+  const staged: Array<KeyMultiplierConfigLike> = []
+  for (const nextCfg of nextConfigs) {
+    const before = originalConfigs?.find(cfg =>
+      (nextCfg.keyUid && cfg.keyUid === nextCfg.keyUid)
+      || (nextCfg.credentialUid && cfg.credentialUid === nextCfg.credentialUid)
+      || (nextCfg.key && cfg.key === nextCfg.key),
+    )
+    const multiplierChanged = !looselyEqual(before?.groupMultiplier ?? null, nextCfg.groupMultiplier ?? null)
+    const policyChanged = (before?.consumptionPolicy ?? null) !== (nextCfg.consumptionPolicy ?? null)
+    if (!multiplierChanged && !policyChanged) continue
+    staged.push({
+      key: nextCfg.key,
+      keyUid: nextCfg.keyUid,
+      credentialUid: nextCfg.credentialUid,
+      groupMultiplier: nextCfg.groupMultiplier ?? null,
+      consumptionPolicy: nextCfg.consumptionPolicy ?? null,
+    })
+  }
+  return staged.length > 0 ? staged : null
+}

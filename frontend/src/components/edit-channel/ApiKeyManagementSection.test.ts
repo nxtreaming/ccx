@@ -183,19 +183,15 @@ describe('ApiKeyManagementSection', () => {
     await wrapper.find('[aria-label="channelCard.keyDetail"]').trigger('click')
     await nextTick()
 
-    // 消耗策略选择即定稿保存，无需保存按钮
+    // 消耗策略选择即暂存进表单 apiKeyConfigs（随渠道主保存），不再即时 PATCH
     const select = wrapper.findComponent(selectStub)
     await select.find('select').setValue('opportunistic')
 
-    await vi.waitFor(() => expect(apiMocks.patchKeyMultiplier).toHaveBeenCalled())
-
-    expect(apiMocks.patchKeyMultiplier).toHaveBeenCalledWith(
-      'messages',
-      'ch-1',
-      'uid-1',
-      expect.objectContaining({ groupMultiplier: 1, consumptionPolicy: 'opportunistic' }),
-    )
-    expect(apiMocks.patchKeyMultiplier.mock.calls[0][3]).not.toHaveProperty('maxGroupMultiplier')
+    const events = wrapper.emitted('update:apiKeyConfigs')
+    expect(events).toBeTruthy()
+    const lastConfig = events![events!.length - 1][0] as Array<Record<string, unknown>>
+    expect(lastConfig[0]).toMatchObject({ key: 'sk-1', keyUid: 'uid-1', groupMultiplier: 1, consumptionPolicy: 'opportunistic' })
+    expect(apiMocks.patchKeyMultiplier).not.toHaveBeenCalled()
   })
 
   it('converts decimal multiplier inputs to JSON numbers on field commit', async () => {
@@ -216,19 +212,15 @@ describe('ApiKeyManagementSection', () => {
     expect(multiplierInputs).toHaveLength(1)
     await multiplierInputs[0].vm.$emit('update:modelValue', '0.15')
     await nextTick()
-    // 数字框失焦/回车定稿（change 事件）即触发保存
+    // 数字框失焦/回车定稿（change 事件）即暂存为表单数字
     await multiplierInputs[0].vm.$emit('change', '0.15')
 
-    await vi.waitFor(() => expect(apiMocks.patchKeyMultiplier).toHaveBeenCalled())
-
-    expect(apiMocks.patchKeyMultiplier).toHaveBeenCalledWith(
-      'messages',
-      'ch-1',
-      'uid-1',
-      expect.objectContaining({ groupMultiplier: 0.15 }),
-    )
-    expect(apiMocks.patchKeyMultiplier.mock.calls[0][3].groupMultiplier).toBeTypeOf('number')
-    expect(apiMocks.patchKeyMultiplier.mock.calls[0][3]).not.toHaveProperty('maxGroupMultiplier')
+    const events = wrapper.emitted('update:apiKeyConfigs')
+    expect(events).toBeTruthy()
+    const lastConfig = events![events!.length - 1][0] as Array<Record<string, unknown>>
+    expect(lastConfig[0].groupMultiplier).toBe(0.15)
+    expect(lastConfig[0].groupMultiplier).toBeTypeOf('number')
+    expect(apiMocks.patchKeyMultiplier).not.toHaveBeenCalled()
   })
 
   it('expands multiplier editor inline without save/cancel/mark-public buttons', async () => {
@@ -252,7 +244,7 @@ describe('ApiKeyManagementSection', () => {
     const actionButtons = wrapper.findAllComponents(buttonStub)
       .filter(b => ['app.actions.save', 'app.actions.cancel', 'subscription.keyMultiplier.markPublic'].some(k => b.text().includes(k)))
     expect(actionButtons).toHaveLength(0)
-    expect(wrapper.text()).toContain('subscription.keyMultiplier.autosaveHint')
+    expect(wrapper.text()).toContain('subscription.keyMultiplier.stagedHint')
   })
 
   it('keeps Kimi credential bound to the correct key row after save and reload with reversed credential order', async () => {
@@ -428,17 +420,19 @@ describe('分组模型排除行内化', () => {
       .filter(b => b.text().includes('channelCard.disableGroupModel') || b.text().includes('app.actions.cancel'))
     expect(dialogButtons).toHaveLength(0)
 
-    // 模型定稿（combobox change）即提交排除事件，随后面板收起
+    // 模型定稿（combobox change）即暂存排除事件，面板保持展开（随主保存提交）
     const comboInput = wrapper.find('input.combobox-stub-input')
     expect(comboInput.exists()).toBe(true)
     await comboInput.setValue('kimi-k3')
     await comboInput.trigger('change')
     await nextTick()
 
-    const events = wrapper.emitted('disable-group-model')
+    const events = wrapper.emitted('stage-group-model-disable')
     expect(events).toBeTruthy()
     expect(events![0]).toEqual(['sk-1', 'kimi-k3', undefined])
-    expect(wrapper.text()).not.toContain('channelCard.groupModelInlineHint')
+    // 不再即时提交（旧 disable-group-model 事件随暂存化移除），面板保持展开
+    expect(wrapper.emitted('disable-group-model')).toBeFalsy()
+    expect(wrapper.text()).toContain('channelCard.groupModelInlineHint')
   })
 
   it('再次点击统一详情按钮收起面板（toggle）', async () => {
@@ -459,6 +453,6 @@ describe('分组模型排除行内化', () => {
     await tuneBtn.trigger('click')
     await nextTick()
     expect(wrapper.text()).not.toContain('channelCard.groupModelInlineHint')
-    expect(wrapper.emitted('disable-group-model')).toBeFalsy()
+    expect(wrapper.emitted('stage-group-model-disable')).toBeFalsy()
   })
 })

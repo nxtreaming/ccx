@@ -1619,9 +1619,8 @@
   "costReport.compressionsSavingHint": "请求侧 tool 输出压缩节省的 token",
   "costReport.csv.compressionOriginalTokens": "compressionOriginalTokens",
   "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
-  "subscription.keyMultiplier.saving": "保存中…",
-  "subscription.keyMultiplier.autosaveHint": "改动即时保存，再次点击入口按钮可收起",
   "subscription.keyMultiplier.channelLimitHint": "渠道上限 {limit}，超出自动退出调度",
-  "channelCard.groupModelInlineHint": "选定或输入模型即排除该分组对此模型的调用；备注需先于模型填写，误排可在下方记录中恢复",
-  "channelCard.keyDetail": "Key 详情（倍率 / 模型排除）"
+  "channelCard.groupModelInlineHint": "选定或输入模型即暂存排除（备注需先于模型填写），随渠道保存时提交；暂存条目可点击移除，保存后也可在下方记录中恢复",
+  "channelCard.keyDetail": "Key 详情（倍率 / 模型排除）",
+  "subscription.keyMultiplier.stagedHint": "改动随渠道保存一并生效"
 }

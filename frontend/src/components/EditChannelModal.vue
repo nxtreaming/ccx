@@ -83,6 +83,7 @@
                 :disabled-keys="visibleDisabledKeys"
                 :disabled-key-models="visibleDisabledKeyModels"
                 :disabled-group-models="visibleDisabledGroupModels"
+                :pending-group-model-disables="pendingGroupModelDisables"
                 :model-options="targetModelOptions"
                 :api-key-configs="form.apiKeyConfigs"
                 :key-models-status="keyModelsStatus"
@@ -106,7 +107,8 @@
                 @update:proxy-url="form.proxyUrl = $event"
                 @restore-key="restoreDisabledKey"
                 @restore-key-model="restoreDisabledKeyModel"
-                @disable-group-model="disableGroupModel"
+                @stage-group-model-disable="stageGroupModelDisable"
+                @unstage-group-model-disable="unstageGroupModelDisable"
                 @restore-group-model="restoreDisabledGroupModel"
                 @remove-key="removeDisabledKey"
                 @suspend-key="suspendKey"
@@ -441,6 +443,9 @@ const {
   visibleDisabledGroupModels,
   disableGroupModel,
   restoreDisabledGroupModel,
+  pendingGroupModelDisables,
+  stageGroupModelDisable,
+  unstageGroupModelDisable,
   suspendingKey,
   suspendKey,
   resumeKey,

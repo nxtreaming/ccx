@@ -32,6 +32,8 @@ export function useDisabledApiKeys(options: DisabledApiKeyOptions) {
   const changingGroupModel = ref('')
   const localDisabledGroupModels = ref<Array<{ quotaGroup: string; key?: string; model: string; note?: string; disabledAt: string }>>([])
   const localRestoredGroupModels = ref(new Set<string>())
+  // 分组模型排除暂存：行内面板暂存、渠道主保存成功后统一提交（flushStagedGroupModelDisables）。
+  const pendingGroupModelDisables = ref<Array<{ key: string; model: string; note?: string }>>([])
   const suspendingKey = ref('')
   const localSuspendedKeys = ref(new Set<string>())
   const localResumedKeys = ref(new Set<string>())
@@ -281,6 +283,33 @@ export function useDisabledApiKeys(options: DisabledApiKeyOptions) {
     }
   }
 
+  // ── 分组模型排除暂存（随渠道主保存提交）──
+
+  const stageGroupModelDisable = (apiKey: string, model: string, note?: string) => {
+    const normalizedModel = model.trim()
+    if (!normalizedModel) return
+    if (pendingGroupModelDisables.value.some(item => item.key === apiKey && item.model === normalizedModel)) return
+    pendingGroupModelDisables.value = [
+      ...pendingGroupModelDisables.value,
+      { key: apiKey, model: normalizedModel, note: note?.trim() || undefined },
+    ]
+  }
+
+  const unstageGroupModelDisable = (apiKey: string, model: string) => {
+    pendingGroupModelDisables.value = pendingGroupModelDisables.value.filter(
+      item => !(item.key === apiKey && item.model === model),
+    )
+  }
+
+  // 渠道主保存成功后调用：逐个提交暂存的排除并清空暂存（单个失败仅报错，不阻断其余）。
+  const flushStagedGroupModelDisables = async () => {
+    const staged = pendingGroupModelDisables.value
+    pendingGroupModelDisables.value = []
+    for (const item of staged) {
+      await disableGroupModel(item.key, item.model, item.note)
+    }
+  }
+
   const restoreDisabledGroupModel = async (record: { quotaGroup: string; key?: string; model: string }) => {
     const channel = options.channel.value
     const key = groupModelKey(record.quotaGroup, record.model)
@@ -359,6 +388,10 @@ export function useDisabledApiKeys(options: DisabledApiKeyOptions) {
     visibleDisabledGroupModels,
     disableGroupModel,
     restoreDisabledGroupModel,
+    pendingGroupModelDisables,
+    stageGroupModelDisable,
+    unstageGroupModelDisable,
+    flushStagedGroupModelDisables,
     suspendingKey,
     suspendKey,
     resumeKey,

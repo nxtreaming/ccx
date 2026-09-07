@@ -1619,9 +1619,8 @@
   "costReport.compressionsSavingHint": "Token yang dihemat oleh kompresi output tool sisi request",
   "costReport.csv.compressionOriginalTokens": "compressionOriginalTokens",
   "costReport.csv.compressionSavedTokens": "compressionSavedTokens",
-  "subscription.keyMultiplier.saving": "Menyimpan…",
-  "subscription.keyMultiplier.autosaveHint": "Perubahan tersimpan otomatis; klik tombol entri lagi untuk menutup",
   "subscription.keyMultiplier.channelLimitHint": "Batas kanal {limit}; key yang melebihi keluar dari routing",
-  "channelCard.groupModelInlineHint": "Memilih atau mengetik model langsung mengecualikannya untuk grup ini; isi catatan sebelum model; kesalahan dapat dipulihkan di catatan di bawah",
-  "channelCard.keyDetail": "Detail key (pengali / eksklusi model)"
+  "channelCard.groupModelInlineHint": "Memilih atau mengetik model menyetor eksklusi (isi catatan lebih dulu); dikirim saat kanal disimpan. Item tersimpan dapat dihapus di sini dan dipulihkan lewat catatan di bawah setelah disimpan",
+  "channelCard.keyDetail": "Detail key (pengali / eksklusi model)",
+  "subscription.keyMultiplier.stagedHint": "Perubahan berlaku saat kanal disimpan"
 }

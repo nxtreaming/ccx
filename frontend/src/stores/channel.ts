@@ -18,7 +18,7 @@ import {
   normalizeChannelStatus,
   type LlmChannelKind,
 } from '@/utils/unifiedChannels'
-import { buildManagedChannelPatch, listDroppedManagedChannelFields } from '@/utils/managedChannelPatch'
+import { buildManagedChannelPatch, buildStagedKeyMultiplierConfigs, listDroppedManagedChannelFields } from '@/utils/managedChannelPatch'
 
 /**
  * 渠道数据管理 Store
@@ -435,6 +435,13 @@ export const useChannelStore = defineStore('channel', () => {
         // 变化时合并为一次单卡更新下发（0/空=清除，与 CostMultiplier 惯例一致），
         // 由后端整组同步到逻辑渠道与兄弟卡。
         const channelPatch = buildManagedChannelPatch(original, channel)
+        // Key 级倍率（apiKeyConfigs 的 groupMultiplier/consumptionPolicy）随主保存暂存于表单，
+        // 托管账号接口不承载：有差异时补进同一次单卡更新（后端按 KeyUID/CredentialUID/Key
+        // 定位 merge，仅发定位+倍率字段避免覆盖托管凭证元数据）。
+        const stagedKeyMultiplierConfigs = buildStagedKeyMultiplierConfigs(original, channel)
+        if (stagedKeyMultiplierConfigs) {
+          channelPatch.apiKeyConfigs = stagedKeyMultiplierConfigs
+        }
         if (Object.keys(channelPatch).length > 0) {
           await updateChannelByType(targetTab, editingChannelIndex, channelPatch)
         }

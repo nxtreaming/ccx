@@ -488,9 +488,9 @@ AutopilotDiagnosePanel:
 - 添加 API 密钥（`App.vue:610`）：`newApiKey` 输入，Enter 添加。
 - 通用确认对话框（`App.vue:636`）：`dialogStore.confirm({message,confirmText,cancelText,color})` 返回 Promise。
 - 认证登录（`App.vue:18`）+ 自动认证 overlay（`App.vue:4`）：`showAuthDialog` computed。
-- 分组模型排除 / Key 倍率（`ApiKeyManagementSection.vue`）：合并为 **Key 行统一详情面板**——行尾 chevron 按钮（渠道列表同款下箭头，带 aria-label）toggle 展开，一次一行（`expandedDetailKey`），同块承载两组输入（倍率在上、divider、排除在下），展开时初始化倍率表单并 `ensure-models-loaded` 懒拉模型。
-  - **Key 倍率（去按钮化，变更即保存）**：统一面板上半区，仅消耗策略下拉 + 分组倍率数字框：策略**选择即保存**（`@update:model-value`）、倍率**失焦/回车定稿即保存**（`@change`），均直接 PATCH key multiplier 端点；输入经 `parseMultiplierInput` 安全转 JSON 数字（非有限/负值抛错阻断，241de1f5）。保存成功不自动收起；保存中 12px spinner + caption，失败 error alert 保留。渠道上限仅启用时作数字框 hint（`channelMaxGroupMultiplierHint`，未启用不显示）；「标记公开 Key」按钮已删，语义由用户自选「优先消耗」策略表达。保存成功后 `syncMultiplierResponseToConfigs` 把响应回写外层表单 `apiKeyConfigs` 快照（防渠道编辑保存时旧快照覆盖，后端 merge 回填为二道防线）。
-  - **分组模型排除（模型定稿即提交）**：统一面板下半区（divider 隔开），上下文 caption（key 掩码·分组 chip·同组影响 key 数）提到面板顶部共享。模型 combobox + 备注 input；模型**选定/手输定稿即** emit `disable-group-model` 提交（备注需先于模型填写，清空不触发），提交后整个面板收起；误排通过下方记录列表的恢复按钮撤销。无取消/确认按钮。
+- 分组模型排除 / Key 倍率（`ApiKeyManagementSection.vue`）：合并为 **Key 行统一详情面板**——行尾 chevron 按钮（渠道列表同款下箭头，带 aria-label）toggle 展开，一次一行（`expandedDetailKey`），同块承载两组输入（倍率在上、divider、排除在下），展开时初始化倍率表单并 `ensure-models-loaded` 懒拉模型。**两组输入均不即时落盘——随渠道主保存一并提交**：倍率改动写入表单 `apiKeyConfigs`（行 chips 经 props 回流即时反映），主保存时自定义渠道随渠道 PUT 的 apiKeyConfigs merge 落盘、托管渠道由 `buildStagedKeyMultiplierConfigs` diff 后并入单卡更新补发；排除暂存于 `useDisabledApiKeys.pendingGroupModelDisables`（面板中列 warning chips 可移除），主保存成功（对话框经保存链路关闭）后 `flushStagedGroupModelDisables` 逐个提交，取消编辑则丢弃暂存（handleCancel 显式清空+抑制标记区分）。
+  - **Key 倍率（去按钮化，随主保存）**：统一面板上半区，仅消耗策略下拉 + 分组倍率数字框：策略选择（`@update:model-value`）与倍率失焦/回车定稿（`@change`）均 `applyMultiplierToConfigs` 写入外层表单 `apiKeyConfigs`（定位 keyUid/credentialUid/key，非法输入跳过暂存保留上次合法值）；输入经 `parseMultiplierInput` 安全转 JSON 数字（非有限/负值抛错，241de1f5）。面板 caption「改动随渠道保存一并生效」。渠道上限仅启用时作数字框 hint（`channelMaxGroupMultiplierHint`，未启用不显示）；「标记公开 Key」按钮已删，语义由用户自选「优先消耗」策略表达。倍率 PATCH 端点（即时保存链路）已从编辑面板移除，仅保留给订阅页等直连场景。
+  - **分组模型排除（模型定稿即暂存，随主保存提交）**：统一面板下半区（divider 隔开），上下文 caption（key 掩码·分组 chip·同组影响 key 数）提到面板顶部共享。模型 combobox + 备注 input；模型**选定/手输定稿即** emit `stage-group-model-disable` 暂存（备注需先于模型填写，清空不触发），暂存条目以 warning chips（可点移除）列于面板内；面板保持展开继续编辑。主保存成功后逐个调 `disableGroupModel` 端点提交；误排可在暂存期移除，保存后经下方记录列表恢复按钮撤销。无取消/确认按钮。
 - 计费条款 / 订阅关联渠道 / 同步结果（`SubscriptionsView.vue:49`/`:64`/`:102`）：`billingDialog`（四字段 paymentAmount/paymentUnit/creditAmount/creditUnit，a96098da 统一币种/金额模型）、`linkDialog`（v-select 选 `linkableChannels` + 已关联 channelUid chips 逐个解绑 `unlinkChannel`，入口 SubscriptionPlanTable 行操作）、`syncDialog`。
 
 布局示意图（按出现顺序，宽度标注在图右下）：
@@ -522,24 +522,24 @@ AutopilotDiagnosePanel:
 Key 行统一详情面板（行内展开，单一入口）:
 ┌────────────────────────────────────┐
 │ sk-xx*** 〔分组chip〕同组影响n个key  │
-│ ── Key 倍率（变更即保存）──          │
+│ ── Key 倍率（随渠道保存生效）──     │
 │ 消耗策略[select]  分组倍率[num]      │
 │  num框hint:渠道上限x,超出自动退出    │
 │  调度;未启用时不显示                 │
 │  (⚠ opportunistic 提示) (error)     │
-│  ◌保存中…/改动即时保存              │
+│  (⏲ 改动随渠道保存一并生效)         │
 │ ── divider ──                       │
-│ ── 分组模型排除（定稿即提交）──      │
+│ ── 分组模型排除（定稿即暂存)──      │
 │ 模型[combobox]  备注[input]         │
-│  (hint:选定即排除,可在下方记录恢复,  │
-│   备注先填)                         │
+│  (hint:选定即暂存,随渠道保存提交,  │
+│   备注先填;chips可移除)            │
 └────────────────────────────────────┘
  行尾 chevron 按钮(带aria-label,渠道列
  表同款下箭头)toggle 再点收起;策略选择
- 即存/数字失焦定稿即存(PATCH端点);模型
- 定稿即emit提交并收起整个面板;误排走记
- 录列表「恢复」兜底;无保存/取消/标记
- 公开/确认按钮
+ /数字定稿写表单apiKeyConfigs(随主保存);模型
+ 定稿即stage暂存(面板不收起,可继续添
+ 加);主保存成功后逐个提交;误排可移除
+ 或保存后走记录「恢复」;无确认按钮
 
 linkDialog 绑定渠道（560）:            syncDialog 同步结果（760）:
 ┌────────────────────────────┐        ┌──────────────────────────────┐
