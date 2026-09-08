@@ -15,16 +15,39 @@ func TestRacingShadowCandidatesPicksFeasibleNonPrimary(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("应选出 2 个可行影子候选（同渠道换 key + 跨渠道），got %d: %+v", len(got), got)
 	}
-	if got[0].ChannelUID != "ch_a" || got[0].KeyIdentity != "key2" {
-		t.Errorf("第一个影子应保留排名顺序（ch_a/key2），got %+v", got[0])
+	// 多样性纪律：异渠道排在同渠道之前（渠道排队慢时同渠道影子大概率同样慢）
+	if got[0].ChannelUID != "ch_b" {
+		t.Errorf("第一个影子应为异渠道 ch_b，got %+v", got[0])
 	}
-	if got[1].ChannelUID != "ch_b" {
-		t.Errorf("第二个影子应为 ch_b，got %+v", got[1])
+	if got[1].ChannelUID != "ch_a" || got[1].KeyIdentity != "key2" {
+		t.Errorf("第二个影子应为同渠道换 key（ch_a/key2），got %+v", got[1])
 	}
 	for _, c := range got {
 		if c.Selected == false {
 			t.Errorf("不可行候选泄漏进影子集: %+v", c)
 		}
+	}
+}
+
+// 回归（2026-09-08 20:39 生产事故）：主 key 不得作影子（同账号并发放大器）；
+// 多影子之间按 key 分散（同 key 只取一行）。
+func TestRacingShadowCandidatesKeyDiversity(t *testing.T) {
+	candidates := []RoutingCandidate{
+		{ChannelUID: "ch_a", KeyIdentity: "key1", ActualModel: "m1", Selected: true}, // 主行
+		{ChannelUID: "ch_a", KeyIdentity: "key1", ActualModel: "m2", Selected: true}, // 主 key 他模型：排除
+		{ChannelUID: "ch_a", KeyIdentity: "key2", ActualModel: "m1", Selected: true},
+		{ChannelUID: "ch_b", KeyIdentity: "key3", ActualModel: "m1", Selected: true},
+		{ChannelUID: "ch_b", KeyIdentity: "key3", ActualModel: "m2", Selected: true}, // 与上同 key：去重
+	}
+	got := RacingShadowCandidates(candidates, "ch_a", "key1", "m1", 3)
+	if len(got) != 2 {
+		t.Fatalf("主 key 行应排除+同 key 去重，应选 2 个, got %d: %+v", len(got), got)
+	}
+	if got[0].ChannelUID != "ch_b" || got[0].KeyIdentity != "key3" {
+		t.Errorf("第一个影子应为异渠道 ch_b/key3, got %+v", got[0])
+	}
+	if got[1].ChannelUID != "ch_a" || got[1].KeyIdentity != "key2" {
+		t.Errorf("第二个影子应为 ch_a/key2, got %+v", got[1])
 	}
 }
 

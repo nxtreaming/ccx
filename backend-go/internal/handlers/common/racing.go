@@ -653,8 +653,10 @@ func (r *racingRuns) buildSelectionFromCandidate(cand autopilot.RoutingCandidate
 		CandidateCount:       r.in.Selection.CandidateCount,
 		ExecutionModel:       cand.ActualModel,
 		ExecutionKeyIdentity: cand.KeyIdentity,
-		ExecutionEffort:      cand.Effort,
-		Reason:               "racing_shadow",
+		// effort 跟随主请求实际档位（selection.ExecutionEffort）；候选行的 effort
+		// 维来自排名缓存（可能是别的请求的），沿用会把 xhigh 主请求降成 medium 影子。
+		ExecutionEffort: r.in.Selection.ExecutionEffort,
+		Reason:          "racing_shadow",
 	}
 }
 
