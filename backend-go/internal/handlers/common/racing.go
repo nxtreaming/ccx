@@ -502,6 +502,7 @@ func (r *racingRuns) spawnShadows(c *gin.Context, primaryCost float64) {
 		sel := r.nextShadowSelection(primaryCost)
 		if sel == nil {
 			r.hub.Sem.Release()
+			RequestLogf(c, "[Racing] 阈值已到但无可用影子候选（缓存无可行五元组且路由重选无果），本次放弃竞速")
 			return
 		}
 		r.startShadow(c, sel)
@@ -558,6 +559,13 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 	r.mu.Unlock()
 
 	// 路径一：SmartRouter 排名缓存（五元组粒度）。
+	// 主行身份的模型维用「执行模型为空时回退请求模型」：自动映射发生在 attempt
+	// 内部（endpoint policy），非联邦路径 selection.ExecutionModel 常为空，
+	// 直接用空串比对会漏排除主行、把影子重复打到主尝试正在用的候选上。
+	primaryIdentityModel := r.in.Selection.ExecutionModel
+	if primaryIdentityModel == "" {
+		primaryIdentityModel = r.in.Model
+	}
 	if r.hub.CandidateProvider != nil {
 		cands := r.hub.CandidateProvider(r.in.Model, string(r.in.Kind))
 		if len(cands) > 0 {
@@ -565,7 +573,7 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 				cands,
 				r.in.Selection.Upstream.ChannelUID,
 				r.in.Selection.ExecutionKeyIdentity,
-				r.in.Selection.ExecutionModel,
+				primaryIdentityModel,
 				len(cands),
 			)
 			for _, cand := range picked {
@@ -582,7 +590,8 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 				r.mu.Unlock()
 				return sel
 			}
-			return nil
+			// 缓存非空但无可行候选（全部被硬约束过滤/身份重复/成本过滤）：
+			// 落回路径二按路由重选，不静默放弃。
 		}
 	}
 
@@ -599,6 +608,13 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 	cfgSnapshot := r.in.CfgManager.GetConfig()
 	if !cfgSnapshot.ResolveRacingPolicy(sel.Upstream) {
 		return nil
+	}
+	// cost_first 的倍率过滤在回退路径同样生效：调度器按路由重选拿不到五元组，
+	// 用渠道 CostMultiplier 近似（key 分组倍率未 pin 时不可知）。
+	if r.behavior.CheapCandidateOnly {
+		if racingEffectiveCostMultiplier(sel.Upstream, sel.ExecutionKeyIdentity) > primaryCost*0.5 {
+			return nil
+		}
 	}
 	r.mu.Lock()
 	r.usedRouteKeys[sel.Route.Key()] = true

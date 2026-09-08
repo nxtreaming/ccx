@@ -21,9 +21,11 @@ func RacingShadowCandidates(candidates []RoutingCandidate, primaryChannelUID, pr
 		return strings.TrimSpace(c.KeyIdentity) == strings.TrimSpace(primaryKeyIdentity) &&
 			normalizeRoutingModelID(c.ActualModel) == normalizeRoutingModelID(primaryActualModel)
 	}
+	// Selected 语义 = 通过当前模式硬约束的可行候选（可为多个），主调度选中行只是其中之一；
+	// 影子必须从可行集选取，不可行候选（FilterReasons 非空）不得作影子。
 	selected := make([]RoutingCandidate, 0, limit)
 	for _, candidate := range candidates {
-		if candidate.Selected || sameIdentity(candidate) {
+		if !candidate.Selected || sameIdentity(candidate) {
 			continue
 		}
 		selected = append(selected, candidate)
