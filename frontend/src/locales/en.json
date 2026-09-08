@@ -527,7 +527,7 @@
   "channelCard.keyPaused": "Paused",
   "channelCard.disabledKeyModels": "Restricted key-model pairs (automatic)",
   "channelCard.modelNotFound": "Model unavailable",
-  "channelCard.groupModelPolicy": "Group model policy",
+  "channelCard.groupModelPolicy": "Exclude models by group",
   "channelCard.disabledGroupModels": "Manually disabled group models",
   "channelCard.disableGroupModel": "Disable model",
   "channelCard.restoreGroupModel": "Restore model",

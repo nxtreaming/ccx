@@ -559,8 +559,7 @@
                     </v-chip>
                     <span class="ml-2">{{ t('channelCard.affectedGroupKeys', { count: groupModelAffectedCount }) }}</span>
                   </div>
-                  <!-- 顶部对齐：右列分组倍率带 persistent-hint 占高，垂直居中会把消耗策略下拉压低错位 -->
-                  <v-row dense align="start">
+                  <v-row dense>
                     <v-col cols="12" sm="6">
                       <v-select
                         v-model="multiplierForm.consumptionPolicy"
@@ -583,12 +582,23 @@
                         step="any"
                         :disabled="multiplierEditing?.multiplierSource === 'new_api'"
                         :label="t('subscription.keyMultiplier.value')"
-                        :hint="channelMaxGroupMultiplierHint"
-                        persistent-hint
                         variant="outlined"
                         density="compact"
+                        hide-details
                         @change="applyMultiplierToConfigs"
                       />
+                    </v-col>
+                  </v-row>
+                  <!-- 两条 caption 与上方两列输入框对齐：左=暂存说明，右=渠道上限（原输入框 hint，与暂存行错行） -->
+                  <v-row dense class="mt-1">
+                    <v-col cols="12" sm="6">
+                      <div class="d-flex align-center ga-2 text-caption text-medium-emphasis">
+                        <v-icon size="14">mdi-content-save-edit-outline</v-icon>
+                        <span>{{ t('subscription.keyMultiplier.stagedHint') }}</span>
+                      </div>
+                    </v-col>
+                    <v-col v-if="channelMaxGroupMultiplierHint" cols="12" sm="6">
+                      <div class="text-caption text-medium-emphasis">{{ channelMaxGroupMultiplierHint }}</div>
                     </v-col>
                   </v-row>
                   <v-alert
@@ -600,11 +610,6 @@
                   >
                     {{ t('subscription.keyMultiplier.policyHint') }}
                   </v-alert>
-                  <!-- 无独立保存按钮：改动暂存表单，随渠道主保存一并落盘；「公开 Key」由用户自选消耗策略表达。 -->
-                  <div class="d-flex align-center ga-2 mt-3 text-caption text-medium-emphasis">
-                    <v-icon size="14">mdi-content-save-edit-outline</v-icon>
-                    <span>{{ t('subscription.keyMultiplier.stagedHint') }}</span>
-                  </div>
 
                   <v-divider class="my-3" />
 

@@ -527,7 +527,7 @@
   "channelCard.keyPaused": "Dijeda",
   "channelCard.disabledKeyModels": "Pasangan key-model dibatasi (otomatis)",
   "channelCard.modelNotFound": "Model tidak tersedia",
-  "channelCard.groupModelPolicy": "Kebijakan model grup",
+  "channelCard.groupModelPolicy": "Kecualikan model per grup",
   "channelCard.disabledGroupModels": "Model grup dinonaktifkan manual",
   "channelCard.disableGroupModel": "Nonaktifkan model",
   "channelCard.restoreGroupModel": "Pulihkan model",

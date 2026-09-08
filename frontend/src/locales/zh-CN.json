@@ -527,7 +527,7 @@
   "channelCard.keyPaused": "已暂停",
   "channelCard.disabledKeyModels": "受限的密钥-模型组合（自动）",
   "channelCard.modelNotFound": "模型不可用",
-  "channelCard.groupModelPolicy": "分组模型策略",
+  "channelCard.groupModelPolicy": "按组排除模型",
   "channelCard.disabledGroupModels": "人工禁用的分组模型",
   "channelCard.disableGroupModel": "禁用模型",
   "channelCard.restoreGroupModel": "恢复模型",
