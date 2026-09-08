@@ -116,13 +116,13 @@ func racingPrimarySelection(t *testing.T, env affinityTestEnv) *scheduler.Select
 
 func racingInput(env affinityTestEnv, selection *scheduler.SelectionResult) common.RacingAttemptInput {
 	return common.RacingAttemptInput{
-		EnvCfg:           &config.EnvConfig{},
-		CfgManager:       env.scheduler.GetConfigManager(),
-		Scheduler:        env.scheduler,
-		Kind:             scheduler.ChannelKindMessages,
-		Model:            "test-model",
-		IsStream:         true,
-		Selection:        selection,
+		EnvCfg:     &config.EnvConfig{},
+		CfgManager: env.scheduler.GetConfigManager(),
+		Scheduler:  env.scheduler,
+		Kind:       scheduler.ChannelKindMessages,
+		Model:      "test-model",
+		IsStream:   true,
+		Selection:  selection,
 	}
 }
 
