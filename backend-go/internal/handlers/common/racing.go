@@ -536,6 +536,9 @@ func (r *racingRuns) startShadow(c *gin.Context, sel *scheduler.SelectionResult)
 	r.mu.Unlock()
 
 	RequestLogf(c, "[Racing] 首字等待超阈值(%dms)，向候选 %s 派出影子分支 #%d", r.thresholdMs, sel.Route.Key().String(), branchID)
+	// 慢证据信号二：竞速触发本身（首字超同家族 p90 阈值才触发），主组合记一次。
+	// 主分支 key 在 attempt 内部轮转，此处从 selection 的 pin 身份反查当前 key。
+	recordPrimaryRacingTriggerEvidence(c, r.in.Selection, r.in.Model)
 	go func() {
 		defer r.hub.Sem.Release()
 		defer cancel()

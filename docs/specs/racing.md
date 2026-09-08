@@ -61,6 +61,16 @@
 | `internal/autopilot/racing_candidates.go` | 五元组候选选取 |
 | `main.go` | RacingHub 注入 + `/api/racing/config` |
 
+## 延迟负反馈学习（竞速姊妹机制）
+
+竞速样本不只驱动阈值，还回流为组合级学习：
+
+- **键粒度**：渠道×keyHash×实际出站模型×任务类（TaskClass 7 值，未分类落 unknown 全量桶）。存储在 ChannelCompatCache 第四分区 `latencyPenalties`（.config/channel_compat.json，TTL 24h，`GET/DELETE /api/compat-cache` 可查/可清 `?section=latency-penalty`）。
+- **三个慢信号**：① 竞速 primary 被影子击败（upstream_failover 败者豁免点，非 shadow 分支才记）；② 竞速触发本身（派影子时，主组合记一次）；③ 普通流式成功请求首字超同家族 p90 阈值（MaybeLearnLatencyDegradation）。竞速败出/被取消分支不学习。
+- **判定与恢复**：连续慢证据 streak ≥ 3 判劣化（单次是抖动）；任一快样本（首字 < 阈值一半）乐观翻转清零。
+- **消费（软降权，非硬排除——延迟差不是能力缺失）**：`ScoringCandidate.LatencyDegraded` → calcPenalty 叠加 −15（介于 degraded −5 与 limited −20 之间）；竞速影子候选排除学习过的慢组合。taskClass 精确桶优先，unknown 桶对任意任务类生效（全量记录）。
+- 观测：`[Latency-Learn]`（首次达阈值）/`[Latency-Recover]`（翻转）各一行。
+
 ## 与 kiro.rs 的刻意偏离
 
 1. 只做首字/完成阶段竞速，无响应头阶段（CCX preflight 闸门已覆盖主要收益）。

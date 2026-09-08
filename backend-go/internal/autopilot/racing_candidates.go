@@ -2,6 +2,11 @@ package autopilot
 
 import "strings"
 
+// racingShadowExcludesLookup 供测试替换的慢组合排除查询（默认查延迟负反馈学习结论）。
+var racingShadowExcludesLookup = func(channelUID, model string) bool {
+	return learnedLatencyDegradedLookup(channelUID, model, "")
+}
+
 // RacingShadowCandidates 从 SmartRouter 排名缓存中选取竞速影子候选。
 //
 // 与 ABTest 的 selectShadowCandidates（整渠道排除）不同，竞速按五元组粒度排除：
@@ -26,6 +31,10 @@ func RacingShadowCandidates(candidates []RoutingCandidate, primaryChannelUID, pr
 	selected := make([]RoutingCandidate, 0, limit)
 	for _, candidate := range candidates {
 		if !candidate.Selected || sameIdentity(candidate) {
+			continue
+		}
+		// 延迟负反馈学习：已学习为慢的组合不作影子目标——已知慢的候选救不了另一个慢的。
+		if racingShadowExcludesLookup(candidate.ChannelUID, candidate.ActualModel) {
 			continue
 		}
 		selected = append(selected, candidate)

@@ -53,3 +53,22 @@ func TestRacingShadowCandidatesLimitsAndEmpty(t *testing.T) {
 		t.Fatalf("不可行候选不得作影子, got %d", len(got))
 	}
 }
+
+// 回归：延迟负反馈学习结论（渠道×模型慢证据达阈值）的组合不得作影子目标。
+func TestRacingShadowCandidatesExcludesLatencyDegraded(t *testing.T) {
+	orig := racingShadowExcludesLookup
+	t.Cleanup(func() { racingShadowExcludesLookup = orig })
+	racingShadowExcludesLookup = func(channelUID, model string) bool {
+		return channelUID == "ch_b" && model == "m2"
+	}
+
+	candidates := []RoutingCandidate{
+		{ChannelUID: "ch_a", KeyIdentity: "key1", ActualModel: "m1", Selected: true}, // 主行
+		{ChannelUID: "ch_b", KeyIdentity: "key2", ActualModel: "m2", Selected: true}, // 慢组合：排除
+		{ChannelUID: "ch_c", KeyIdentity: "key3", ActualModel: "m3", Selected: true}, // 正常
+	}
+	got := RacingShadowCandidates(candidates, "ch_a", "key1", "m1", 3)
+	if len(got) != 1 || got[0].ChannelUID != "ch_c" {
+		t.Fatalf("慢组合应被排除, got %+v", got)
+	}
+}

@@ -89,9 +89,11 @@ func racingStubBranch(delay time.Duration, succeed bool, record func(racingBranc
 
 func racingCandidateList(channelUIDs ...string) func(model, channelKind string) []autopilot.RoutingCandidate {
 	return func(model, _ string) []autopilot.RoutingCandidate {
+		// 主行 Selected=true（SmartRouter 语义：通过硬约束的可行候选，主调度选中行是其中之一）；
+		// 影子行同样必须 Selected=true——不可行候选不得作影子。
 		cands := []autopilot.RoutingCandidate{{ChannelUID: "ch_first", ActualModel: model, Selected: true}}
 		for _, uid := range channelUIDs {
-			cands = append(cands, autopilot.RoutingCandidate{ChannelUID: uid, ActualModel: model})
+			cands = append(cands, autopilot.RoutingCandidate{ChannelUID: uid, ActualModel: model, Selected: true})
 		}
 		return cands
 	}

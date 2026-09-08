@@ -1656,6 +1656,7 @@ func TryUpstreamWithAllKeys(
 				// 完成但流式全程零工具调用块，说明上游不会执行工具（假模型/剥离 tools）。
 				// 仅 messages/responses：只有这两条流式路径接了工具活动标记，
 				// 其他协议 sawToolCall=false 无法区分"没调用"与"没观测"，不得学习。
+				MaybeLearnLatencyDegradation(c, upstream.ChannelUID, apiKey, attemptModel, racingSuperseded)
 				if !racingSuperseded && (executionKind == scheduler.ChannelKindMessages || executionKind == scheduler.ChannelKindResponses) {
 					MaybeLearnForcedToolChoiceMiss(c, upstream, apiKey, attemptModel, attemptBody,
 						GetStreamTimeoutObserver(c).SawToolCall())
@@ -1682,6 +1683,10 @@ func TryUpstreamWithAllKeys(
 					channelScheduler.RecordRequestEnd(currentBaseURL, apiKey, metricsServiceType, executionKind)
 					MarkChannelLogRacingLost(channelLogStore, metricsKey, logRequestID)
 					CompleteLog(channelLogStore, metricsKey, logRequestID, http.StatusOK, false, racing.ErrRacingSuperseded.Error(), isRetryAttempt)
+					// 慢证据信号一：primary 被影子击败（非取消空流连带），主组合记慢证据。
+					if !racingIsShadow(c) {
+						RecordLatencySupersededEvidence(c, upstream.ChannelUID, apiKey, actualAttemptModel)
+					}
 					RequestLogf(c, "[Racing] 分支败出（%s key=%s），由更快分支接管响应", apiType, utils.MaskAPIKey(apiKey))
 					// Handled=false：外层竞速编排据闸门赢家返回实际服务分支的结果。
 					return false, "", 0, nil, usage, err

@@ -796,7 +796,7 @@ func (r *SmartRouter) executeFilter(
 		// 五元组展开：模型行 × 全量 key × effort 档（已决档+相邻降档），逐行独立评分。
 		// 同名承接语义（MappedModel 判空防质量档折算误判）由 applyResolutionIdentity 保持。
 		entries = r.expandChannelCandidates(ch, upstream, executionKind, route, modelResolutions,
-			upstreamModelCapabilities, entries, costMap)
+			upstreamModelCapabilities, entries, costMap, profile.TaskClass)
 	}
 	// AFP 路由：为火山 Agent Plan 渠道填充 AFP 成本（含折扣），开启时用分组归一化
 	// 替代扁平 USD 归一化，使 GLM-5.2 ×0.25 等折扣真正影响 SavingsScore。
@@ -1294,8 +1294,10 @@ func federatedRoute(ch scheduler.ChannelInfo, requestKind string) scheduler.Chan
 
 // channelScoreEntry 渠道评分输入条目。
 type channelScoreEntry struct {
-	ChannelUID        string
-	ChannelName       string // 渠道显示名（来自 upstream.Name）
+	ChannelUID  string
+	ChannelName string // 渠道显示名（来自 upstream.Name）
+	// LatencyDegraded 延迟负反馈学习结论（渠道×模型×任务类连续慢），进 ScoringCandidate 软降权。
+	LatencyDegraded   bool
 	ChannelKind       string
 	Route             scheduler.ChannelRouteRef
 	ProtocolFidelity  string
@@ -1813,7 +1815,7 @@ func (r *SmartRouter) buildChannelEntry(
 	model string,
 	upstreamModelCapabilities map[string]config.UpstreamModelCapability,
 ) channelScoreEntry {
-	return r.buildChannelEntryForKey(ch, upstream, channelKind, model, upstreamModelCapabilities, nil, nil, "")
+	return r.buildChannelEntryForKey(ch, upstream, channelKind, model, upstreamModelCapabilities, nil, nil, "", "")
 }
 
 // buildChannelEntryForKey 从 ChannelInfo + UpstreamConfig 构建五元组候选行的评分输入。
@@ -1830,6 +1832,7 @@ func (r *SmartRouter) buildChannelEntryForKey(
 	keyCand *routingKeyCandidate,
 	keyProfiles map[string]*KeyEndpointProfile,
 	effort EffortLevel,
+	taskClass TaskClass,
 ) channelScoreEntry {
 	channelUID := upstream.ChannelUID
 	if channelUID == "" {
@@ -1895,6 +1898,10 @@ func (r *SmartRouter) buildChannelEntryForKey(
 	if learnedSeverityClassUnsupported(channelUID, actualModel) {
 		entry.SupportsSeverityClass = false
 	}
+	// 延迟负反馈学习：渠道×模型×任务类组合连续慢证据（竞速被击败/触发/首字超家族
+	// p90），软降权（calcPenalty -15），非硬排除——延迟差不是能力缺失，
+	// 快样本乐观翻转即回升（docs/specs/racing.md）。
+	entry.LatencyDegraded = learnedLatencyDegraded(channelUID, actualModel, taskClass)
 	if modelPricing != nil {
 		listCost := metrics.CalculateTokenCostUSDWithPricing(modelPricing, 1_000_000, 1_000_000, 1_000_000, 1_000_000)
 		entry.EstimatedCost = listCost
@@ -2004,7 +2011,8 @@ func (r *SmartRouter) buildChannelEntryForKey(
 					stability = kp.EffectiveStabilityTier
 				}
 				entry.ScoringCandidate = ScoringCandidate{
-					ChannelUID: channelUID, QualityTier: kp.QualityTier, StabilityTier: stability,
+					LatencyDegraded: entry.LatencyDegraded,
+					ChannelUID:      channelUID, QualityTier: kp.QualityTier, StabilityTier: stability,
 					SpeedTier: kp.SpeedTier, CostTier: kp.CostTier, HealthState: kp.HealthState,
 					ProviderQualityScore: 0.5, ProviderQualityConfidence: 0.3,
 					ModelFamily: modelFamily, SavingsScore: 0.5, DomainStrengthScore: 0.5,
@@ -2039,7 +2047,8 @@ func (r *SmartRouter) buildChannelEntryForKey(
 			entry.SupportsToolCalls = entry.SupportsToolCalls || agg.SupportsToolCalls
 			entry.SupportsReasoning = entry.SupportsReasoning || agg.SupportsReasoning
 			entry.ScoringCandidate = ScoringCandidate{
-				ChannelUID: channelUID, QualityTier: agg.QualityTier, StabilityTier: agg.StabilityTier,
+				LatencyDegraded: entry.LatencyDegraded,
+				ChannelUID:      channelUID, QualityTier: agg.QualityTier, StabilityTier: agg.StabilityTier,
 				SpeedTier: agg.SpeedTier, CostTier: agg.CostTier, HealthState: agg.HealthState,
 				ProviderQualityScore: 0.5, ProviderQualityConfidence: 0.3,
 				ModelFamily: modelFamily, SavingsScore: 0.5, DomainStrengthScore: 0.5,
@@ -2062,7 +2071,8 @@ func (r *SmartRouter) buildChannelEntryForKey(
 			entry.SupportsToolCalls = entry.SupportsToolCalls || agg.SupportsToolCalls
 			entry.SupportsReasoning = entry.SupportsReasoning || agg.SupportsReasoning
 			entry.ScoringCandidate = ScoringCandidate{
-				ChannelUID: channelUID, QualityTier: agg.QualityTier, StabilityTier: agg.StabilityTier,
+				LatencyDegraded: entry.LatencyDegraded,
+				ChannelUID:      channelUID, QualityTier: agg.QualityTier, StabilityTier: agg.StabilityTier,
 				SpeedTier: agg.SpeedTier, CostTier: agg.CostTier, HealthState: agg.HealthState,
 				ProviderQualityScore: 0.5, ProviderQualityConfidence: 0.3,
 				ModelFamily: modelFamily, SavingsScore: 0.5, DomainStrengthScore: 0.5,
@@ -2074,7 +2084,8 @@ func (r *SmartRouter) buildChannelEntryForKey(
 		}
 	}
 	entry.ScoringCandidate = ScoringCandidate{
-		ChannelUID: channelUID, QualityTier: QualityTierNormal, StabilityTier: StabilityTierNormal,
+		LatencyDegraded: entry.LatencyDegraded,
+		ChannelUID:      channelUID, QualityTier: QualityTierNormal, StabilityTier: StabilityTierNormal,
 		SpeedTier: SpeedTierNormal, CostTier: CostTierNormal, HealthState: HealthStateUnknown,
 		ProviderQualityScore: 0.5, ProviderQualityConfidence: 0.3,
 		ModelFamily: modelFamily, SavingsScore: 0.5, DomainStrengthScore: 0.5,
@@ -2652,7 +2663,7 @@ func (r *SmartRouter) collectChannelEntries(profile *RequestProfile) []channelSc
 		// 五元组展开与真实路径同构（模型 × 全量 key × effort 档）；预览标记后置处理。
 		before := len(entries)
 		entries = r.expandChannelCandidates(ch, &upstream, channelKind, scheduler.ChannelRouteRef{},
-			modelResolutions, cfg.UpstreamModelCapabilities, entries, nil)
+			modelResolutions, cfg.UpstreamModelCapabilities, entries, nil, "")
 		for i := before; i < len(entries); i++ {
 			if entries[i].MappingSource == "auto_resolve" {
 				entries[i].MappingSource = "auto_resolve_preview"

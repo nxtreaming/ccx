@@ -810,13 +810,13 @@ type rankedModelCandidate struct {
 	// evidenceQualityTier 是编码域证据档位（EffortAwareQualityAssessment 的
 	// 评定结果，即图表档位带）。非空时报告展示与排序均以它为准；空表示
 	// 未做证据评定（非编码域或无编码证据）。
-	evidenceQualityTier            QualityTier
-	measuredCostUSD                float64
-	versionLineage                 string
-	versionNumbers                 []int
-	sameFamily                     bool
-	normalizedCandidateID          string
-	frontierNote                   string // frontier 选型命中或回退的可解释标记，非空时追加到 reasonSummary
+	evidenceQualityTier   QualityTier
+	measuredCostUSD       float64
+	versionLineage        string
+	versionNumbers        []int
+	sameFamily            bool
+	normalizedCandidateID string
+	frontierNote          string // frontier 选型命中或回退的可解释标记，非空时追加到 reasonSummary
 }
 
 func (candidate rankedModelCandidate) reasonSummary() string {
@@ -1097,10 +1097,10 @@ func (r *ModelResolver) buildRankedCandidates(
 				publicCostKnown:              publicCostKnown,
 				normalizedPublicCostUSD:      publicCostUSD,
 				benchmarkKnown:               effBenchKnown,
-					benchmarkScore:               effBenchScore,
-					benchmarkModel:               benchmark.Profile.CanonicalModel,
-					benchmarkLane:                benchmark.Profile.Lane,
-					evidenceQualityTier:          evidenceTier,
+				benchmarkScore:               effBenchScore,
+				benchmarkModel:               benchmark.Profile.CanonicalModel,
+				benchmarkLane:                benchmark.Profile.Lane,
+				evidenceQualityTier:          evidenceTier,
 				measuredCostUSD:              measuredCost,
 				versionLineage:               modelVersionLineage(profile.ModelFamily, profile.ModelID),
 				versionNumbers:               modelVersionNumbers(profile.ModelFamily, profile.ModelID),

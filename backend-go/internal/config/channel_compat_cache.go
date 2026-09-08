@@ -166,6 +166,8 @@ type ChannelCompatCache struct {
 	mu    sync.RWMutex
 	// contextWindows 渠道×协议×模型 粒度的放宽方向窗口证据（键见 contextWindowLearnedKey）。
 	contextWindows map[string]*ContextWindowLearnedState
+	// latencyPenalties 渠道×Key×模型×任务类 粒度的延迟慢证据（键见 latencyPenaltyKey）。
+	latencyPenalties map[string]*LatencyPenaltyState
 	// path 为空表示纯内存模式（测试与未启用持久化时）。
 	path string
 	// dirty 标记自上次落盘后是否有新增记忆，避免无变化时重复写盘。
@@ -175,8 +177,9 @@ type ChannelCompatCache struct {
 // NewChannelCompatCache 创建纯内存缓存实例（不落盘）。
 func NewChannelCompatCache() *ChannelCompatCache {
 	return &ChannelCompatCache{
-		cache:          make(map[string]*ChannelCompatEntry),
-		contextWindows: make(map[string]*ContextWindowLearnedState),
+		cache:            make(map[string]*ChannelCompatEntry),
+		contextWindows:   make(map[string]*ContextWindowLearnedState),
+		latencyPenalties: make(map[string]*LatencyPenaltyState),
 	}
 }
 
@@ -185,9 +188,10 @@ func NewChannelCompatCache() *ChannelCompatCache {
 // 不应阻断代理服务启动。
 func NewChannelCompatCacheWithPersistence(path string) *ChannelCompatCache {
 	c := &ChannelCompatCache{
-		cache:          make(map[string]*ChannelCompatEntry),
-		contextWindows: make(map[string]*ContextWindowLearnedState),
-		path:           path,
+		cache:            make(map[string]*ChannelCompatEntry),
+		contextWindows:   make(map[string]*ContextWindowLearnedState),
+		latencyPenalties: make(map[string]*LatencyPenaltyState),
+		path:             path,
 	}
 	if err := c.load(); err != nil {
 		log.Printf("[ChannelCompat-Load] 加载渠道兼容性记忆失败，从空状态开始: %v", err)
@@ -203,6 +207,7 @@ func NewChannelCompatCacheWithPersistence(path string) *ChannelCompatCache {
 type channelCompatFile struct {
 	Entries        map[string]*ChannelCompatEntry        `json:"entries"`
 	ContextWindows map[string]*ContextWindowLearnedState `json:"contextWindows,omitempty"`
+	LatencyPenalty map[string]*LatencyPenaltyState       `json:"latencyPenalties,omitempty"`
 }
 
 // load 从磁盘读取记忆，跳过已过期条目。
@@ -286,6 +291,16 @@ func (c *ChannelCompatCache) load() error {
 		}
 		c.contextWindows[key] = state
 	}
+	nowLoad := time.Now()
+	for key, state := range stored.LatencyPenalty {
+		if state == nil || !latencyPenaltyFresh(state, nowLoad) {
+			continue
+		}
+		if c.latencyPenalties == nil {
+			c.latencyPenalties = make(map[string]*LatencyPenaltyState)
+		}
+		c.latencyPenalties[key] = state
+	}
 	return nil
 }
 
@@ -314,6 +329,15 @@ func (c *ChannelCompatCache) Flush() error {
 			}
 			snapshot.ContextWindows[key] = state
 		}
+	}
+	for key, state := range c.latencyPenalties {
+		if state == nil || !latencyPenaltyFresh(state, now) {
+			continue
+		}
+		if snapshot.LatencyPenalty == nil {
+			snapshot.LatencyPenalty = make(map[string]*LatencyPenaltyState, len(c.latencyPenalties))
+		}
+		snapshot.LatencyPenalty[key] = state
 	}
 	path := c.path
 	c.dirty = false
