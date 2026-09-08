@@ -1283,6 +1283,12 @@ func HandleStreamResponse(
 	}
 
 	// 非空响应：正常流程
+	// 竞速提交闸门：preflight 确认首字有效后才裁决——赢家 claim 并写出，
+	// 败者在此返回 ErrRacingSuperseded（Header 未写，零字节污染）。
+	if !racingClaimClientCommit(c) {
+		drainChannels(eventChan, errChan)
+		return nil, ErrRacingSuperseded
+	}
 	SetupStreamHeaders(c, resp, envCfg, "Messages")
 
 	w := c.Writer

@@ -231,8 +231,9 @@ func handleMultiChannel(
 		"Images",
 		userID,
 		model,
+		false,
 		agentRole,
-		func(selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
+		func(c *gin.Context, selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
 			upstream := selection.Upstream
 			channelIndex := selection.ChannelIndex
 			if upstream == nil {

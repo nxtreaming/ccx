@@ -42,6 +42,7 @@ import (
 	"github.com/BenedictKing/ccx/internal/middleware"
 	"github.com/BenedictKing/ccx/internal/presetstore"
 	"github.com/BenedictKing/ccx/internal/quota"
+	"github.com/BenedictKing/ccx/internal/racing"
 	"github.com/BenedictKing/ccx/internal/ratelimit"
 	"github.com/BenedictKing/ccx/internal/scheduler"
 	"github.com/BenedictKing/ccx/internal/session"
@@ -1737,6 +1738,37 @@ func main() {
 				TraceStore: autopilotManager.TraceStore(),
 			})
 		}
+
+		// 竞速（影子请求）配置 API + 编排依赖注入。
+		// 候选缓存挂在 ABTestSampler 的 SmartRouter 排名回调上；采样器未初始化时
+		// 竞速仅走调度器路由级回退。
+		var racingCandidateProvider func(model, channelKind string) []autopilot.RoutingCandidate
+		if sampler := autopilotManager.ABTestSampler(); sampler != nil {
+			cache := sampler.CandidateCache()
+			racingCandidateProvider = cache.Get
+		}
+		common.SetRacingHub(&common.RacingHub{
+			Registry:          racing.NewRegistry(),
+			Sem:               racing.NewSemaphore(racing.MaxConcurrentShadows()),
+			CandidateProvider: racingCandidateProvider,
+		})
+		apiGroup.GET("/racing/config", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"enabled": cfgManager.GetRacingEnabled()})
+		})
+		apiGroup.PUT("/racing/config", func(c *gin.Context) {
+			var req struct {
+				Enabled *bool `json:"enabled"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体，需提供 enabled 布尔值"})
+				return
+			}
+			if err := cfgManager.SetRacingEnabled(*req.Enabled); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "保存竞速配置失败"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"enabled": *req.Enabled})
+		})
 
 		// 熔断器运行时设置
 		apiGroup.GET("/settings/circuit-breaker", handlers.GetCircuitBreaker(messagesMetricsManager.GetCircuitBreakerConfig, envCfg))

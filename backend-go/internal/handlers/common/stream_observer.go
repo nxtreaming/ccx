@@ -180,6 +180,29 @@ func (o *StreamTimeoutObserver) SawToolCall() bool {
 	return o.sawToolCall
 }
 
+// HasFirstContent 是否已观测到首个有效内容（竞速触发复核用：主分支已出首字则不再派影子）。
+func (o *StreamTimeoutObserver) HasFirstContent() bool {
+	if o == nil {
+		return false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return !o.firstContentAt.IsZero()
+}
+
+// FirstContentMs 首个有效内容耗时（毫秒；未出现返回 0）。
+func (o *StreamTimeoutObserver) FirstContentMs() int64 {
+	if o == nil {
+		return 0
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.firstContentAt.IsZero() {
+		return 0
+	}
+	return o.firstContentAt.Sub(o.startedAt).Milliseconds()
+}
+
 // MarkStreamSeverityTag 标记本次流式输出中出现了安全分类格式标记（<severity）。
 // 由各协议流处理器的文本增量扫描调用，供 MaybeLearnSeverityClassOutcome 读取。
 func MarkStreamSeverityTag(c *gin.Context) {

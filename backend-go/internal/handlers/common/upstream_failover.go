@@ -19,6 +19,7 @@ import (
 	"github.com/BenedictKing/ccx/internal/metrics"
 	"github.com/BenedictKing/ccx/internal/middleware"
 	"github.com/BenedictKing/ccx/internal/providers"
+	"github.com/BenedictKing/ccx/internal/racing"
 	"github.com/BenedictKing/ccx/internal/ratelimit"
 	"github.com/BenedictKing/ccx/internal/scheduler"
 	"github.com/BenedictKing/ccx/internal/types"
@@ -1059,6 +1060,13 @@ func TryUpstreamWithAllKeys(
 				logOpts = append(logOpts, WithProxyKeyMask(proxyKeyMask))
 			}
 
+			// 竞速角色（编排器写入分支 gin context）：影子分支日志带 shadow 标记
+			if role, ok := c.Get(racing.ContextKeyRole); ok {
+				if roleStr, ok := role.(string); ok && roleStr != "" {
+					logOpts = append(logOpts, WithRacingRole(roleStr))
+				}
+			}
+
 			// 提取请求关联 ID（multi_channel_failover 生成，写入 gin context）
 			if correlationID, ok := c.Get("ccx.request_correlation_id"); ok {
 				if cid, ok := correlationID.(string); ok && cid != "" {
@@ -1186,6 +1194,15 @@ func TryUpstreamWithAllKeys(
 			resp, err := SendRequestWithLifecycleTrace(req, requestUpstream, envCfg, isStream, apiType, lifecycleTrace)
 			if err != nil {
 				lastError = err
+				// 竞速败出：被赢家取消（SendRequest 阶段），不计失败不 failover。
+				if isRacingSuperseded(c, err) {
+					metricsManager.RecordRequestFinalizeIgnored(currentBaseURL, apiKey, metricsServiceType, requestID)
+					channelScheduler.RecordRequestEnd(currentBaseURL, apiKey, metricsServiceType, executionKind)
+					MarkChannelLogRacingLost(channelLogStore, metricsKey, logRequestID)
+					CompleteLog(channelLogStore, metricsKey, logRequestID, 0, false, racing.ErrRacingSuperseded.Error(), isRetryAttempt)
+					RequestLogf(c, "[Racing] 分支败出（%s SendRequest 阶段，key=%s）", apiType, utils.MaskAPIKey(apiKey))
+					return false, "", 0, nil, nil, err
+				}
 				// 区分客户端取消和真实渠道故障（统一口径）
 				if isClientSideError(err) {
 					// 客户端取消：不计入失败，不触发 failover
@@ -1616,29 +1633,30 @@ func TryUpstreamWithAllKeys(
 			// 必须在 handleSuccess 写出响应体之前设置：流式首包/非流式 JSON 一旦写出，
 			// 再补 header 就会静默丢失（旧实现挂在完成后即有此 bug）。
 			// 每次 attempt 覆盖/清除，防止映射失败的 attempt failover 后残留旧值。
-			{
-				echoMapping := appliedMappedModel != "" && cfgManager.GetAutopilotRouting().ModelMapping.EchoMappedModel
-				if echoMapping {
-					c.Header("X-CCX-Mapped-Model", actualAttemptModel)
-					c.Header("X-CCX-Original-Model", model)
-					c.Header("X-CCX-Mapping-Source", "auto_resolve")
-				} else {
-					c.Writer.Header().Del("X-CCX-Mapped-Model")
-					c.Writer.Header().Del("X-CCX-Original-Model")
-					c.Writer.Header().Del("X-CCX-Mapping-Source")
+			// 竞速场景下 pre-commit 头写入经闸门 meta 锁串行化（双分支并发写
+			// http.Header 是数据竞争），且已有赢家后败者直接跳过。
+			if gate := gateFromContext(c); gate != nil {
+				unlockMeta := gate.MetaLock()
+				if !gate.Claimed() {
+					writeEchoMappingHeaders(c, cfgManager, appliedMappedModel, actualAttemptModel, model)
 				}
+				unlockMeta()
+			} else {
+				writeEchoMappingHeaders(c, cfgManager, appliedMappedModel, actualAttemptModel, model)
 			}
 			usage, err = handleSuccess(c, resp, upstreamCopy, apiKey, attemptBody)
 			// 上下文窗口自学习（放宽侧）：2xx 完成即实证该渠道×协议×模型可承载本次输入，
 			// 棘轮只升不降。失败/取消/空响应不学习（err 非 nil 时内部直接返回）。
 			MaybeRecordContextWindowProven(c, apiType, upstreamCopy, executionKind, attemptModel, usage, err)
+			// 竞速败出分支不参与任何自学习（部分流的部分标记不代表渠道真实能力）。
+			racingSuperseded := isRacingSuperseded(c, err)
 			if isStream {
 				FinishStreamTimeoutObservation(c)
 				// 工具调用能力自学习（被动侧·成功路径）：强制 tool_choice 的请求 2xx
 				// 完成但流式全程零工具调用块，说明上游不会执行工具（假模型/剥离 tools）。
 				// 仅 messages/responses：只有这两条流式路径接了工具活动标记，
 				// 其他协议 sawToolCall=false 无法区分"没调用"与"没观测"，不得学习。
-				if executionKind == scheduler.ChannelKindMessages || executionKind == scheduler.ChannelKindResponses {
+				if !racingSuperseded && (executionKind == scheduler.ChannelKindMessages || executionKind == scheduler.ChannelKindResponses) {
 					MaybeLearnForcedToolChoiceMiss(c, upstream, apiKey, attemptModel, attemptBody,
 						GetStreamTimeoutObserver(c).SawToolCall())
 					// 安全分类能力自学习（被动侧·成功路径）：分类形状请求 2xx 完成但
@@ -1647,14 +1665,27 @@ func TryUpstreamWithAllKeys(
 					MaybeLearnSeverityClassOutcome(c, upstream, apiKey, attemptModel, attemptBody,
 						GetStreamTimeoutObserver(c).SawSeverityTag(), err)
 				}
-			} else if scanned, found := NonStreamSeverityOutcome(c); scanned {
-				// 安全分类能力自学习（被动侧·成功路径，非流式）：CC 安全分类器子请求
-				// 是非流式的（stream=false），只挂流式会漏掉全部此类请求。扫描结论由
-				// messages/responses 的非流式成功处理写入（MarkNonStreamSeverityScan）；
-				// 未接线路径不置位、不学习。
-				MaybeLearnSeverityClassOutcome(c, upstream, apiKey, attemptModel, attemptBody, found, err)
+			} else if !racingSuperseded {
+				if scanned, found := NonStreamSeverityOutcome(c); scanned {
+					// 安全分类能力自学习（被动侧·成功路径，非流式）：CC 安全分类器子请求
+					// 是非流式的（stream=false），只挂流式会漏掉全部此类请求。扫描结论由
+					// messages/responses 的非流式成功处理写入（MarkNonStreamSeverityScan）；
+					// 未接线路径不置位、不学习。
+					MaybeLearnSeverityClassOutcome(c, upstream, apiKey, attemptModel, attemptBody, found, err)
+				}
 			}
 			if err != nil {
+				// 竞速败出最先裁决：另一分支更快交付，本分支的失败不是渠道故障。
+				// 不计失败指标、不熔断、不拉黑、不标记 URL 失败，仅完成日志终态。
+				if racingSupersededOrCanceledEmptyStream(c, err) {
+					metricsManager.RecordRequestFinalizeIgnored(currentBaseURL, apiKey, metricsServiceType, requestID)
+					channelScheduler.RecordRequestEnd(currentBaseURL, apiKey, metricsServiceType, executionKind)
+					MarkChannelLogRacingLost(channelLogStore, metricsKey, logRequestID)
+					CompleteLog(channelLogStore, metricsKey, logRequestID, http.StatusOK, false, racing.ErrRacingSuperseded.Error(), isRetryAttempt)
+					RequestLogf(c, "[Racing] 分支败出（%s key=%s），由更快分支接管响应", apiType, utils.MaskAPIKey(apiKey))
+					// Handled=false：外层竞速编排据闸门赢家返回实际服务分支的结果。
+					return false, "", 0, nil, usage, err
+				}
 				if isStream && streamingUserID != "" {
 					channelScheduler.UpdateConversationStatus(kind, streamingUserID, "active")
 				}
@@ -1755,7 +1786,8 @@ func TryUpstreamWithAllKeys(
 				metricsManager.ReleaseProbe(currentBaseURL, apiKey, metricsServiceType)
 				delete(probeAcquired, probeKey)
 			}
-			// 记录渠道日志
+			// 记录渠道日志（竞速赢家补记 won 标记，未参与竞速时无操作）
+			CompleteChannelLogWithRacingOutcome(channelLogStore, metricsKey, logRequestID, c)
 			CompleteLog(channelLogStore, metricsKey, logRequestID, http.StatusOK, true, "", isRetryAttempt)
 			recordAttemptCompleted(c, logRequestID, upstream.ChannelUID, "success", http.StatusOK, time.Since(attemptStartedAt).Milliseconds())
 
