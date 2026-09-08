@@ -559,7 +559,8 @@
                     </v-chip>
                     <span class="ml-2">{{ t('channelCard.affectedGroupKeys', { count: groupModelAffectedCount }) }}</span>
                   </div>
-                  <v-row dense align="center">
+                  <!-- 顶部对齐：右列分组倍率带 persistent-hint 占高，垂直居中会把消耗策略下拉压低错位 -->
+                  <v-row dense align="start">
                     <v-col cols="12" sm="6">
                       <v-select
                         v-model="multiplierForm.consumptionPolicy"
