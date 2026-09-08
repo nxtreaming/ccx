@@ -214,12 +214,18 @@ func classifyByErrorMessageWithLogTag(bodyBytes []byte, apiType string, logTag s
 	return false, false
 }
 
-// isAccountRateLimitExceededMap 判断错误对象是否表示火山账号级限流
-// (AccountRateLimitExceeded)。仅在 HTTP 429 分支使用，不能作为无状态码的
-// 全局 overloaded 标记。code/type/message/detail/msg 统一参与匹配：
-//   - 精确错误码 AccountRateLimitExceeded（大小写/分隔符无关）
+// isAccountRateLimitExceededMap 判断错误对象是否表示账号级限流。
+// 仅在 HTTP 429 分支使用，不能作为无状态码的全局 overloaded 标记。
+// code/type/message/detail/msg 统一参与匹配：
+//   - 精确错误码 AccountRateLimitExceeded（大小写/分隔符无关，火山系）
 //   - 规范化形式 account_rate_limit_exceeded
 //   - 消息兜底 "requests are too frequent"
+//   - new-api/one-api 系中文限流文案："请求数限制"（如"您已达到总请求数限制：
+//     1分钟内最多请求N次"）与"速率限制"——这类 429 不给 Retry-After，
+//     不识别时 AIMD 置信度停在 0.5 永远达不到采纳阈值，也不会触发 scope 冷却。
+//
+// 注意：英文通用文案（"too many requests"/"rate limit"）刻意不匹配——
+// 通用 429 只换 key 继续 failover，不升级为账号级冷却（既有测试锁定该边界）。
 func isAccountRateLimitExceededMap(m map[string]interface{}) bool {
 	combined := strings.ToLower(strings.Join([]string{
 		toStringField(m, "code"),
@@ -237,6 +243,10 @@ func isAccountRateLimitExceededMap(m map[string]interface{}) bool {
 	if strings.Contains(combined, "requests are too frequent") {
 		return true
 	}
+	// new-api/one-api 系中文限流文案
+	if strings.Contains(combined, "请求数限制") || strings.Contains(combined, "速率限制") {
+		return true
+	}
 	return false
 }
 
@@ -251,8 +261,9 @@ func normalizeAlnum(s string) string {
 	return b.String()
 }
 
-// IsUpstreamAccountRateLimited 判断上游响应是否为火山账号级限流
-// (AccountRateLimitExceeded)。仅在 HTTP 429 时解析 body，避免把账号级限流
+// IsUpstreamAccountRateLimited 判断上游响应是否为账号级限流
+// （火山 AccountRateLimitExceeded / new-api 系中文限流文案，见 isAccountRateLimitExceededMap）。
+// 仅在 HTTP 429 时解析 body，避免把账号级限流
 // 混入通用 CPU/service overloaded 标记。
 // 命中后调用方应对当前 key/quota scope 施加短期冷却，而非冻结整个渠道；
 // 同渠道其他独立账号可继续 failover。
