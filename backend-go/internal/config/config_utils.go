@@ -806,6 +806,10 @@ func (u *UpstreamConfig) Clone() *UpstreamConfig {
 		cloned.NoVisionModels = make([]string, len(u.NoVisionModels))
 		copy(cloned.NoVisionModels, u.NoVisionModels)
 	}
+	if u.Racing != nil {
+		c := *u.Racing
+		cloned.Racing = &c
+	}
 
 	return &cloned
 }

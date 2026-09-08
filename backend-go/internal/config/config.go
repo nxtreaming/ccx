@@ -173,6 +173,8 @@ type UpstreamConfig struct {
 	Tags []string `json:"tags,omitempty"`
 	// 渠道级保活验证配置（可选，nil 时继承全局与 OriginTier 分档默认）
 	HealthCheck *ChannelHealthCheckConfig `json:"healthCheck,omitempty"`
+	// 渠道级竞速参与配置（可选，nil 时继承全局；关闭=既不做主触发也不做影子目标）
+	Racing *ChannelRacingConfig `json:"racing,omitempty"`
 	// LogicalChannelUID 是该物理渠道所属逻辑渠道的稳定身份。
 	// 六个物理数组仍是运行时存储；本字段是非权威指针，加载旧配置时由 ConfigManager
 	// 自动回填，逻辑渠道 CRUD 也使用它保持各协议物理路由同步。空值表示旧数据。
@@ -1309,6 +1311,8 @@ type UpstreamUpdate struct {
 	CodexToolCompat          *bool                              `json:"codexToolCompat"`
 	StripCodexClientTools    *bool                              `json:"stripCodexClientTools"`
 	ConvertImageURLToB64JSON *bool                              `json:"convertImageUrlToB64Json"`
+	// 渠道级竞速参与配置（nil=继承全局）
+	Racing *ChannelRacingConfig `json:"racing"`
 	// 多渠道调度相关字段
 	Priority                *int       `json:"priority"`
 	Status                  *string    `json:"status"`
@@ -1439,6 +1443,9 @@ type Config struct {
 
 	// 渠道保活验证全局配置（可选，nil 使用默认值）
 	HealthCheck *GlobalHealthCheckConfig `json:"healthCheck,omitempty"`
+
+	// 竞速（影子请求）全局配置（可选，nil 默认关闭；行为参数由策略表自动推导）
+	Racing *GlobalRacingConfig `json:"racing,omitempty"`
 
 	// LogicalChannels 逻辑渠道列表（管理面聚合实体）。
 	// 运行时的物理渠道仍以六个 Upstream* 数组为准；本字段由 ConfigManager 在加载时

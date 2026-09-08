@@ -360,6 +360,10 @@ func applyUpstreamUpdateFields(upstream *UpstreamConfig, updates UpstreamUpdate)
 	if updates.FastMode != nil {
 		upstream.FastMode = *updates.FastMode
 	}
+	if updates.Racing != nil {
+		racingUpdate := *updates.Racing
+		upstream.Racing = &racingUpdate
+	}
 	if updates.InsecureSkipVerify != nil {
 		upstream.InsecureSkipVerify = *updates.InsecureSkipVerify
 	}

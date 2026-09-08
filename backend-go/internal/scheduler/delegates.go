@@ -560,3 +560,8 @@ func urlManagerChannelKeyOrdinal(kind ChannelKind) int {
 		return 0
 	}
 }
+
+// GetConfigManager 返回调度器持有的配置管理器（供 failover 外壳的竞速编排读取配置快照）。
+func (s *ChannelScheduler) GetConfigManager() *config.ConfigManager {
+	return s.configManager
+}
