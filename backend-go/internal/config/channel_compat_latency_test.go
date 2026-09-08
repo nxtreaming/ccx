@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -159,5 +161,30 @@ func TestLatencySnapshot(t *testing.T) {
 	e := entries[0]
 	if e.ChannelUID != "ch_a" || e.Model != "model-x" || e.TaskClass != "lightweight" || e.SlowStreak != 3 || !e.Degraded || e.LastFirstByteMs != 8000 {
 		t.Fatalf("快照字段不符: %+v", e)
+	}
+}
+
+// 防抖落盘（热路径不同步写盘）：慢/快证据记录后不立即写文件，显式 Flush 后可重载。
+func TestLatencyEvidenceFlushDebounced(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "compat.json")
+	cache := NewChannelCompatCacheWithPersistence(path)
+	now := time.Now()
+
+	cache.RecordSlowEvidence("ch_a", "kh_1", "model-x", "lightweight", 8000, now)
+	cache.RecordFastEvidence("ch_a", "kh_1", "model-x", "lightweight", now)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("latency 证据不应同步落盘（应走防抖窗口）")
+	}
+
+	if err := cache.Flush(); err != nil {
+		t.Fatalf("显式落盘失败: %v", err)
+	}
+	reloaded := NewChannelCompatCacheWithPersistence(path)
+	entries := reloaded.LatencyPenaltySnapshot()
+	if len(entries) != 1 {
+		t.Fatalf("重载后应 1 条记录, got %d", len(entries))
+	}
+	if entries[0].LastFastAt.IsZero() {
+		t.Fatal("重载后快样本时间应保留")
 	}
 }

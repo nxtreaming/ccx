@@ -19,6 +19,11 @@ const ChannelCompatStatePath = ".config/channel_compat.json"
 // 与 DeprecatedParamCache / SystemHeaderFilterCache 保持一致：上游能力变化后自动重新学习。
 const channelCompatTTL = 24 * time.Hour
 
+// channelCompatFlushDebounce 高频统计样本（latency 证据）的防抖落盘窗口。
+// 这类样本廉价且可重新学习，合并到固定窗口后单次落盘，避免把整份状态的
+// 序列化+rename 压到请求热路径上；窗口内进程退出只是少学几次样本（streak 重计）。
+const channelCompatFlushDebounce = 10 * time.Second
+
 // CompatTrait 一个可自动学习的渠道兼容性事实。
 // 取字符串而非 iota，便于落盘 JSON 与日志直接可读。
 type CompatTrait string
@@ -172,6 +177,8 @@ type ChannelCompatCache struct {
 	path string
 	// dirty 标记自上次落盘后是否有新增记忆，避免无变化时重复写盘。
 	dirty bool
+	// flushTimer 非空表示已安排一次防抖落盘（见 scheduleFlushLocked）。
+	flushTimer *time.Timer
 }
 
 // NewChannelCompatCache 创建纯内存缓存实例（不落盘）。
@@ -305,8 +312,13 @@ func (c *ChannelCompatCache) load() error {
 }
 
 // Flush 将当前记忆原子落盘（tmp + rename）。无变化时为空操作。
+// 同步落盘会取消已安排的防抖落盘，避免紧跟着重复写一次。
 func (c *ChannelCompatCache) Flush() error {
 	c.mu.Lock()
+	if c.flushTimer != nil {
+		c.flushTimer.Stop()
+		c.flushTimer = nil
+	}
 	if c.path == "" || !c.dirty {
 		c.mu.Unlock()
 		return nil
@@ -355,6 +367,24 @@ func (c *ChannelCompatCache) Flush() error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// scheduleFlushLocked 安排一次防抖落盘（调用时需持 c.mu）。
+// 供 latency 证据等高频统计样本使用：记录只置 dirty，窗口内多次样本合并为一次写盘；
+// 窗口不重置，持续有样本时至多每 channelCompatFlushDebounce 落盘一次，滞后时间有界。
+// 纯内存模式（path 为空）不安排，避免测试产生无用定时器。
+func (c *ChannelCompatCache) scheduleFlushLocked() {
+	if c.path == "" || c.flushTimer != nil {
+		return
+	}
+	c.flushTimer = time.AfterFunc(channelCompatFlushDebounce, func() {
+		c.mu.Lock()
+		c.flushTimer = nil
+		c.mu.Unlock()
+		if err := c.Flush(); err != nil {
+			log.Printf("[ChannelCompat-Flush] 防抖落盘失败: %v", err)
+		}
+	})
 }
 
 // Record 记录一条学习到的兼容性事实。返回该 trait 是否为新增结论（此前未记录或结论翻转）。

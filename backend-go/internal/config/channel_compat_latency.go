@@ -75,11 +75,10 @@ func (c *ChannelCompatCache) RecordSlowEvidence(channelUID, keyHash, model, task
 		state.LastFirstByteMs = firstByteMs
 	}
 	c.dirty = true
+	// 防抖落盘：慢证据是请求热路径上的高频统计样本，不做每次同步写盘
+	c.scheduleFlushLocked()
 	c.mu.Unlock()
 
-	if err := c.Flush(); err != nil {
-		log.Printf("[ChannelCompat-Flush] 落盘延迟慢证据失败: %v", err)
-	}
 	return crossed
 }
 
@@ -100,11 +99,10 @@ func (c *ChannelCompatCache) RecordFastEvidence(channelUID, keyHash, model, task
 	state.SlowStreak = 0
 	state.LastFastAt = now
 	c.dirty = true
+	// 防抖落盘：同 RecordSlowEvidence，热路径不同步写盘
+	c.scheduleFlushLocked()
 	c.mu.Unlock()
 
-	if err := c.Flush(); err != nil {
-		log.Printf("[ChannelCompat-Flush] 落盘延迟快样本失败: %v", err)
-	}
 	return recovered
 }
 
