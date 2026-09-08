@@ -1104,6 +1104,21 @@ func (s *ChannelScheduler) MarkLimiterScopeCooldown(kind ChannelKind, channelInd
 	s.rateLimitManager.SetCooldownScoped(kindAPIType(kind), channelIndex, scope, duration, time.Now())
 }
 
+// IsChannelRateLimitHot 渠道当前是否处于限流热态：渠道级运行时冷却中，或
+// 全部 key scope 都被限速延迟（此时向该渠道追加请求只会放大 429 消耗）。
+// 竞速影子候选过滤用：影子是真实上游请求，热渠道不得派影子；
+// 部分 scope 可用时返回 false（影子换 scope 仍有意义，不拦）。
+func (s *ChannelScheduler) IsChannelRateLimitHot(kind ChannelKind, channelIndex int, upstream *config.UpstreamConfig, model string) bool {
+	if s == nil || upstream == nil {
+		return false
+	}
+	if s.channelInRuntimeCooldown(kind, channelIndex) {
+		return true
+	}
+	deferred, _, _, _ := s.channelRateLimitSoftDeferred(upstream, kind, channelIndex, model, time.Now())
+	return deferred
+}
+
 func (s *ChannelScheduler) channelFailureRate(upstream *config.UpstreamConfig, kind ChannelKind, model string) float64 {
 	if upstream == nil {
 		return 0

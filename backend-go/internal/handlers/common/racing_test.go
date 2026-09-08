@@ -11,6 +11,7 @@ import (
 	"github.com/BenedictKing/ccx/internal/config"
 	"github.com/BenedictKing/ccx/internal/handlers/common"
 	"github.com/BenedictKing/ccx/internal/racing"
+	"github.com/BenedictKing/ccx/internal/ratelimit"
 	"github.com/BenedictKing/ccx/internal/scheduler"
 	"github.com/gin-gonic/gin"
 )
@@ -329,4 +330,41 @@ func TestRunRacingAttemptCostFirstFiltersCandidates(t *testing.T) {
 			t.Fatal("cost_first 应回退过贵候选，不应派出影子")
 		}
 	})
+}
+
+// 限流热渠道不派影子（2026-09-09 生产观测：seekai 429 风暴中 shadow 把单请求
+// 放大成多条真实上游请求）。排名缓存路径绕过调度器冷却过滤，候选过滤必须兜底。
+func TestRunRacingAttemptSkipsRateLimitHotCandidate(t *testing.T) {
+	env := racingTestEnv(t, nil)
+	installRacingHub(t, racingCandidateList("ch_second", "ch_third"), racing.Behavior{MaxShadows: 1, StreamFloorMs: 30})
+
+	// ch_second（索引 1）渠道级冷却：影子应跳过它落到 ch_third
+	env.scheduler.SetRateLimitManager(ratelimit.NewManager())
+	env.scheduler.MarkChannelCooldown(scheduler.ChannelKindMessages, 1, time.Minute)
+
+	var shadowUID atomic.Value
+	branch := func(c *gin.Context, selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
+		if selection.Route.ChannelUID != "ch_first" {
+			shadowUID.Store(selection.Route.ChannelUID)
+			time.Sleep(10 * time.Millisecond)
+		} else {
+			// 慢主：阻塞至影子 claim 后被取消
+			select {
+			case <-time.After(2 * time.Second):
+			case <-c.Request.Context().Done():
+			}
+		}
+		if !common.RacingClaimClientCommit(c) {
+			return common.MultiChannelAttemptResult{Route: selection.Route, Attempted: true, LastError: common.ErrRacingSuperseded}
+		}
+		return common.MultiChannelAttemptResult{Route: selection.Route, Handled: true, SuccessKey: "sk-" + selection.Route.ChannelUID}
+	}
+
+	_, result := common.RunRacingAttempt(newRacingGinContext(), branch, racingInput(env, racingPrimarySelection(t, env)))
+	if result.SuccessKey != "sk-ch_third" {
+		t.Fatalf("影子应落到未冷却的 ch_third 并获胜: %+v", result)
+	}
+	if got, _ := shadowUID.Load().(string); got != "ch_third" {
+		t.Fatalf("限流热渠道应被跳过, got %q", got)
+	}
 }

@@ -631,6 +631,10 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 	if !cfgSnapshot.ResolveRacingPolicy(sel.Upstream) {
 		return nil
 	}
+	// 同路径一：调度器兜底重选可能返回软延迟/冷却渠道（last-resort），热渠道不派影子。
+	if r.in.Scheduler.IsChannelRateLimitHot(r.in.Kind, sel.ChannelIndex, sel.Upstream, r.in.Model) {
+		return nil
+	}
 	// cost_first 的倍率过滤在回退路径同样生效：调度器按路由重选拿不到五元组，
 	// 用渠道 CostMultiplier 近似（key 分组倍率未 pin 时不可知）。
 	if r.behavior.CheapCandidateOnly {
@@ -653,6 +657,11 @@ func (r *racingRuns) buildSelectionFromCandidate(cand autopilot.RoutingCandidate
 		return nil
 	}
 	if !cfgSnapshot.ResolveRacingPolicy(upstream) {
+		return nil
+	}
+	// 限流热渠道不派影子：影子是真实上游请求，429 风暴中只会放大消耗
+	// （排名缓存路径绕过调度器冷却过滤，必须在此补齐）。
+	if r.in.Scheduler.IsChannelRateLimitHot(r.in.Kind, index, upstream, cand.ActualModel) {
 		return nil
 	}
 	if r.behavior.CheapCandidateOnly {
