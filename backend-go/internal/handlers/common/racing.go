@@ -521,6 +521,11 @@ func (r *racingRuns) startShadow(c *gin.Context, sel *scheduler.SelectionResult)
 
 	shadowC := c.Copy()
 	shadowC.Request = c.Request.WithContext(shadowCtx)
+	// gin 的 Copy() 不复制 Writer（副本 Writer 为 nil），而 TryUpstreamWithAllKeys
+	// 全链路假设 c.Writer 可用（echo 回显头、handleSuccess 写响应）。回填主 Writer：
+	// 谁能写由提交闸门裁决（claim-once 单写者；pre-commit 头写入经 MetaLock 互斥），
+	// 败者 claim 失败后不再触碰 Writer。
+	shadowC.Writer = c.Writer
 	setBranchContext(shadowC, r.gate, racing.RoleShadow, branchID)
 
 	run := &racingShadowRun{

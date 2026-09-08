@@ -901,7 +901,15 @@ func (r *ModelResolver) rankEligibleModels(
 		return best
 	}
 	frontierFallback = note
-	ranked = selectQualityBenefitBand(ranked, floor.QualityBenefitCap)
+	if banded := selectQualityBenefitBand(ranked, floor.QualityBenefitCap); len(banded) > 0 {
+		ranked = banded
+	} // band 过滤清空时保留全量：宁超收益帽不可空列表越界（回退链仅此一处无守卫）
+
+	if len(ranked) == 0 {
+		// 全量列表也为空（eligible 为空或排序阶段全过滤）：返回请求模型原样透传，
+		// 由上层 exact/fail-open 语义兜底，不得 panic。
+		return rankedModelCandidate{profile: ModelProfile{ModelID: requestModel}, frontierNote: "no_ranked_candidate_fallback"}
+	}
 
 	best := ranked[0]
 	for i := 1; i < len(ranked); i++ {
