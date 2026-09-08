@@ -447,7 +447,7 @@
 
 - 路径：`frontend/src/components/AutopilotModePanel.vue`、`AutopilotDiagnosePanel.vue`
 - 触发入口：均由 `AutopilotView.vue` 直接内嵌渲染。
-- AutopilotModePanel：props `config: SmartRoutingConfig`、`saving`；emit `update:config`。字段：killSwitch(只读开关+警告 alert)、costPreference(select)、**竞速模式开关（独立配置 `GET/PUT /api/racing/config`，变更即存不走整卡保存；hint 说明影子数随价格策略自动搭配：质量优先 3 / 均衡 1 / 价格优先仅更便宜渠道 1）**。
+- AutopilotModePanel：props `config: SmartRoutingConfig`、`saving`；emit `update:config`。字段：killSwitch(只读开关+警告 alert)、costPreference(select)、**竞速模式开关 `racingEnabled`（随 `GET/PUT /smart-routing/config` 整卡读取/保存，改动后点亮「保存配置」按钮一并提交；hint 说明影子数随价格策略自动搭配：质量优先 3 / 均衡 1 / 价格优先仅更便宜渠道 1）**。
 - AutopilotDiagnosePanel：无 props；本地 `form`（model/channelKind/agentRole/estTokens/toolUseNeed/reasoningNeed/hasImage）。结果：mode/taskClass/candidates 表（候选行为 (渠道, 模型) 粒度并展示 CandidateKey/模型名，78ed757f）。
 
 布局示意图（两面板均为内嵌 outlined 卡，由 AutopilotView 堆叠渲染）：
@@ -461,7 +461,7 @@ AutopilotModePanel:
 │ 场景模式 [select·停用时禁用] + 描述 caption│
 │   (非 auto 场景追加: 预设参数摘要)         │
 │ 价格偏好 [select·条件禁用] + 描述 caption  │
-│ 竞速模式 [switch·变更即存] + 策略说明 caption│
+│ 竞速模式 [switch·随保存配置提交] + 策略说明    │
 │                     [保存配置][重置]       │ ← 无改动均禁用
 └──────────────────────────────────────────┘
 

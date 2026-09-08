@@ -89,17 +89,14 @@
           </div>
         </div>
 
-        <!-- 竞速模式（独立配置，变更即存） -->
+        <!-- 竞速模式（随整卡保存提交） -->
         <div class="mb-4">
           <v-switch
-            v-model="racingEnabled"
+            v-model="localConfig.racingEnabled"
             :label="t('autopilot.modePanel.racing')"
             color="primary"
             density="compact"
             hide-details
-            :loading="racingSaving"
-            :disabled="racingSaving"
-            @update:model-value="saveRacing"
           />
           <div class="text-caption text-medium-emphasis mt-1">
             {{ t('autopilot.modePanel.racingHint') }}
@@ -131,9 +128,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useI18n } from '@/i18n'
-import { api } from '@/services/api'
 import type { RoutingScenario, ScenarioPresetView, SmartRoutingConfig } from '@/services/api-types'
 
 const props = defineProps<{
@@ -157,6 +153,7 @@ watch(() => props.config, (newCfg) => {
   localConfig.scenario = newCfg.scenario ?? 'auto'
   localConfig.scenarioPresets = newCfg.scenarioPresets
   localConfig.l2ProbeEnabled = newCfg.l2ProbeEnabled
+  localConfig.racingEnabled = newCfg.racingEnabled ?? false
 }, { deep: true })
 
 // 场景模式选项
@@ -205,34 +202,10 @@ const scenarioSummary = computed(() => {
 })
 
 // 检测是否有变更
-// 竞速模式：独立配置（变更即存，不走整卡保存）
-const racingEnabled = ref(false)
-const racingSaving = ref(false)
-
-onMounted(async () => {
-  try {
-    const cfg = await api.getRacingConfig()
-    racingEnabled.value = cfg.enabled
-  } catch {
-    racingEnabled.value = false
-  }
-})
-
-async function saveRacing() {
-  racingSaving.value = true
-  try {
-    const resp = await api.updateRacingConfig(racingEnabled.value)
-    racingEnabled.value = resp.enabled
-  } catch {
-    racingEnabled.value = !racingEnabled.value
-  } finally {
-    racingSaving.value = false
-  }
-}
-
 const hasChanges = computed(() => {
   return localConfig.costPreference !== props.config.costPreference
     || (localConfig.scenario ?? 'auto') !== (props.config.scenario ?? 'auto')
+    || (localConfig.racingEnabled ?? false) !== (props.config.racingEnabled ?? false)
 })
 
 // 保存配置
@@ -245,6 +218,7 @@ function resetConfig() {
   localConfig.killSwitchActive = props.config.killSwitchActive
   localConfig.costPreference = props.config.costPreference
   localConfig.scenario = props.config.scenario ?? 'auto'
+  localConfig.racingEnabled = props.config.racingEnabled ?? false
 }
 
 // 深拷贝配置（只拷贝前端需要的字段）
@@ -255,6 +229,7 @@ function cloneConfig(src: SmartRoutingConfig): SmartRoutingConfig {
     scenario: src.scenario ?? 'auto',
     scenarioPresets: src.scenarioPresets ? [...src.scenarioPresets] : undefined,
     l2ProbeEnabled: src.l2ProbeEnabled,
+    racingEnabled: src.racingEnabled,
   }
 }
 </script>

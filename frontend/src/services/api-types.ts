@@ -1680,6 +1680,7 @@ export interface SmartRoutingConfig {
   scenario?: RoutingScenario
   scenarioPresets?: ScenarioPresetView[]
   l2ProbeEnabled?: boolean
+  racingEnabled?: boolean
 }
 
 export interface CandidateScore {

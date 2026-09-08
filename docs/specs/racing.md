@@ -9,7 +9,7 @@
 
 | 开关 | 位置 | 语义 |
 |---|---|---|
-| `racing.enabled`（全局） | 智能路由面板 / `PUT /api/racing/config` | 竞速总开关，默认关 |
+| `racing.enabled`（全局） | 智能路由面板「竞速模式」开关（随 `PUT /smart-routing/config` 整卡保存，字段名 `racingEnabled`；另有独立端点 `PUT /api/racing/config` 供脚本直调） | 竞速总开关，默认关 |
 | `racing.enabled`（渠道级） | 渠道编辑 → 自定义参数 | 渠道参与开关：关闭 = 既不做主触发，其候选也不进影子池 |
 
 ## 策略表（代码内常量，`internal/racing/registry.go`）

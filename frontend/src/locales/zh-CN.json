@@ -1366,7 +1366,7 @@
   "autopilot.modePanel.killSwitch": "急停开关（Kill Switch）",
   "autopilot.modePanel.killSwitchHint": "开启后强制关闭智能路由，优先级高于路由模式选择。",
   "autopilot.modePanel.racing": "竞速模式（跨渠道影子请求）",
-  "autopilot.modePanel.racingHint": "首字等待超过自适应阈值时向候选渠道派影子请求，先交付者胜。影子数随价格策略自动搭配：质量优先 3 / 均衡 1 / 价格优先仅更便宜渠道 1。渠道级参与开关在渠道编辑中。",
+  "autopilot.modePanel.racingHint": "首字等待超过自适应阈值时向候选渠道派影子请求，先交付者胜。影子数随价格策略自动搭配：质量优先 3 / 均衡 1 / 价格优先仅更便宜渠道 1。渠道级参与开关在渠道编辑中，改动后点击「保存配置」生效。",
   "autopilot.modePanel.killSwitchActive": "急停开关已激活，智能路由已强制关闭。请先关闭急停开关以启用其他模式。",
   "autopilot.modePanel.costPreference": "价格偏好",
   "autopilot.modePanel.save": "保存配置",
