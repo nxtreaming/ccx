@@ -535,7 +535,6 @@ type DisabledGroupModelInfo struct {
 	QuotaGroup string `json:"quotaGroup,omitempty"`
 	Key        string `json:"key,omitempty"`
 	Model      string `json:"model"`
-	Note       string `json:"note,omitempty"`
 	DisabledAt string `json:"disabledAt"`
 }
 
@@ -2730,7 +2729,7 @@ func (cm *ConfigManager) RestoreKeyModel(apiType string, channelIndex int, apiKe
 
 // DisableGroupModel 永久禁用目标 Key 当前所属配额组的模型。
 // 空配额组不会与其他空组 Key 合并，而是退化为单 Key 限制。
-func (cm *ConfigManager) DisableGroupModel(apiType string, channelIndex int, apiKey, model, note string) (string, int, error) {
+func (cm *ConfigManager) DisableGroupModel(apiType string, channelIndex int, apiKey, model string) (string, int, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -2740,7 +2739,6 @@ func (cm *ConfigManager) DisableGroupModel(apiType string, channelIndex int, api
 	}
 	apiKey = strings.TrimSpace(apiKey)
 	model = strings.TrimSpace(model)
-	note = strings.TrimSpace(note)
 	if apiKey == "" || model == "" {
 		return "", 0, fmt.Errorf("apiKey 和 model 不能为空")
 	}
@@ -2757,15 +2755,6 @@ func (cm *ConfigManager) DisableGroupModel(apiType string, channelIndex int, api
 		if !sameDisabledGroupModel(*dm, apiKey, quotaGroup, model) {
 			continue
 		}
-		if note == "" || dm.Note == note {
-			return quotaGroup, affectedKeyCount, nil
-		}
-		previous := upstream.Clone().DisabledGroupModels
-		dm.Note = note
-		if err := cm.saveConfigLocked(cm.config); err != nil {
-			upstream.DisabledGroupModels = previous
-			return "", 0, err
-		}
 		return quotaGroup, affectedKeyCount, nil
 	}
 
@@ -2773,7 +2762,6 @@ func (cm *ConfigManager) DisableGroupModel(apiType string, channelIndex int, api
 	entry := DisabledGroupModelInfo{
 		QuotaGroup: quotaGroup,
 		Model:      model,
-		Note:       note,
 		DisabledAt: time.Now().Format(time.RFC3339),
 	}
 	if quotaGroup == "" {

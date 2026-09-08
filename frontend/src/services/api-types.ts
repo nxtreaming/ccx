@@ -102,7 +102,6 @@ export interface DisabledGroupModelInfo {
   quotaGroup: string
   key?: string
   model: string
-  note?: string
   disabledAt: string
 }
 

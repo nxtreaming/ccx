@@ -317,10 +317,10 @@ export class ApiService {
     })
   }
 
-  async disableGroupModel(kind: 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors', channelId: number, apiKey: string, model: string, note?: string): Promise<GroupModelPolicyResponse> {
+  async disableGroupModel(kind: 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors', channelId: number, apiKey: string, model: string): Promise<GroupModelPolicyResponse> {
     return this.request(`/${kind}/channels/${channelId}/keys/group-model/disable`, {
       method: 'POST',
-      body: JSON.stringify({ apiKey, model, note: note?.trim() || undefined })
+      body: JSON.stringify({ apiKey, model })
     })
   }
 

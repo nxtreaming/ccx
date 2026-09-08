@@ -614,34 +614,20 @@
                   <v-divider class="my-3" />
 
                   <div class="text-subtitle-2 font-weight-medium mb-1">{{ t('channelCard.groupModelPolicy') }}</div>
-                  <v-row dense>
-                    <v-col cols="12" sm="6">
-                      <v-combobox
-                        v-model="groupModelForm.model"
-                        :items="modelOptions"
-                        item-title="title"
-                        item-value="value"
-                        :return-object="false"
-                        :label="t('channelCard.groupModelModel')"
-                        :placeholder="t('channelCard.groupModelModelPlaceholder')"
-                        variant="outlined"
-                        density="compact"
-                        clearable
-                        @update:model-value="submitGroupModelDisable"
-                      />
-                    </v-col>
-                    <v-col cols="12" sm="6">
-                      <v-text-field
-                        v-model="groupModelForm.note"
-                        :label="t('channelCard.groupModelNote')"
-                        :placeholder="t('channelCard.groupModelNotePlaceholder')"
-                        variant="outlined"
-                        density="compact"
-                        clearable
-                      />
-                    </v-col>
-                  </v-row>
-                  <!-- 无确认按钮：模型选定即暂存排除（备注需先填），随渠道主保存提交；误排可在此撤销或保存后经记录恢复。 -->
+                  <v-combobox
+                    v-model="groupModelForm.model"
+                    :items="modelOptions"
+                    item-title="title"
+                    item-value="value"
+                    :return-object="false"
+                    :label="t('channelCard.groupModelModel')"
+                    :placeholder="t('channelCard.groupModelModelPlaceholder')"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    @update:model-value="submitGroupModelDisable"
+                  />
+                  <!-- 无确认按钮：模型选定即暂存排除，随渠道主保存提交；误排可在此撤销或保存后经记录恢复。 -->
                   <div class="text-caption text-medium-emphasis mt-2">{{ t('channelCard.groupModelInlineHint') }}</div>
                   <div v-if="pendingDisablesForEditingKey.length" class="d-flex flex-wrap ga-2 mt-2">
                     <v-chip
@@ -654,7 +640,7 @@
                       @click:close="unstageGroupModelDisable(pending.key, pending.model)"
                     >
                       <v-icon start size="14">mdi-clock-outline</v-icon>
-                      {{ pending.model }}{{ pending.note ? ` · ${pending.note}` : '' }}
+                      {{ pending.model }}
                     </v-chip>
                   </div>
                 </div>
@@ -1371,7 +1357,7 @@
                 <strong>{{ record.model }}</strong>
               </v-list-item-title>
               <v-list-item-subtitle class="text-caption">
-                {{ record.note || t('channelCard.groupModelManualNote') }} · {{ formatDisabledTime(record.disabledAt) }}
+                {{ t('channelCard.groupModelManualNote') }} · {{ formatDisabledTime(record.disabledAt) }}
               </v-list-item-subtitle>
               <template #append>
                 <v-btn
@@ -1519,7 +1505,7 @@ const emit = defineEmits<{
   'update:proxyUrl': [string]
   'restore-key': [string]
   'restore-key-model': [string, string]
-  'stage-group-model-disable': [string, string, string?]
+  'stage-group-model-disable': [string, string]
   'unstage-group-model-disable': [string, string]
   'restore-group-model': [DisabledGroupModelInfo]
   'remove-key': [string]
@@ -1537,7 +1523,7 @@ const apiKeyError = ref('')
 const duplicateKeyIndex = ref<number | null>(null)
 const copiedKey = ref('')
 const groupModelEditing = ref<ChannelApiKeyRow | null>(null)
-const groupModelForm = ref({ model: '', note: '' })
+const groupModelForm = ref({ model: '' })
 // Key 行统一详情展开（倍率 + 分组模型排除同一块）：一次只展开一行，切换即重置编辑态。
 const expandedDetailKey = ref<string | null>(null)
 const multiplierEditing = ref<ChannelApiKeyRow | null>(null)
@@ -1769,7 +1755,7 @@ const toggleKeyDetail = (row: ChannelApiKeyRow) => {
   }
   openMultiplierEditor(row)
   groupModelEditing.value = row
-  groupModelForm.value = { model: '', note: '' }
+  groupModelForm.value = { model: '' }
   emit('ensure-models-loaded')
   expandedDetailKey.value = row.key
 }
@@ -1825,8 +1811,8 @@ const submitGroupModelDisable = (model: unknown = groupModelForm.value.model) =>
   const row = groupModelEditing.value
   const trimmed = (model ?? '').toString().trim()
   if (!row || !trimmed) return
-  emit('stage-group-model-disable', row.key, trimmed, groupModelForm.value.note.trim() || undefined)
-  groupModelForm.value = { model: '', note: '' }
+  emit('stage-group-model-disable', row.key, trimmed)
+  groupModelForm.value = { model: '' }
 }
 
 const unstageGroupModelDisable = (key: string, model: string) => {

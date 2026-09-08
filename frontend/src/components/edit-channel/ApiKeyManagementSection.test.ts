@@ -429,7 +429,7 @@ describe('分组模型排除行内化', () => {
 
     const events = wrapper.emitted('stage-group-model-disable')
     expect(events).toBeTruthy()
-    expect(events![0]).toEqual(['sk-1', 'kimi-k3', undefined])
+    expect(events![0]).toEqual(['sk-1', 'kimi-k3'])
     // 不再即时提交（旧 disable-group-model 事件随暂存化移除），面板保持展开
     expect(wrapper.emitted('disable-group-model')).toBeFalsy()
     expect(wrapper.text()).toContain('channelCard.groupModelInlineHint')
