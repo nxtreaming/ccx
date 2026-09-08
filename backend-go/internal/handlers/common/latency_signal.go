@@ -97,8 +97,9 @@ func MaybeLearnLatencyDegradation(c *gin.Context, channelUID, apiKey, model stri
 }
 
 // recordPrimaryRacingTriggerEvidence 慢证据信号二：竞速触发（首字超家族阈值）。
-// 主分支 apiKey 用 selection 的 key 身份 pin 反查（失败返回空则跳过——
-// 不强求，败出豁免点还会记一次更准的）。
+// 主分支 apiKey 用 selection 的 key 身份 pin 反查；反查不到即跳过本信号——
+// 不得 fallback 到 APIKeys[0] 把慢证据记到未参与请求的 keyHash 上
+// （败出豁免点还会用精确 attempt key 记一次更准的）。
 func recordPrimaryRacingTriggerEvidence(c *gin.Context, selection *scheduler.SelectionResult, requestModel string) {
 	if selection == nil || selection.Upstream == nil {
 		return
@@ -106,9 +107,6 @@ func recordPrimaryRacingTriggerEvidence(c *gin.Context, selection *scheduler.Sel
 	apiKey := ""
 	if selection.ExecutionKeyIdentity != "" {
 		apiKey = autopilot.ResolvePinnedAPIKey(selection.Upstream, selection.ExecutionKeyIdentity)
-	}
-	if apiKey == "" && len(selection.Upstream.APIKeys) > 0 {
-		apiKey = selection.Upstream.APIKeys[0]
 	}
 	model := selection.ExecutionModel
 	if model == "" {
