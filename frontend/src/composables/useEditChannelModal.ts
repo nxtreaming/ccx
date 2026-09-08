@@ -130,6 +130,7 @@ export function useEditChannelModal(props: ResolvedEditChannelModalProps, emit: 
     customHeaders: {} as Record<string, string>,
     proxyUrl: '',
     proxyPreferDirect: false,
+    racing: undefined as { enabled?: boolean } | undefined,
     costMultiplier: null as string | number | null,
     maxGroupMultiplier: null as string | number | null,
     channelPaymentCurrency: '',
@@ -356,6 +357,7 @@ export function useEditChannelModal(props: ResolvedEditChannelModalProps, emit: 
       customHeaders: { ...form.customHeaders },
       proxyUrl: form.proxyUrl.trim(),
       proxyPreferDirect: form.proxyPreferDirect,
+      racing: form.racing,
       remark: form.remark.trim(),
       costMultiplier: form.costMultiplier,
       maxGroupMultiplier: form.maxGroupMultiplier,
@@ -472,6 +474,7 @@ export function useEditChannelModal(props: ResolvedEditChannelModalProps, emit: 
     form.customHeaders = {}
     form.proxyUrl = ''
     form.proxyPreferDirect = false
+    form.racing = undefined
     form.costMultiplier = null
     form.maxGroupMultiplier = null
     form.channelPaymentCurrency = ''
@@ -568,6 +571,7 @@ export function useEditChannelModal(props: ResolvedEditChannelModalProps, emit: 
     form.customHeaders = { ...(channel.customHeaders || {}) }
     form.proxyUrl = channel.proxyUrl || ''
     form.proxyPreferDirect = !!channel.proxyPreferDirect
+    form.racing = channel.racing ? { ...channel.racing } : undefined
     form.costMultiplier = channel.costMultiplier ?? null
     form.maxGroupMultiplier = channel.maxGroupMultiplier ?? null
     form.channelPaymentCurrency = channel.channelPaymentCurrency ?? ''

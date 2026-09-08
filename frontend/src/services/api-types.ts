@@ -295,6 +295,7 @@ export interface Channel {
   promotionUntil?: string    // 促销期截止时间（ISO 格式）
   latencyTestTime?: number   // 延迟测试时间戳（用于 5 分钟后自动清除显示）
   lowQuality?: boolean       // 低质量渠道标记：启用后强制本地估算 token，偏差>5%时使用本地值
+  racing?: { enabled?: boolean }  // 渠道级竞速参与开关（不参与=不做主触发也不做影子目标）
   injectDummyThoughtSignature?: boolean  // Gemini 特定：为 functionCall 注入 dummy thought_signature（兼容第三方 API）
   stripThoughtSignature?: boolean        // Gemini 特定：移除 thought_signature 字段（兼容旧版 Gemini API）
   passbackReasoningContent?: boolean     // Claude 协议特定：将 thinking 块转为 reasoning_content 回传（兼容 mimo 等上游）
@@ -793,6 +794,8 @@ export interface ChannelLogEntry {
   requestSource?: string
   selectionReason?: string
   selectionTraceSummary?: string
+  racingRole?: string
+  racingStatus?: string
 
   // 请求生命周期状态
   status: string  // pending/connecting/first_byte/streaming/completed/failed/cancelled

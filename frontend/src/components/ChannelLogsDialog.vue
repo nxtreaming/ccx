@@ -127,6 +127,12 @@
                 <v-chip v-else-if="log.requestSource === 'healthcheck'" size="small" color="default" variant="tonal">
                   {{ t('channelLogs.sourceHealthCheck') }}
                 </v-chip>
+                <v-chip v-if="log.racingStatus === 'won'" size="small" color="success" variant="flat" prepend-icon="mdi-flag-checkered">
+                  {{ t('channelLogs.racing.won') }}
+                </v-chip>
+                <v-chip v-if="log.racingStatus === 'lost'" size="small" color="default" variant="outlined" prepend-icon="mdi-flag-outline">
+                  {{ t('channelLogs.racing.lost') }}
+                </v-chip>
                 <span v-if="log.originalModel" class="text-medium-emphasis log-meta">{{ log.originalModel }} →</span>
                 <span class="font-weight-medium log-model">{{ log.model }}</span>
                 <v-chip
@@ -304,6 +310,7 @@ const requestStatusColor = (status: string): string => {
     case 'failed': return 'error'
     case 'cancelled':
     case 'canceled': return 'warning'
+    case 'racing_lost': return 'secondary'
     case 'streaming': return 'info'
     case 'first_byte': return 'primary'
     case 'connecting': return 'warning'
@@ -322,6 +329,7 @@ const requestStatusText = (status: string): string => {
     case 'failed': return t('channelLogs.status.failed')
     case 'cancelled':
     case 'canceled': return t('channelLogs.status.cancelled')
+    case 'racing_lost': return t('channelLogs.status.racingLost')
     default: return status
   }
 }

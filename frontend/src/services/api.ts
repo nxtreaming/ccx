@@ -1604,6 +1604,19 @@ export class ApiService {
     })
   }
 
+  /** 获取竞速模式全局配置 */
+  async getRacingConfig(): Promise<{ enabled: boolean }> {
+    return this.request('/racing/config')
+  }
+
+  /** 更新竞速模式全局开关 */
+  async updateRacingConfig(enabled: boolean): Promise<{ enabled: boolean }> {
+    return this.request('/racing/config', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    })
+  }
+
   /** 获取路由决策追踪列表 */
   async getAutopilotTraces(params?: {
     limit?: number

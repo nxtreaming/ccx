@@ -182,6 +182,23 @@
                 />
               </div>
 
+              <!-- 竞速参与：卡片式设置行（参与=可作主触发也可作影子目标） -->
+              <div class="proxy-direct-row mt-4" :class="{ 'proxy-direct-row--on': form.racing?.enabled === true }">
+                <v-icon size="20" class="proxy-direct-row-icon">mdi-flag-checkered</v-icon>
+                <div class="flex-grow-1">
+                  <div class="text-body-2 font-weight-medium">{{ t('channelEditor.transport.racing.label') }}</div>
+                  <div class="text-caption text-medium-emphasis">{{ t('channelEditor.transport.racing.hint') }}</div>
+                </div>
+                <v-switch
+                  :model-value="form.racing?.enabled === true"
+                  color="primary"
+                  density="compact"
+                  hide-details
+                  class="proxy-direct-row-switch"
+                  @update:model-value="updateForm({ racing: { enabled: $event === true } })"
+                />
+              </div>
+
               <div class="mt-6">
                 <CustomHeadersSection
                   :headers="customHeadersArray"

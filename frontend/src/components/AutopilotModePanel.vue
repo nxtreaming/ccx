@@ -89,6 +89,23 @@
           </div>
         </div>
 
+        <!-- 竞速模式（独立配置，变更即存） -->
+        <div class="mb-4">
+          <v-switch
+            v-model="racingEnabled"
+            :label="t('autopilot.modePanel.racing')"
+            color="primary"
+            density="compact"
+            hide-details
+            :loading="racingSaving"
+            :disabled="racingSaving"
+            @update:model-value="saveRacing"
+          />
+          <div class="text-caption text-medium-emphasis mt-1">
+            {{ t('autopilot.modePanel.racingHint') }}
+          </div>
+        </div>
+
         <!-- 保存按钮 -->
         <div class="d-flex ga-2">
           <v-btn
@@ -114,8 +131,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
+import { api } from '@/services/api'
 import type { RoutingScenario, ScenarioPresetView, SmartRoutingConfig } from '@/services/api-types'
 
 const props = defineProps<{
@@ -187,6 +205,31 @@ const scenarioSummary = computed(() => {
 })
 
 // 检测是否有变更
+// 竞速模式：独立配置（变更即存，不走整卡保存）
+const racingEnabled = ref(false)
+const racingSaving = ref(false)
+
+onMounted(async () => {
+  try {
+    const cfg = await api.getRacingConfig()
+    racingEnabled.value = cfg.enabled
+  } catch {
+    racingEnabled.value = false
+  }
+})
+
+async function saveRacing() {
+  racingSaving.value = true
+  try {
+    const resp = await api.updateRacingConfig(racingEnabled.value)
+    racingEnabled.value = resp.enabled
+  } catch {
+    racingEnabled.value = !racingEnabled.value
+  } finally {
+    racingSaving.value = false
+  }
+}
+
 const hasChanges = computed(() => {
   return localConfig.costPreference !== props.config.costPreference
     || (localConfig.scenario ?? 'auto') !== (props.config.scenario ?? 'auto')
