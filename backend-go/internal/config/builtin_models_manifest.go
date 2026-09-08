@@ -245,6 +245,7 @@ func deepseekModelIDs() []string {
 	return []string{
 		"deepseek-v4-pro",
 		"deepseek-v4-flash",
+		"deepseek-v4-flash-vision-exp",
 	}
 }
 

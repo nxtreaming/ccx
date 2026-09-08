@@ -597,6 +597,21 @@ func TestResolveUpstreamCapability_DeepSeekV4DatedSuffixes(t *testing.T) {
 			outputPrice:         4.5,
 		},
 		{
+			name: "flash-vision",
+			models: []string{
+				"deepseek-v4-flash-vision-exp",
+				"deepseek-v4-flash-vision",
+				"DeepSeek-V4-Flash-Vision-Exp",
+				"deepseek-v4-flash-vision-0821",
+				"deepseek-v4-flash-vision-2026-08-21",
+				"deepseek-v4-flash-vision-260821",
+				"deepseek-v4-flash-vision-20260821",
+				"deepseek-ai/deepseek-v4-flash-vision-exp",
+			},
+			inputCacheMissPrice: 1.5,
+			outputPrice:         4.5,
+		},
+		{
 			name: "pro",
 			models: []string{
 				"deepseek-v4-pro",

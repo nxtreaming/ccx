@@ -87,6 +87,7 @@ const modelPriorityPatterns: RegExp[] = [
 
   // DeepSeek
   /deepseek-v4-pro/i,
+  /deepseek-v4-flash-vision/i,
   /deepseek-v4-flash/i,
   /deepseek-v4/i,
   /deepseek-v3\.2/i,
