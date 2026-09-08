@@ -83,7 +83,7 @@
 - 分区（`useEditChannelSectionNav.ts`，侧导航固定三项：basic/auth/custom）：
   1. basic（基础信息）— `BasicInfoSection`（多行 baseUrls（条件可编辑，见下）、官网 website + 快捷按钮、渠道备注输入（12e52cf9 恢复，≤10 字符，与渠道名称解耦））+ `ProtocolModelAvailability`（协议模型清单/重新发现）
   2. auth（认证管理）— `ApiKeyManagementSection`（密钥增删、**拖拽排序与置顶/置底**、复制、暂停/恢复、拉黑恢复、**每 Key 模型数 chip**、Key 统一详情（倍率+模型排除，行内展开）、provider 凭证如 volcengine/kimi/mimo/compshare/minimax、copilot OAuth）
-  3. custom（自定义参数）— 代理服务器 `form.proxyUrl`（v-text-field，clearable，`mdi-vpn` 前置图标）+ **代理直连优先开关 `form.proxyPreferDirect`**（876eaf7e，仅填写代理后有意义）+ `CustomHeadersSection` + **渠道计费四字段**（充值币种/充值金额/渠道币种/到账金额）
+  3. custom（自定义参数）— 代理服务器 `form.proxyUrl`（v-text-field，clearable，`mdi-vpn` 前置图标）+ **代理直连优先开关 `form.proxyPreferDirect`**（876eaf7e，仅填写代理后有意义）+ **竞速参与开关 `form.racing.enabled`**（mdi-flag-checkered 卡片式行，参与=可作主触发也可作影子目标，全局竞速开启时生效）+ `CustomHeadersSection` + **渠道计费四字段**（充值币种/充值金额/渠道币种/到账金额）
   - accounts 区（仅 new-api / generic 托管，`EditChannelModal.vue:107` 的 `v-if`）仍在 DOM 中渲染 `NewApiAccountPanel`，但**不进侧导航**
   - redirect / advanced 分区已随 09c4996d「白名单字段精简」删除：`ModelMappingSection`、`ModelCapabilitySection`、`EmbeddingCompatibilitySection`、`SupportedModelsFilter`、`AdvancedOptionsSection`、`TransportConfigGroup`、`StreamTimeoutSection`、`RateLimitGroup` 共 8 个子组件整体移除
 - 编辑副标题按渠道来源三选一：官方直连 `managed.editSubtitle`（"{provider} 官方渠道 · 管理账号凭证"）、provider 模板 `providerEditSubtitle`、自定义托管 `customEditSubtitle`
@@ -255,7 +255,7 @@
 - 用途：查看单渠道最近 50 条请求日志（状态码、协议、reasoning effort、时延、熔断依据），3s 轮询。
 - 触发入口：`ChannelOrchestration.vue:457` 行操作「历史」按钮 → `openLogsDialog(channel)`。
 - props：`modelValue`、`channelIndex`、`channelName`、`channelType`、`protocolRoutes?`；emit `update:modelValue`。
-- 主要内容：加载态 spinner、空态（含熔断依据 alert）、日志列表（状态码 chip、请求状态、interfaceType、agentRole、operation、requestSource、模型映射、reasoning、keyMask、baseUrl、时延分解、可展开 errorInfo、复制单条、autopilotTrace chip）。
+- 主要内容：加载态 spinner、空态（含熔断依据 alert）、日志列表（状态码 chip、请求状态、interfaceType、agentRole、operation、requestSource、**竞速徽章 `racingStatus`（won=竞速获胜 flag-checkered / lost=竞速败出）+ 请求状态 `racing_lost`**、模型映射、reasoning、keyMask、baseUrl、时延分解、可展开 errorInfo、复制单条、autopilotTrace chip）。
 - 状态流转：`watch(modelValue)` 打开时清空并 `fetchLogs` + 开启轮询（`useGlobalTick(3000)`）；切换 channel/type/routes 重新拉取；关闭停止轮询。
 - 后端调用：`api.getChannelLogs(kind, index)`（对每条 protocolRoute `Promise.allSettled`，合并去重取前 50）。
 - 联动：日志 autopilotTrace chip → `openAutopilotTrace` 打开内嵌 `AutopilotTraceDetailDialog`。
@@ -447,7 +447,7 @@
 
 - 路径：`frontend/src/components/AutopilotModePanel.vue`、`AutopilotDiagnosePanel.vue`
 - 触发入口：均由 `AutopilotView.vue` 直接内嵌渲染。
-- AutopilotModePanel：props `config: SmartRoutingConfig`、`saving`；emit `update:config`。字段：killSwitch(只读开关+警告 alert)、costPreference(select)。
+- AutopilotModePanel：props `config: SmartRoutingConfig`、`saving`；emit `update:config`。字段：killSwitch(只读开关+警告 alert)、costPreference(select)、**竞速模式开关（独立配置 `GET/PUT /api/racing/config`，变更即存不走整卡保存；hint 说明影子数随价格策略自动搭配：质量优先 3 / 均衡 1 / 价格优先仅更便宜渠道 1）**。
 - AutopilotDiagnosePanel：无 props；本地 `form`（model/channelKind/agentRole/estTokens/toolUseNeed/reasoningNeed/hasImage）。结果：mode/taskClass/candidates 表（候选行为 (渠道, 模型) 粒度并展示 CandidateKey/模型名，78ed757f）。
 
 布局示意图（两面板均为内嵌 outlined 卡，由 AutopilotView 堆叠渲染）：
@@ -461,6 +461,7 @@ AutopilotModePanel:
 │ 场景模式 [select·停用时禁用] + 描述 caption│
 │   (非 auto 场景追加: 预设参数摘要)         │
 │ 价格偏好 [select·条件禁用] + 描述 caption  │
+│ 竞速模式 [switch·变更即存] + 策略说明 caption│
 │                     [保存配置][重置]       │ ← 无改动均禁用
 └──────────────────────────────────────────┘
 

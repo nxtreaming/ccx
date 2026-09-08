@@ -1,0 +1,69 @@
+# 竞速模式（Racing：跨渠道影子请求）
+
+> 首字明显慢的渠道（如中转站排队）触发跨渠道影子竞速：谁先交付有效响应，客户端用谁。
+> 机制参照兄弟项目 kiro.rs 的对冲竞速（hedging），裁决点借 CCX preflight 缓冲的"未提交可弃"窗口。
+
+## 用户可见面（极简）
+
+只有两个开关，其余行为参数全部由策略自动推导：
+
+| 开关 | 位置 | 语义 |
+|---|---|---|
+| `racing.enabled`（全局） | 智能路由面板 / `PUT /api/racing/config` | 竞速总开关，默认关 |
+| `racing.enabled`（渠道级） | 渠道编辑 → 自定义参数 | 渠道参与开关：关闭 = 既不做主触发，其候选也不进影子池 |
+
+## 策略表（代码内常量，`internal/racing/registry.go`）
+
+按请求生效的 CostPreference（X-Cost-Preference > 场景预设 > 全局 Mode）推导：
+
+| CostPreference | 影子数 | 流式触发 floor | 影子候选过滤 |
+|---|---|---|---|
+| quality_first | 3 | 2s | 无限制 |
+| balanced（默认） | 1 | 3s | 无限制 |
+| cost_first | 1 | 5s | 仅综合倍率 ≤ 主候选一半（渠道 CostMultiplier × key GroupMultiplier）；无合适候选不派 |
+
+其余内部常量：分位数 p90、样本门槛 20、观测窗口 15 分钟、窗口容量 512、全局并发影子信号量 12、非流式 floor 10s。
+
+## 触发阈值
+
+`threshold = p90(近 15 分钟同家族×阶段成功样本，n≥20) 否则 floor，再 clamp[floor, ceiling]`
+
+- 维度：模型家族（claude/gpt/gemini/other）× 阶段（流式首字 / 非流式完成时长），家族全局共用一个窗口（慢性慢渠道持续超 p90 会被持续竞速）。
+- ceiling：流式 = 渠道 StreamFirstContentTimeoutMs 解析值；非流式 = 渠道 ResponseHeaderTimeout（同源超时，等过它请求已失败）。
+- 样本消赢家偏差：流式分支出过首字即记（含被取消的败者）；非流式仅记赢家完成耗时。
+- 计时起点 = 外壳 attemptStartedAt（含渠道内 key 轮转等待，符合用户体感；与 kiro 的 attempt 级重置刻意不同）。
+
+## 影子候选（五元组粒度）
+
+1. 主源：SmartRouter 排名缓存（`ABTestSampler.CandidateCache()`），`autopilot.RacingShadowCandidates` 只排除与主尝试相同的五元组（channelUID+keyIdentity+actualModel）——同渠道不同 key / 不同执行模型可作影子。
+2. 回退：缓存空 → `SelectChannelWithOptions` 按 FailedRoutes（已用路由）重选（纯跨渠道）。
+3. 执行：候选反查渠道构造 SelectionResult + pin（`WithExecutionPin` 经 `WithSelectionTrace` 透传），reason 记 `racing_shadow`。
+
+## 裁决与分支治理
+
+- **提交闸门** `racing.Gate`（claim-once + meta 互斥）：claim 点在 preflight 首字确认后 / 非流式完整响应校验后、写客户端之前；胜者 claim 即取消其余分支（ctx 级），败者 claim 失败以 `ErrRacingSuperseded` 收尾。
+- **败者治理**：不计失败指标、不熔断、不拉黑、不标 URL 失败、不参与自学习（工具调用/严重度/上下文棘轮）；渠道日志终态 `racing_lost` + `racingStatus=lost`，赢家 `racingStatus=won`。影子真实上游错误（超时/500/拉黑）仍照常记账。
+- **防误判赢家**：被取消的影子可能以空流 EOF → 内部轮转 → context.Canceled + Handled=true 收尾，pickWinner 判据为 `Handled && LastError == nil`；cancel 连带的空流响应直接按败出终止。
+- 影子赢时分支 gin keys 回拷主 context（responseText/lastUserMessage 不丢）；primary selection 补记 trace 终态（防悬空）。
+- 防放大：每请求最多 maxShadows 条（策略表）；全局并发信号量 12；影子分支内禁递归竞速；X-Channel pin / 含图请求 / 非四对话协议不竞速。
+- 影子用自己的完整 ceiling 超时窗口（从影子发出起算），不共享主链剩余 deadline。
+
+## 后端结构
+
+| 位置 | 职责 |
+|---|---|
+| `internal/racing/` | 阈值注册表、Gate、信号量、策略表、ErrRacingSuperseded |
+| `internal/config/racing_config.go` | 全局/渠道级开关 + ResolveRacingPolicy + SetRacingEnabled |
+| `internal/handlers/common/racing.go` | 编排器 RunRacingAttempt（武装检查/定时器/影子派发/裁决归并/样本记录） |
+| `internal/handlers/common/multi_channel_failover.go` | 外壳接线（TrySelectedChannelFunc 增加 gin context 参数；AlsoFailedRoutes 并入 failedRoutes） |
+| `internal/handlers/common/upstream_failover.go` | echo 头块 meta 锁互斥、败者分类豁免（先于 isClientSideError）、成功路径 won 标记、日志角色 |
+| `internal/handlers/common/stream_processor.go` + 4 协议 handler | 流式/非流式 claim 点 |
+| `internal/autopilot/racing_candidates.go` | 五元组候选选取 |
+| `main.go` | RacingHub 注入 + `/api/racing/config` |
+
+## 与 kiro.rs 的刻意偏离
+
+1. 只做首字/完成阶段竞速，无响应头阶段（CCX preflight 闸门已覆盖主要收益）。
+2. 影子用独立完整超时窗口（CCX preflight 超时是 per-attempt 口径，共享剩余窗口会让 5s 短超时渠道竞速失效）。
+3. 候选是五元组绑定（跨渠道+同渠道换绑定），非 kiro 的同模型换凭据。
+4. 无 SQLite 分钟桶预热（重启后 20 样本内走 floor）；样本记流式败者（消赢家偏差）。
