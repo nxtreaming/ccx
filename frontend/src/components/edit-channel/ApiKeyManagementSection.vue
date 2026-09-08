@@ -601,7 +601,7 @@
                   </v-alert>
                   <!-- 无独立保存按钮：改动暂存表单，随渠道主保存一并落盘；「公开 Key」由用户自选消耗策略表达。 -->
                   <div class="d-flex align-center ga-2 mt-3 text-caption text-medium-emphasis">
-                    <v-icon size="14">mdi-content-save-clock-outline</v-icon>
+                    <v-icon size="14">mdi-content-save-edit-outline</v-icon>
                     <span>{{ t('subscription.keyMultiplier.stagedHint') }}</span>
                   </div>
 

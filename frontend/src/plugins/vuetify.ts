@@ -273,6 +273,11 @@ import {
   mdiVpn,
   mdiScaleBalance,
   mdiMagnifyScan,
+  mdiFlagCheckered,
+  mdiFlagOutline,
+  mdiLinkPlus,
+  mdiSwapHorizontalCircle,
+  mdiContentSaveEditOutline,
 } from '@mdi/js'
 
 // 图标名称到 SVG path 的映射 (使用 kebab-case)
@@ -553,6 +558,17 @@ const iconMap: Record<string, string> = {
   'connection': mdiConnection,
   'lan-connect': mdiLanConnect,
   'scale-balance': mdiScaleBalance,
+
+  // 竞速模式
+  'flag-checkered': mdiFlagCheckered,
+  'flag-outline': mdiFlagOutline,
+
+  // 能力测试
+  'link-plus': mdiLinkPlus,
+  'swap-horizontal-circle': mdiSwapHorizontalCircle,
+
+  // Key 倍率暂存提示
+  'content-save-edit-outline': mdiContentSaveEditOutline,
 }
 
 // 自定义 SVG iconset - 处理 mdi-xxx 字符串格式
