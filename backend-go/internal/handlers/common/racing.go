@@ -168,8 +168,9 @@ func gateFromContext(c *gin.Context) *racing.Gate {
 }
 
 // racingClaimClientCommit 竞速分支向客户端写出响应前的提交裁决。
-// 无竞速闸门时直接放行（零开销路径）；claim 成功即成为赢家并取消其余分支；
-// 失败返回 false，调用方应释放上游资源并以 racing.ErrRacingSuperseded 收尾。
+// 无竞速闸门时直接放行（零开销路径）；claim 成功即成为赢家并取消其余分支，
+// 分支 writer 同步 Commit 桥接到真实客户端 writer；失败 Discard 分支 writer，
+// 调用方应释放上游资源并以 racing.ErrRacingSuperseded 收尾。
 func racingClaimClientCommit(c *gin.Context) bool {
 	gate := gateFromContext(c)
 	if gate == nil {
@@ -182,7 +183,13 @@ func racingClaimClientCommit(c *gin.Context) bool {
 		}
 	}
 	if !gate.ClaimBy(branchID) {
+		if bw, ok := c.Writer.(*racingBranchWriter); ok {
+			bw.Discard()
+		}
 		return false
+	}
+	if bw, ok := c.Writer.(*racingBranchWriter); ok {
+		bw.Commit()
 	}
 	SetChannelLogRacingWon(c)
 	return true
@@ -329,13 +336,15 @@ type racingRuns struct {
 	trySelectedChannel TrySelectedChannelFunc
 	behavior           racing.Behavior
 	thresholdMs        int
-	runs               []*racingShadowRun
-	results            map[int]MultiChannelAttemptResult
-	nextBranchID       int
-	usedIdentities     map[string]bool // 已占用候选身份（主 + 已派影子）
-	usedRouteKeys      map[scheduler.ChannelRouteKey]bool
-	failedRouteKeys    []scheduler.ChannelRouteKey
-	spawned            bool
+	// clientWriter 真实客户端 writer（主分支包装前的原值），影子分支 writer 的桥接目标。
+	clientWriter    gin.ResponseWriter
+	runs            []*racingShadowRun
+	results         map[int]MultiChannelAttemptResult
+	nextBranchID    int
+	usedIdentities  map[string]bool // 已占用候选身份（主 + 已派影子）
+	usedRouteKeys   map[scheduler.ChannelRouteKey]bool
+	failedRouteKeys []scheduler.ChannelRouteKey
+	spawned         bool
 }
 
 // RunRacingAttempt 包装一次渠道尝试：竞速未武装时行为与直接调用闭包完全一致；
@@ -372,6 +381,10 @@ func RunRacingAttempt(
 	thresholdMs := hub.Registry.ThresholdMs(family, stage, floorMs, ceilingMs)
 
 	primaryCost := racingEffectiveCostMultiplier(in.Selection.Upstream, in.Selection.ExecutionKeyIdentity)
+	// 主分支同样经分支 writer 写出：真实客户端 writer 只被 claim 赢家触碰
+	// （影子分支见 startShadow），分支间不再共享响应头 map。
+	origWriter := c.Writer
+	c.Writer = newRacingBranchWriter(origWriter)
 	runs := &racingRuns{
 		gate:               gate,
 		hub:                hub,
@@ -379,6 +392,7 @@ func RunRacingAttempt(
 		trySelectedChannel: trySelectedChannel,
 		behavior:           behavior,
 		thresholdMs:        thresholdMs,
+		clientWriter:       origWriter,
 		results:            make(map[int]MultiChannelAttemptResult),
 		nextBranchID:       1,
 		usedIdentities: map[string]bool{
@@ -396,6 +410,7 @@ func RunRacingAttempt(
 	c.Request = origRequest.WithContext(primaryBranchCtx)
 	defer func() {
 		c.Request = origRequest
+		c.Writer = origWriter
 		primaryCancel()
 	}()
 
@@ -521,11 +536,10 @@ func (r *racingRuns) startShadow(c *gin.Context, sel *scheduler.SelectionResult)
 
 	shadowC := c.Copy()
 	shadowC.Request = c.Request.WithContext(shadowCtx)
-	// gin 的 Copy() 不复制 Writer（副本 Writer 为 nil），而 TryUpstreamWithAllKeys
-	// 全链路假设 c.Writer 可用（echo 回显头、handleSuccess 写响应）。回填主 Writer：
-	// 谁能写由提交闸门裁决（claim-once 单写者；pre-commit 头写入经 MetaLock 互斥），
-	// 败者 claim 失败后不再触碰 Writer。
-	shadowC.Writer = c.Writer
+	// gin 的 Copy() 不复制 Writer（副本 Writer 为 nil）。影子挂独立分支 writer：
+	// pre-commit 写私有缓冲，claim 赢家 Commit 时桥接到真实客户端 writer，
+	// 败者 Discard 后写出静默丢弃——真实 writer 全程只被赢家触碰。
+	shadowC.Writer = newRacingBranchWriter(r.clientWriter)
 	setBranchContext(shadowC, r.gate, racing.RoleShadow, branchID)
 
 	run := &racingShadowRun{
@@ -773,7 +787,8 @@ func recordRacingNonStreamSample(family racing.Family, branchStartedAt time.Time
 }
 
 // writeEchoMappingHeaders 写出/清除自动模型映射回显头。
-// 竞速场景由调用方在闸门 meta 锁内调用（串行化 http.Header 并发写）。
+// 竞速场景分支响应头经分支 writer 隔离（racingBranchWriter），无并发写竞争，
+// 只有 claim 赢家的头会在 Commit 时并入真实客户端 writer。
 func writeEchoMappingHeaders(c *gin.Context, cfgManager *config.ConfigManager, appliedMappedModel, actualAttemptModel, model string) {
 	echoMapping := appliedMappedModel != "" && cfgManager.GetAutopilotRouting().ModelMapping.EchoMappedModel
 	if echoMapping {

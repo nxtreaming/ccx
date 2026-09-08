@@ -2,6 +2,7 @@ package common_test
 
 import (
 	"errors"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +14,12 @@ import (
 	"github.com/BenedictKing/ccx/internal/scheduler"
 	"github.com/gin-gonic/gin"
 )
+
+// newRacingGinContext 竞速测试专用 gin context：必须带真实 ResponseRecorder——
+// 分支 writer 在 claim 赢家 Commit 时向真实 writer 桥接，nil recorder 会 panic。
+func newRacingGinContext() *gin.Context {
+	return newTestGinContext(httptest.NewRecorder())
+}
 
 // racingTestEnv 竞速编排测试环境：三渠道 + 全局竞速开启。
 func racingTestEnv(t *testing.T, mutate func(cfg *config.Config)) affinityTestEnv {
@@ -129,7 +136,7 @@ func racingInput(env affinityTestEnv, selection *scheduler.SelectionResult) comm
 func TestRunRacingAttemptDisabledWithoutHub(t *testing.T) {
 	env := racingTestEnv(t, nil)
 	selection := racingPrimarySelection(t, env)
-	c := newTestGinContext(nil)
+	c := newRacingGinContext()
 
 	called := false
 	sel, result := common.RunRacingAttempt(c, func(_ *gin.Context, _ *scheduler.SelectionResult) common.MultiChannelAttemptResult {
@@ -157,7 +164,7 @@ func TestRunRacingAttemptDisabledByChannelPolicy(t *testing.T) {
 
 	selection := racingPrimarySelection(t, env)
 	startedAt := time.Now()
-	sel, result := common.RunRacingAttempt(newTestGinContext(nil), branch, racingInput(env, selection))
+	sel, result := common.RunRacingAttempt(newRacingGinContext(), branch, racingInput(env, selection))
 	elapsed := time.Since(startedAt)
 
 	if !result.Handled || sel != selection {
@@ -198,7 +205,7 @@ func TestRunRacingAttemptShadowWinsOverSlowPrimary(t *testing.T) {
 
 	selection := racingPrimarySelection(t, env)
 	startedAt := time.Now()
-	sel, result := common.RunRacingAttempt(newTestGinContext(nil), func(c *gin.Context, sel *scheduler.SelectionResult) common.MultiChannelAttemptResult {
+	sel, result := common.RunRacingAttempt(newRacingGinContext(), func(c *gin.Context, sel *scheduler.SelectionResult) common.MultiChannelAttemptResult {
 		if sel.Route.ChannelUID == "ch_first" {
 			return primaryBranch(c, sel)
 		}
@@ -225,7 +232,7 @@ func TestRunRacingAttemptPrimaryWinsFastPath(t *testing.T) {
 	installRacingHub(t, racingCandidateList("ch_second"), racing.Behavior{MaxShadows: 1, StreamFloorMs: 10_000})
 
 	selection := racingPrimarySelection(t, env)
-	sel, result := common.RunRacingAttempt(newTestGinContext(nil), racingStubBranch(5*time.Millisecond, true, nil), racingInput(env, selection))
+	sel, result := common.RunRacingAttempt(newRacingGinContext(), racingStubBranch(5*time.Millisecond, true, nil), racingInput(env, selection))
 	if sel != selection || !result.Handled || result.SuccessKey != "sk-ch_first" {
 		t.Fatalf("阈值未到时主分支应直接获胜: %+v", result)
 	}
@@ -247,7 +254,7 @@ func TestRunRacingAttemptBothFailMergesShadowRoutes(t *testing.T) {
 		return common.MultiChannelAttemptResult{Route: sel.Route, Attempted: true, LastError: errors.New("boom")}
 	}
 
-	sel, result := common.RunRacingAttempt(newTestGinContext(nil), branch, racingInput(env, selection))
+	sel, result := common.RunRacingAttempt(newRacingGinContext(), branch, racingInput(env, selection))
 	if sel != selection {
 		t.Fatal("双败时应返回主 selection")
 	}
@@ -288,7 +295,7 @@ func TestRunRacingAttemptCostFirstFiltersCandidates(t *testing.T) {
 			return common.MultiChannelAttemptResult{Route: selection.Route, Handled: true, SuccessKey: "ok"}
 		}
 
-		common.RunRacingAttempt(newTestGinContext(nil), branch, racingInput(env, racingPrimarySelection(t, env)))
+		common.RunRacingAttempt(newRacingGinContext(), branch, racingInput(env, racingPrimarySelection(t, env)))
 		if got, _ := shadowUID.Load().(string); got != "ch_second" {
 			t.Fatalf("cost_first 应允许便宜候选作影子, got %q", got)
 		}
@@ -314,7 +321,7 @@ func TestRunRacingAttemptCostFirstFiltersCandidates(t *testing.T) {
 			return common.MultiChannelAttemptResult{Route: selection.Route, Handled: true, SuccessKey: "ok"}
 		}
 
-		_, result := common.RunRacingAttempt(newTestGinContext(nil), branch, racingInput(env, racingPrimarySelection(t, env)))
+		_, result := common.RunRacingAttempt(newRacingGinContext(), branch, racingInput(env, racingPrimarySelection(t, env)))
 		if !result.Handled {
 			t.Fatalf("主分支应完成: %+v", result)
 		}

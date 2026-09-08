@@ -1633,17 +1633,9 @@ func TryUpstreamWithAllKeys(
 			// 必须在 handleSuccess 写出响应体之前设置：流式首包/非流式 JSON 一旦写出，
 			// 再补 header 就会静默丢失（旧实现挂在完成后即有此 bug）。
 			// 每次 attempt 覆盖/清除，防止映射失败的 attempt failover 后残留旧值。
-			// 竞速场景下 pre-commit 头写入经闸门 meta 锁串行化（双分支并发写
-			// http.Header 是数据竞争），且已有赢家后败者直接跳过。
-			if gate := gateFromContext(c); gate != nil {
-				unlockMeta := gate.MetaLock()
-				if !gate.Claimed() {
-					writeEchoMappingHeaders(c, cfgManager, appliedMappedModel, actualAttemptModel, model)
-				}
-				unlockMeta()
-			} else {
-				writeEchoMappingHeaders(c, cfgManager, appliedMappedModel, actualAttemptModel, model)
-			}
+			// 竞速场景分支响应头经分支 writer 隔离（racingBranchWriter），无并发写
+			// 竞争；claim 败者的头随 Discard 丢弃，不会并入真实客户端 writer。
+			writeEchoMappingHeaders(c, cfgManager, appliedMappedModel, actualAttemptModel, model)
 			usage, err = handleSuccess(c, resp, upstreamCopy, apiKey, attemptBody)
 			// 上下文窗口自学习（放宽侧）：2xx 完成即实证该渠道×协议×模型可承载本次输入，
 			// 棘轮只升不降。失败/取消/空响应不学习（err 非 nil 时内部直接返回）。

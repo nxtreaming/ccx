@@ -159,31 +159,6 @@ func TestGateConcurrentClaimSingleWinner(t *testing.T) {
 	}
 }
 
-func TestGateMetaLockMutualExclusion(t *testing.T) {
-	g := NewGate()
-	counter := 0
-	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 100; j++ {
-				unlock := g.MetaLock()
-				counter++
-				if g.Claimed() {
-					// 已有赢家时锁内应能观测到（此处无人 claim，恒 false）
-					t.Error("无人 claim 时 Claimed 不应为 true")
-				}
-				unlock()
-			}
-		}()
-	}
-	wg.Wait()
-	if counter != 1600 {
-		t.Fatalf("计数不符: %d", counter)
-	}
-}
-
 func TestSemaphore(t *testing.T) {
 	s := NewSemaphore(2)
 	if !s.TryAcquire() || !s.TryAcquire() {

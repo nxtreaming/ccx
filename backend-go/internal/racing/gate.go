@@ -27,13 +27,11 @@ const (
 // Gate 客户端提交闸门（claim-once）：并行竞速分支中唯一赢家获得向客户端
 // 写出响应的资格，其余分支在 claim 失败后以 ErrRacingSuperseded 收尾。
 //
-// claimed/winner 用 atomic 存储，使 MetaLock 持有期间也能无锁查询；
-// metaMu 单独串行化 pre-commit 阶段对 gin 响应头 map 的写入
-// （如 echo-mapping 头块），避免双分支并发写 http.Header 的数据竞争。
-// cancelMu 注册各分支的 context 取消函数：赢家 claim 时立即取消其余分支，
-// 不必等败者自然跑完整个流。
+// claimed/winner 用 atomic 存储，查询无锁；cancelMu 注册各分支的 context
+// 取消函数：赢家 claim 时立即取消其余分支，不必等败者自然跑完整个流。
+// 分支写出的单写者不变量由分支 writer 保证（handlers/common.racingBranchWriter：
+// 真实客户端 writer 只在赢家 Commit 时被触碰）。
 type Gate struct {
-	metaMu   sync.Mutex
 	claimed  atomic.Bool
 	winner   atomic.Int64
 	cancelMu sync.Mutex
@@ -99,13 +97,6 @@ func (g *Gate) CancelExcept(ownerID int) {
 			cancel()
 		}
 	}
-}
-
-// MetaLock 串行化 pre-commit 响应头写入。锁内应复查 Claimed()：
-// 已有赢家时跳过头写入。返回解锁函数。
-func (g *Gate) MetaLock() func() {
-	g.metaMu.Lock()
-	return g.metaMu.Unlock
 }
 
 // Semaphore 全局并发影子信号量（TryAcquire，不阻塞主流程）。

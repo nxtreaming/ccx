@@ -35,13 +35,14 @@
 
 ## 影子候选（五元组粒度）
 
-1. 主源：SmartRouter 排名缓存（`ABTestSampler.CandidateCache()`），`autopilot.RacingShadowCandidates` 只排除与主尝试相同的五元组（channelUID+keyIdentity+actualModel）——同渠道不同 key / 不同执行模型可作影子。
+1. 主源：SmartRouter 排名缓存（`ABTestSampler.CandidateCache()`），`autopilot.RacingShadowCandidates` 从可行集（Selected=true）选取并排除与主尝试相同的五元组（channelUID+keyIdentity+actualModel）——同渠道不同 key / 不同执行模型可作影子；多样性纪律：主 key 一律不作影子（同账号并发是放大器）、异渠道候选优先、多影子按 keyIdentity 去重。
 2. 回退：缓存空 → `SelectChannelWithOptions` 按 FailedRoutes（已用路由）重选（纯跨渠道）。
 3. 执行：候选反查渠道构造 SelectionResult + pin（`WithExecutionPin` 经 `WithSelectionTrace` 透传），reason 记 `racing_shadow`。
 
 ## 裁决与分支治理
 
-- **提交闸门** `racing.Gate`（claim-once + meta 互斥）：claim 点在 preflight 首字确认后 / 非流式完整响应校验后、写客户端之前；胜者 claim 即取消其余分支（ctx 级），败者 claim 失败以 `ErrRacingSuperseded` 收尾。
+- **提交闸门** `racing.Gate`（claim-once）：claim 点在 preflight 首字确认后 / 非流式完整响应校验后、写客户端之前；胜者 claim 即取消其余分支（ctx 级），败者 claim 失败以 `ErrRacingSuperseded` 收尾。
+- **分支写出隔离** `racingBranchWriter`：主/影子分支各挂独立分支 writer（pre-commit 头/状态/体写私有缓冲），claim 赢家 Commit 时一次性桥接到真实客户端 writer 并转透传，败者 Discard 后写出静默丢弃——真实 writer 只被赢家触碰（构造保证的单写者，取代早期"影子回填主 Writer + meta 锁串行化 echo 头"的约定式模型）。
 - **败者治理**：不计失败指标、不熔断、不拉黑、不标 URL 失败、不参与自学习（工具调用/严重度/上下文棘轮）；渠道日志终态 `racing_lost` + `racingStatus=lost`，赢家 `racingStatus=won`。影子真实上游错误（超时/500/拉黑）仍照常记账。
 - **防误判赢家**：被取消的影子可能以空流 EOF → 内部轮转 → context.Canceled + Handled=true 收尾，pickWinner 判据为 `Handled && LastError == nil`；cancel 连带的空流响应直接按败出终止。
 - 影子赢时分支 gin keys 回拷主 context（responseText/lastUserMessage 不丢）；primary selection 补记 trace 终态（防悬空）。
@@ -56,7 +57,8 @@
 | `internal/config/racing_config.go` | 全局/渠道级开关 + ResolveRacingPolicy + SetRacingEnabled |
 | `internal/handlers/common/racing.go` | 编排器 RunRacingAttempt（武装检查/定时器/影子派发/裁决归并/样本记录） |
 | `internal/handlers/common/multi_channel_failover.go` | 外壳接线（TrySelectedChannelFunc 增加 gin context 参数；AlsoFailedRoutes 并入 failedRoutes） |
-| `internal/handlers/common/upstream_failover.go` | echo 头块 meta 锁互斥、败者分类豁免（先于 isClientSideError）、成功路径 won 标记、日志角色 |
+| `internal/handlers/common/upstream_failover.go` | echo 头块写出（分支 writer 隔离）、败者分类豁免（先于 isClientSideError）、成功路径 won 标记、日志角色 |
+| `internal/handlers/common/racing_writer.go` | 分支 writer：pre-commit 私有缓冲、赢家 Commit 桥接真实 writer、败者 Discard |
 | `internal/handlers/common/stream_processor.go` + 4 协议 handler | 流式/非流式 claim 点 |
 | `internal/autopilot/racing_candidates.go` | 五元组候选选取 |
 | `main.go` | RacingHub 注入 + `/api/racing/config` |
