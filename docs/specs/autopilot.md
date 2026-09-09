@@ -738,7 +738,8 @@ health(40) > fastDecay(25) > successRate(20) > latency(10) > cost(5)
 提交：`205fe29d`
 
 - 动机：Claude Code 2.x 携带的 `anthropic-beta: context-1m-2025-08-07` 等 beta header 透传到部分 new-api 风格上游会被 400 拒绝。
-- 链路（跨模块）：`handlers/common/compat_signal.go` 检测请求带 `anthropic-beta` header 且上游拒绝 → `ExtractRejectedBetaTokens` 提取被拒 token → 以 trait `unsupported_beta_header`（`config/channel_compat_cache.go:44` 的 `CompatTrait` 枚举）写入 `UpstreamConfig.LearnedRejectedBetaTokens`（`config/config.go:87`，运行时字段不落盘）→ 下次请求 `upstream_failover.go:721` 注入 learnedTraits，`providers/claude.go:220` `stripUnsupportedBetaHeaderTokens` 按 token 粒度剥离（token 名必含 `-` 防误判）。
+- 链路（跨模块）：`handlers/common/compat_signal.go` 检测请求带 `anthropic-beta` header 且上游拒绝 → `config.ExtractRejectedBetaTokens` 提取被拒 token → 以 trait `unsupported_beta_header`（`config/channel_compat_cache.go:44` 的 `CompatTrait` 枚举）写入 `UpstreamConfig.LearnedRejectedBetaTokens`（`config/config.go:87`，运行时字段不落盘）→ 下次请求 `upstream_failover.go:721` 注入 learnedTraits，`providers/claude.go:220` `stripUnsupportedBetaHeaderTokens` 按 token 粒度剥离（token 名必含 `-` 防误判）。
+- 集合语义（`e9d0f186`）：上游逐个点名拒绝不同 token（剥掉 A 后又拒 B），`Record` 对该 trait 做 evidence 增量合并——新 token 并入并视为新增（触发同 Key 重试剥离），否则旧实现下第二个 token 永远学不进：同结论已存在 → Record 返回 false → 不重试不更新 → 400 计失败直至模型熔断。合并态 evidence 为规范形态 `rejected anthropic-beta: t1; anthropic-beta: t2`，可被 `ExtractRejectedBetaTokens`（多 token 提取）再解析。
 - 与 §2.8 的 context_limit / document_capability 记忆同属共享兼容性缓存体系，但 trait 化后由 config 层统一承载。
 
 ### 5.15 其他近期功能
