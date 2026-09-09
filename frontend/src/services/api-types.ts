@@ -14,6 +14,8 @@ export type ChannelPlacement = 'front' | 'back'
 // 分时段统计
 export interface TimeWindowStats {
   requestCount: number
+  // 真实用户请求数（COUNT DISTINCT correlation_id）；omitempty，缺省时等同 requestCount 口径
+  userRequestCount?: number
   successCount: number
   failureCount: number
   successRate: number
