@@ -66,7 +66,7 @@ Autopilot 是 CCX 的智能路由与渠道托管子系统，由 Manager + SmartR
 | `request_profile.go` | `RequestProfile`、`ClassifierInput`、`IntentEffortPin` 定义 |
 | `request_profile_builder.go` | `BuildRequestProfile`、`ResolveQualityTarget` |
 | `request_profile_context.go` | context key，请求画像跨层传递 |
-| `request_correlation.go` | 请求 correlation ID 载体 |
+| `request_correlation.go` | 请求 correlation ID 载体（同一最终用户请求的主/影子/failover 尝试共享；failover 连通后落 metrics `request_records` v9 `correlation_id` 列，时间窗口聚合输出 `userRequestCount`=COUNT DISTINCT，与上游尝试口径 `requestCount` 对照可见竞速放大倍数） |
 | `task_classifier.go` | 确定性 `Classify`，产出 `TaskClass` |
 | `task_complexity.go` | `InferTaskComplexity`：从 prompt 信号提取难度 |
 | `task_domain.go` | `InferTaskDomain`、域关键词表、域强度证据 |
@@ -550,6 +550,7 @@ health(40) > fastDecay(25) > successRate(20) > latency(10) > cost(5)
 - `Manager.ObserveRateLimitSignal` 读取响应头/429/TTFB
 - `RateLimitDiscoverer.Observe` 更新 `endpointLearnState`
 - header 显式值优先 → 429 反推 RPM/并发折半 → 成功 AIMD 上调
+- 429 原因分级（`RateLimitSignalReason`，`rate_limit_discovery.go:36`）：账号级限流（`account_rate_limit_exceeded`）属精确原因，提升 AIMD 置信度（普通无 header 429 不提升）并触发当前 key/quota scope 冷却；判定在 `handlers/common/failover.go` `isAccountRateLimitExceededMap`：错误码 `AccountRateLimitExceeded`（规范化匹配）、`requests are too frequent`、new-api/one-api 系中文文案「请求数限制」「速率限制」；英文通用 429 文案刻意不匹配——普通 429 只换 key failover，不升级 scope 冷却
 - TTFB 拥塞：连续显著慢于基线降低 `MaxConcurrent`
 - `RateLimitApplier.Apply` 写入 `ratelimit.Manager`
 - 显式 RPM/MaxConcurrent 配置永远优先

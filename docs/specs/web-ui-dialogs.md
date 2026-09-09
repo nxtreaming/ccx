@@ -252,27 +252,29 @@
 ## 6. ChannelLogsDialog（渠道请求日志）
 
 - 路径：`frontend/src/components/ChannelLogsDialog.vue`
-- 用途：查看单渠道最近 50 条请求日志（状态码、协议、reasoning effort、时延、熔断依据），3s 轮询。
+- 用途：查看单渠道最近 50 组请求日志（状态码、协议、reasoning effort、时延、熔断依据），3s 轮询；日志按最终用户请求折叠——同一 `requestCorrelationId` 的多次上游尝试（竞速影子/failover 重试）归为一组。
 - 触发入口：`ChannelOrchestration.vue:457` 行操作「历史」按钮 → `openLogsDialog(channel)`。
 - props：`modelValue`、`channelIndex`、`channelName`、`channelType`、`protocolRoutes?`；emit `update:modelValue`。
-- 主要内容：加载态 spinner、空态（含熔断依据 alert）、日志列表（状态码 chip、请求状态、interfaceType、agentRole、operation、requestSource、**竞速徽章 `racingStatus`（won=竞速获胜 flag-checkered / lost=竞速败出）+ 请求状态 `racing_lost`**、模型映射、reasoning、keyMask、baseUrl、时延分解、可展开 errorInfo、复制单条、autopilotTrace chip）。
+- 主要内容：加载态 spinner、空态（含熔断依据 alert；过滤无结果时另有 `channelLogs.noMatch` 空态）、日志列表（状态码 chip、请求状态、**「N 次尝试」徽章**（组行，组内条数 >1 时显示）、interfaceType、agentRole、operation、requestSource、**竞速徽章 `racingStatus`（won=竞速获胜 flag-checkered / lost=竞速败出）+ 请求状态 `racing_lost`**、模型映射、reasoning、keyMask、baseUrl、时延分解、可展开 errorInfo、复制单条、autopilotTrace chip）。
+- 折叠与过滤（eff5fa7e）：`groupLogs` 按 `requestCorrelationId` 分组（无 ID 条目以 `requestId/timestamp` 自成一组）；组行显示「最终结局」（成功交付 > 最新非竞速败出 > 最新一条），chevron 展开尝试明细（明细行复用同一渲染、缩进区分）；标题栏三态过滤 `logViewMode`：**全部**（组可展开）/ **仅最终交付**（组不可展开，只看组行）/ **含竞速放大**（仅显示组内任一条目 `racingRole`/`racingStatus` 非空或 `selectionReason` 含 racing 的组）；展开态以稳定 key（correlationId/requestId）记录，轮询刷新重排不错位；切换过滤模式时收起展开态。
 - 状态流转：`watch(modelValue)` 打开时清空并 `fetchLogs` + 开启轮询（`useGlobalTick(3000)`）；切换 channel/type/routes 重新拉取；关闭停止轮询。
-- 后端调用：`api.getChannelLogs(kind, index)`（对每条 protocolRoute `Promise.allSettled`，合并去重取前 50）。
+- 后端调用：`api.getChannelLogs(kind, index)`（对每条 protocolRoute `Promise.allSettled`，合并按时间倒序；原 50 条截断改为作用于折叠后的 50 组）。
 - 联动：日志 autopilotTrace chip → `openAutopilotTrace` 打开内嵌 `AutopilotTraceDetailDialog`。
 
 布局示意图：
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ 渠道日志 - {channel}                                 [×]   │ ← max-width 800，内部滚动
+│ 渠道日志 - {channel}  [全部|仅最终交付|含竞速放大]   [×]    │ ← max-width 800，内部滚动
 ├───────────────────────────────────────────────────────────┤
 │ (加载态: 居中 ◌)                                           │
 │ (空态: [format-list-bulleted] 暂无日志记录                  │
 │       + (⚠) 熔断依据 alert: open/half-open·失败说明·       │
 │         最近失败时间·下次探测·退避层级)                      │
-│ 日志列表 v-list（3s 轮询；失败行浅红底；点击行展开错误详情）：│
+│ 日志列表 v-list（3s 轮询；按 correlationId 折叠为组；失败行  │
+│   浅红底；组行点击展开尝试明细，单条点击展开错误详情）：      │
 │ ┌───────────────────────────────────────────────────┐     │
-│ │ [200] 23:14:02 ·messages·MAIN·chat·〔能力测试〕     │     │
+│ │ [200] 23:14:02 ·completed·〔2 次尝试〕·messages·MAIN ⌄│   │
 │ │ gpt-5.6→gpt-5.6 ·reasoning(high→high) ·sk-F9M***   │     │
 │ │ ·seekai.cc ·重试1 ·12ms(连3/首字8/总12)             │     │
 │ │ 〔调度〕〔决策 tr_… chip → AutopilotTraceDetail〕[⧉] │     │

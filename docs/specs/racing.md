@@ -43,7 +43,7 @@
 
 - **提交闸门** `racing.Gate`（claim-once）：claim 点在 preflight 首字确认后 / 非流式完整响应校验后、写客户端之前；胜者 claim 即取消其余分支（ctx 级），败者 claim 失败以 `ErrRacingSuperseded` 收尾。
 - **分支写出隔离** `racingBranchWriter`：主/影子分支各挂独立分支 writer（pre-commit 头/状态/体写私有缓冲），claim 赢家 Commit 时一次性桥接到真实客户端 writer 并转透传，败者 Discard 后写出静默丢弃——真实 writer 只被赢家触碰（构造保证的单写者，取代早期"影子回填主 Writer + meta 锁串行化 echo 头"的约定式模型）。
-- **败者治理**：不计失败指标、不熔断、不拉黑、不标 URL 失败、不参与自学习（工具调用/严重度/上下文棘轮）；渠道日志终态 `racing_lost` + `racingStatus=lost`，赢家 `racingStatus=won`。影子真实上游错误（超时/500/拉黑）仍照常记账。
+- **败者治理**：不计失败指标、不熔断、不拉黑、不标 URL 失败、不参与自学习（工具调用/严重度/上下文棘轮）；渠道日志终态 `racing_lost` + `racingStatus=lost`，赢家 `racingStatus=won`。影子真实上游错误（超时/500/拉黑）仍照常记账。主/影子尝试共享请求 correlation ID，渠道日志按用户请求折叠为一行（「N 次尝试」徽章，见 web-ui-dialogs.md §6）。
 - **防误判赢家**：被取消的影子可能以空流 EOF → 内部轮转 → context.Canceled + Handled=true 收尾，pickWinner 判据为 `Handled && LastError == nil`；cancel 连带的空流响应直接按败出终止。
 - 影子赢时分支 gin keys 回拷主 context（responseText/lastUserMessage 不丢）；primary selection 补记 trace 终态（防悬空）。
 - 防放大：每请求最多 maxShadows 条（策略表）；全局并发信号量 12；影子分支内禁递归竞速；X-Channel pin / 含图请求 / 非四对话协议不竞速；**限流热渠道不派影子**（渠道级冷却中或全部 key scope 被限速延迟时该候选被跳过——排名缓存路径绕过调度器冷却过滤，候选构造处兜底，防止 429 风暴中 shadow 放大真实上游消耗）。
