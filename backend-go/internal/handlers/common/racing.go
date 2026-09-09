@@ -436,7 +436,12 @@ func RunRacingAttempt(
 	primaryStartedAt := time.Now()
 	result := trySelectedChannel(c, in.Selection)
 	timer.Stop()
-	gate.CancelExcept(0)
+	// 止血只针对非赢家分支：影子已 claim 时固定 CancelExcept(0) 会误杀正在
+	// 透传的赢家（客户端流被切断 context canceled）；无 claim（主分支真实失败）
+	// 时保留在飞影子，由下方结算路径兜底接管。
+	if claimedBy := gate.ClaimedBy(); claimedBy >= 0 {
+		gate.CancelExcept(claimedBy)
+	}
 
 	// 主分支赢（或 headers 已发后完成的唯一分支）：等影子收尾，记录样本后返回。
 	if result.Handled {

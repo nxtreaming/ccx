@@ -228,6 +228,56 @@ func TestRunRacingAttemptShadowWinsOverSlowPrimary(t *testing.T) {
 	}
 }
 
+// 回归：影子 claim 获胜后主分支随即返回，编排器的止血不得取消赢家影子的
+// 分支 ctx——真实流式场景 claim 只是透传开始，误杀会让客户端流中断
+// （context canceled）。旧实现固定 gate.CancelExcept(0) 存在该缺陷。
+func TestRunRacingAttemptShadowWinnerStreamNotCanceled(t *testing.T) {
+	env := racingTestEnv(t, nil)
+	installRacingHub(t, racingCandidateList("ch_second"), racing.Behavior{MaxShadows: 1, StreamFloorMs: 30})
+
+	var winnerCtxKilled atomic.Bool
+	primaryBranch := func(c *gin.Context, selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
+		// 慢主：阻塞至影子 claim 后败出（与 TestRunRacingAttemptShadowWinsOverSlowPrimary 同）。
+		select {
+		case <-time.After(2 * time.Second):
+		case <-c.Request.Context().Done():
+		}
+		if !common.RacingClaimClientCommit(c) {
+			return common.MultiChannelAttemptResult{Route: selection.Route, Attempted: true, LastError: common.ErrRacingSuperseded}
+		}
+		return common.MultiChannelAttemptResult{Route: selection.Route, Handled: true, SuccessKey: "sk-primary"}
+	}
+	shadowBranch := func(c *gin.Context, selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
+		time.Sleep(10 * time.Millisecond)
+		if !common.RacingClaimClientCommit(c) {
+			return common.MultiChannelAttemptResult{Route: selection.Route, Attempted: true, LastError: common.ErrRacingSuperseded}
+		}
+		// claim 后进入透传：主流式已败出返回，编排器此时做分支止血；
+		// 赢家 ctx 在透传窗口内被 cancel 即为回归。
+		select {
+		case <-time.After(150 * time.Millisecond):
+		case <-c.Request.Context().Done():
+			winnerCtxKilled.Store(true)
+		}
+		return common.MultiChannelAttemptResult{Route: selection.Route, Handled: true, SuccessKey: "sk-shadow"}
+	}
+
+	selection := racingPrimarySelection(t, env)
+	sel, result := common.RunRacingAttempt(newRacingGinContext(), func(c *gin.Context, sel *scheduler.SelectionResult) common.MultiChannelAttemptResult {
+		if sel.Route.ChannelUID == "ch_first" {
+			return primaryBranch(c, sel)
+		}
+		return shadowBranch(c, sel)
+	}, racingInput(env, selection))
+
+	if winnerCtxKilled.Load() {
+		t.Fatal("赢家影子透传期间分支 ctx 被编排器误取消")
+	}
+	if sel.Route.ChannelUID != "ch_second" || result.SuccessKey != "sk-shadow" {
+		t.Fatalf("应返回影子赢家结果: sel=%s result=%+v", sel.Route.ChannelUID, result)
+	}
+}
+
 func TestRunRacingAttemptPrimaryWinsFastPath(t *testing.T) {
 	env := racingTestEnv(t, nil)
 	installRacingHub(t, racingCandidateList("ch_second"), racing.Behavior{MaxShadows: 1, StreamFloorMs: 10_000})
