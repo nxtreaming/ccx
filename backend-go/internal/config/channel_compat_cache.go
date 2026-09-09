@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -387,6 +388,70 @@ func (c *ChannelCompatCache) scheduleFlushLocked() {
 	})
 }
 
+// rejectedBetaTokenPattern 从上游错误文案/合并态证据中提取被拒 anthropic-beta token 名。
+// 覆盖格式：
+//
+//	中文：尚未验证或不支持的 anthropic-beta：context-1m-2025-08-07
+//	英文：anthropic-beta `context-1m-2025-08-07` is not enabled
+//	英文：unsupported anthropic-beta header: context-1m-2025-08-07
+//	合并态：rejected anthropic-beta: token-a; anthropic-beta: token-b
+//
+// 允许跨 "header:"/"named:" 等中介词（(?:\w+[\s:：]+)* 匹配 0 次或多次"单词+分隔符"序列）。
+// token 名必含至少一个 `-`，避免把 "header"/"configuration" 等通用词误提取为 token。
+var rejectedBetaTokenPattern = regexp.MustCompile(
+	`(?i)anthropic-beta[\s:：'"` + "`" + `「『]*\s*(?:\w+[\s:：]+)*([a-z0-9][a-z0-9_-]*-[a-z0-9_-]{2,40})`,
+)
+
+// ExtractRejectedBetaTokens 从证据文案提取全部被拒 anthropic-beta token（去重、保序）。
+// 返回 nil 表示文案里没有可识别的 token；视为格式不符，调用方不学。
+// 上游一次只点名一个 token，多 token 场景拆成多次报错；合并态证据可含多个。
+func ExtractRejectedBetaTokens(evidence string) []string {
+	if evidence == "" {
+		return nil
+	}
+	var tokens []string
+	seen := make(map[string]bool)
+	for _, m := range rejectedBetaTokenPattern.FindAllStringSubmatch(evidence, -1) {
+		if len(m) >= 2 && !seen[m[1]] {
+			seen[m[1]] = true
+			tokens = append(tokens, m[1])
+		}
+	}
+	return tokens
+}
+
+// mergeRejectedBetaEvidence 合并新旧被拒 beta token 证据：新证据含旧集合之外的 token
+// 时按规范形态重写（每 token 一段，均可被 ExtractRejectedBetaTokens 解析）并报告 changed。
+// 合并保证发送前剥离覆盖全部已知被拒 token，而不是只剥第一次学到的那个。
+func mergeRejectedBetaEvidence(prevEvidence, newEvidence string) (string, bool) {
+	prevTokens := ExtractRejectedBetaTokens(prevEvidence)
+	newTokens := ExtractRejectedBetaTokens(newEvidence)
+	if len(newTokens) == 0 {
+		return prevEvidence, false
+	}
+	seen := make(map[string]bool, len(prevTokens))
+	for _, t := range prevTokens {
+		seen[t] = true
+	}
+	all := append([]string{}, prevTokens...)
+	changed := false
+	for _, t := range newTokens {
+		if !seen[t] {
+			seen[t] = true
+			all = append(all, t)
+			changed = true
+		}
+	}
+	if !changed {
+		return prevEvidence, false
+	}
+	parts := make([]string, len(all))
+	for i, t := range all {
+		parts[i] = "anthropic-beta: " + t
+	}
+	return "rejected " + strings.Join(parts, "; "), true
+}
+
 // Record 记录一条学习到的兼容性事实。返回该 trait 是否为新增结论（此前未记录或结论翻转）。
 // 仅在返回 true 时调用方才应触发同 Key 重试，避免记忆已生效后死循环。
 // 新增时立即落盘：单次学习代价是一条上游 400，值得同步持久化。
@@ -410,6 +475,15 @@ func (c *ChannelCompatCache) Record(channelUID, keyHash, model string, trait Com
 	prev, exists := entry.Traits[trait]
 	// 已有相同结论时不重复记录；结论翻转（如探测后被真实报错纠正）则覆盖并视为新增。
 	isNew := !exists || prev.Enabled != enabled
+	if !isNew && trait == TraitUnsupportedBetaHeader {
+		// beta 拒绝是集合语义：上游逐个点名拒绝不同 token，已有记录不代表新 token
+		// 已学会。合并进 evidence 并视为新增（调用方据此同 Key 重试剥离），否则发送前
+		// 剥离永远停在第一个 token，后续 token 反复 400 直至模型熔断。
+		if merged, changed := mergeRejectedBetaEvidence(prev.Evidence, evidence); changed {
+			evidence = merged
+			isNew = true
+		}
+	}
 	if isNew {
 		entry.Traits[trait] = CompatTraitState{
 			Enabled:   enabled,

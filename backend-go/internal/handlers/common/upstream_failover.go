@@ -948,7 +948,7 @@ func TryUpstreamWithAllKeys(
 						channelCompatCache.MarkApplied(upstream.ChannelUID, keyHash, attemptModel, trait)
 						// TraitUnsupportedBetaHeader 附带被拒 token 名列表，provider 按 token 粒度剥离
 						if trait == config.TraitUnsupportedBetaHeader && state.Enabled {
-							if tokens := ExtractRejectedBetaTokens(state.Evidence); len(tokens) > 0 {
+							if tokens := config.ExtractRejectedBetaTokens(state.Evidence); len(tokens) > 0 {
 								upstreamCopy.SetLearnedRejectedBetaTokens(tokens)
 							}
 						}
