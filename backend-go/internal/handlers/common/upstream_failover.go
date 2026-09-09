@@ -1067,9 +1067,12 @@ func TryUpstreamWithAllKeys(
 				}
 			}
 
-			// 提取请求关联 ID（multi_channel_failover 生成，写入 gin context）
+			// 提取请求关联 ID（multi_channel_failover 生成，写入 gin context）；
+			// 同时挂到 metrics pending 记录（真实用户请求数聚合口径）。
+			requestCorrelationID := ""
 			if correlationID, ok := c.Get("ccx.request_correlation_id"); ok {
 				if cid, ok := correlationID.(string); ok && cid != "" {
+					requestCorrelationID = cid
 					logOpts = append(logOpts, WithRequestCorrelationID(cid))
 				}
 			}
@@ -1137,6 +1140,9 @@ func TryUpstreamWithAllKeys(
 			// TCP 建连开始即计数：将活跃度统计提前到发起上游请求之前；同时关联 proxyKeyMask 用于成本报表持久化
 			costContext := buildRequestCostContext(cfgManager, upstream, selection, actualAttemptModel, consumptionPolicy)
 			requestID := metricsManager.RecordRequestConnectedWithCostContext(currentBaseURL, apiKey, metricsServiceType, upstream.ChannelUID, actualAttemptModel, model, proxyKeyMask, costContext)
+			// 用户请求关联 ID 随 pending 记录落 SQLite：聚合侧 COUNT(DISTINCT correlation_id)
+			// 得出真实用户请求数，与上游尝试数对照可见竞速/failover 放大倍数。
+			metricsManager.RecordRequestCorrelationID(currentBaseURL, apiKey, metricsServiceType, requestID, requestCorrelationID)
 			// 压缩遥测随 pending 记录传播：压缩发生在进入 attempt 循环之前，
 			// 每个 attempt 的记录都要补挂，否则 SQLite 压缩列长期为零（成本报表统计失真）。
 			if compCtx := GetCompressionContext(c); compCtx != nil {
