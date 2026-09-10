@@ -80,7 +80,7 @@
       {{ t('subscription.newApi.primaryAccountUnavailable') }}
     </v-alert>
     <v-alert
-      v-else-if="!loadingPrimary && subscription && !subscription.accessTokenMasked"
+      v-else-if="!loadingPrimary && subscription && !subscription.accessTokenMasked && !loading && !accounts.length"
       color="info"
       variant="tonal"
       density="compact"
@@ -90,7 +90,8 @@
     </v-alert>
 
     <!-- 订阅凭证行与账号列表平权展示：同样可删除（清空订阅凭证并剔除其自动接入 key），
-         换凭证 = 删除后经「添加账号」重新提供，首个添加的账号凭证将承担套餐同步。 -->
+         换凭证 = 删除后经「添加账号」重新提供，首个添加的账号凭证将承担套餐同步。
+         订阅凭证缺失但账号在列属平权正常态，不打扰（提示仅在账号列表也为空时出现）。 -->
     <div v-if="subscription && subscription.accessTokenMasked" class="account-item mb-2">
       <div
         class="d-flex align-center justify-space-between pa-3 cursor-pointer"

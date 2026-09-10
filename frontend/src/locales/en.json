@@ -1296,7 +1296,7 @@
   "subscription.newApi.accountManagement": "Account management",
   "subscription.newApi.addAccount": "Add account",
   "subscription.newApi.noAccounts": "No extra accounts yet. Expand \"Add Account\" above if you need more accounts for per-group isolation.",
-  "subscription.newApi.primaryAccountRemoved": "No subscription credential; added accounts are shown below. The first account's credential will be used for plan sync.",
+  "subscription.newApi.primaryAccountRemoved": "No subscription credential is set. Expand \"Add Account\" below and enter an access token; the first account's credential will be used for plan sync.",
   "subscription.newApi.primaryAccountUnavailable": "No new-api plan is linked yet. Re-link it on the Subscriptions page before adding accounts.",
   "subscription.newApi.subscriptionNotFound": "The linked new-api plan was not found (deleted or the channel link was lost). Re-link it on the Subscriptions page.",
   "subscription.newApi.subscriptionUnavailable": "The plan is not ready yet; refresh or complete the plan binding before adding accounts.",

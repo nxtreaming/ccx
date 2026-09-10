@@ -1296,7 +1296,7 @@
   "subscription.newApi.accountManagement": "Manajemen akun",
   "subscription.newApi.addAccount": "Tambah akun",
   "subscription.newApi.noAccounts": "Belum ada akun tambahan. Buka \"Tambah Akun\" di atas bila perlu akun lain untuk isolasi per grup.",
-  "subscription.newApi.primaryAccountRemoved": "Kredensial langganan belum diatur; akun yang ditambahkan ditampilkan di bawah. Kredensial akun pertama akan dipakai untuk sinkron paket.",
+  "subscription.newApi.primaryAccountRemoved": "Kredensial langganan belum diatur. Buka \"Tambah Akun\" di bawah dan masukkan access token; kredensial akun pertama akan dipakai untuk sinkron paket.",
   "subscription.newApi.primaryAccountUnavailable": "Belum ada paket new-api yang terhubung sehingga akun utama tidak tersedia. Hubungkan ulang di halaman Langganan sebelum menambah akun.",
   "subscription.newApi.subscriptionNotFound": "Paket new-api yang terhubung tidak ditemukan (dihapus atau tautan kanal hilang). Hubungkan ulang di halaman Langganan.",
   "subscription.newApi.subscriptionUnavailable": "Informasi paket akun utama belum siap; muat ulang atau selesaikan pengikatan paket sebelum menambah akun.",

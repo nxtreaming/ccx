@@ -178,17 +178,41 @@ describe('NewApiAccountPanel', () => {
     await vi.waitFor(() => expect(wrapper.emitted('updated')).toBeTruthy())
   })
 
-  it('订阅无凭证时显示平权重加提示，凭证行不渲染', async () => {
+  it('订阅无凭证且账号列表为空时显示平权重加提示，凭证行不渲染', async () => {
     apiMocks.getSubscription.mockResolvedValue({
       ...(await apiMocks.getSubscription()),
       accessTokenMasked: '',
     })
+    apiMocks.getSubscriptionAccounts.mockResolvedValue({ accounts: [] })
     const wrapper = mountPanel()
     await vi.waitFor(() => expect(apiMocks.getSubscription).toHaveBeenCalled())
     await nextTick()
 
     expect(wrapper.text()).toContain('subscription.newApi.primaryAccountRemoved')
     expect(wrapper.text()).not.toContain('subscription.newApi.primaryBadge')
+  })
+
+  it('订阅无凭证但已添加账号时不显示未设置提示（平权正常态）', async () => {
+    apiMocks.getSubscription.mockResolvedValue({
+      ...(await apiMocks.getSubscription()),
+      accessTokenMasked: '',
+    })
+    apiMocks.getSubscriptionAccounts.mockResolvedValue({
+      accounts: [{
+        accountUid: 'acc-1',
+        displayName: 'BenedictKing',
+        status: 'active',
+        balance: 250000001,
+        accessTokenMasked: '****kQ==',
+        provisionedKeys: [{ tokenId: 1, name: 'ccx-default', group: 'default', groupMultiplier: 1 }],
+      }],
+    })
+    const wrapper = mountPanel()
+    await vi.waitFor(() => expect(apiMocks.getSubscriptionAccounts).toHaveBeenCalled())
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('subscription.newApi.primaryAccountRemoved')
+    expect(wrapper.text()).toContain('BenedictKing')
   })
 
   it('new_api 渠道缺失 subscriptionUid 时按 channelUid 兜底拉取订阅', async () => {
