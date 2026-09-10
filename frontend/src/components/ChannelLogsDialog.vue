@@ -728,6 +728,23 @@ onUnmounted(() => {
   line-height: 1.6;
 }
 
+/* 右上过滤切换：标签禁换行防纵向堆叠，标题过长优先收缩标题（text-truncate 省略号） */
+.dialog-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-view-toggle :deep(.v-btn) {
+  min-width: auto;
+  padding-inline: 8px;
+}
+
+.log-view-toggle :deep(.v-btn__content) {
+  white-space: nowrap;
+}
+
 .log-meta {
   font-size: 0.875rem;
 }

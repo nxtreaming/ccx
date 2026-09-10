@@ -211,12 +211,16 @@
                 rounded="lg"
                 variant="tonal"
                 prepend-gap="8"
+                role="button"
+                :aria-expanded="expandedDetailKey === row.key"
                 :color="row.disabled ? 'warning' : duplicateKeyIndex === row.activeIndex ? 'error' : 'surface-variant'"
                 :class="{
                   'animate-pulse': duplicateKeyIndex === row.activeIndex,
                   'volcengine-key-row': !!(row.planCredential || row.minimaxEndpoint),
                 }"
-                @click="(row.planCredential || row.minimaxEndpoint) && toggleCredentialKey(row.key)"
+                class="cursor-pointer"
+                @click="onKeyRowClick(row)"
+                @keydown.enter.prevent="onKeyRowClick(row)"
               >
                 <template #prepend>
                   <div class="d-flex align-center">
@@ -1828,6 +1832,21 @@ const toggleCredentialKey = (key: string) => {
   expandedCredentialKey.value = expandedCredentialKey.value === key ? null : key
 }
 
+// Key 行点击：整条可点按「展开/收起」优先级分发——可编辑渠道优先开倍率详情，
+// 否则回退到套餐用量详情；无详情可开则忽略。其他列表（newapi 账号）同款「点击行即展开」心智。
+const onKeyRowClick = (row: ChannelApiKeyRow) => {
+  if (row.disabled) return
+  // provider 有套餐/用量凭证且非禁用：展开用量详情（保持原「点击行切凭证详情」）
+  if (row.planCredential || row.minimaxEndpoint) {
+    toggleCredentialKey(row.key)
+    return
+  }
+  // 可编辑渠道普通 Key：展开倍率/分组模型详情
+  if (!row.disabled && row.keyUid && props.channelUid && props.channelKind) {
+    toggleKeyDetail(row)
+  }
+}
+
 const disabledKeyColor = (reason: string) => (
   reason === 'insufficient_balance' || reason === 'insufficient_quota' ? 'warning' : 'error'
 )
@@ -2882,6 +2901,10 @@ const getDisabledKeyLabel = (reason: string) => {
 .section-title {
   font-size: 1.125rem;
   font-weight: 600;
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 
 .key-sortable-list {
