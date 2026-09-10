@@ -101,17 +101,17 @@ describe('NewApiAccountPanel', () => {
     apiMocks.getSubscriptionAccounts.mockResolvedValue({ accounts: [] })
   })
 
-  it('主账号作为列表首行展示余额和脱敏 token，展开仅详情无凭证表单', async () => {
+  it('订阅凭证行作为列表首行展示余额和脱敏 token，展开仅详情无凭证表单', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => expect(apiMocks.getSubscription).toHaveBeenCalledWith('sub-main'))
     await nextTick()
 
-    // 主账号默认在账号列表中：行内展示余额与脱敏 token
+    // 订阅凭证行默认在账号列表中：行内展示余额与脱敏 token，无主账号徽章
     expect(wrapper.text()).toContain('50,000')
     expect(wrapper.text()).toContain('****oken')
-    expect(wrapper.text()).toContain('subscription.newApi.primaryBadge')
+    expect(wrapper.text()).not.toContain('subscription.newApi.primaryBadge')
 
-    // 展开主账号行：详情含已用额度；账号平权后不再有更新凭证表单
+    // 展开订阅凭证行：详情含已用额度；账号平权后不再有更新凭证表单
     await wrapper.find('[role="button"][aria-expanded="false"]').trigger('click')
     await nextTick()
     expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(true)
@@ -162,15 +162,15 @@ describe('NewApiAccountPanel', () => {
     expect(wrapper.emitted('updated')).toBeTruthy()
   })
 
-  it('主账号可删除：删除后提示重新添加成为新主账号', async () => {
+  it('订阅凭证行可删除：删除后重拉订阅与账号列表', async () => {
     apiMocks.deleteSubscriptionPrimaryAccount.mockResolvedValue(undefined)
     apiMocks.getSubscriptionAccounts.mockResolvedValue({ accounts: [] })
     const wrapper = mountPanel()
     await vi.waitFor(() => expect(apiMocks.getSubscription).toHaveBeenCalledWith('sub-main'))
     await nextTick()
 
-    // 主账号行上的删除按钮触发删除，成功后重拉订阅与账号列表
-    const deleteBtn = wrapper.findAll('button').find(button => button.text().includes('subscription.newApi.deletePrimaryAccount'))
+    // 订阅凭证行上的删除按钮触发删除，成功后重拉订阅与账号列表
+    const deleteBtn = wrapper.findAll('button').find(button => button.text().includes('app.actions.delete'))
     expect(deleteBtn).toBeTruthy()
     await deleteBtn!.trigger('click')
 
@@ -178,7 +178,7 @@ describe('NewApiAccountPanel', () => {
     await vi.waitFor(() => expect(wrapper.emitted('updated')).toBeTruthy())
   })
 
-  it('订阅无主凭证时显示重新添加提示，主账号行不渲染', async () => {
+  it('订阅无凭证时显示平权重加提示，凭证行不渲染', async () => {
     apiMocks.getSubscription.mockResolvedValue({
       ...(await apiMocks.getSubscription()),
       accessTokenMasked: '',
