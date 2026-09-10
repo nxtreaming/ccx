@@ -799,7 +799,7 @@ export interface ChannelLogEntry {
   racingStatus?: string
 
   // 请求生命周期状态
-  status: string  // pending/connecting/first_byte/streaming/completed/failed/cancelled
+  status: string  // pending/connecting/first_byte/streaming/completed/failed/cancelled/racing_lost
   startTime: string
   connectedAt?: string
   firstByteAt?: string

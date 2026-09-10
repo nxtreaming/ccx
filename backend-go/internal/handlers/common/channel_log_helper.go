@@ -275,6 +275,8 @@ func CompleteLog(
 		return
 	}
 
+	// 先按原始错误分类终态，再做文案归一化：归一会把竞速败出前缀改写为中文，分类必须在前。
+	status := getStatusFromResult(success, errorInfo)
 	errorInfo = normalizeChannelLogErrorInfo(errorInfo)
 	// 日志侧 guardrail：写日志前扫描 errorInfo 中的凭据，防御性掩码。
 	// 与请求侧豁免头解耦——日志脱敏是安全底线，始终生效。
@@ -287,7 +289,6 @@ func CompleteLog(
 		errorInfo = errorInfo[:200]
 	}
 
-	status := getStatusFromResult(success, errorInfo)
 	now := time.Now()
 	updateStatus, actualMetricsKey := channelLogStore.Update(metricsKey, requestID, func(log *metrics.ChannelLog) {
 		log.StatusCode = statusCode
@@ -381,6 +382,8 @@ func RecordChannelLogWithSource(
 	if channelLogStore == nil || metricsKey == "" {
 		return
 	}
+	// 先按原始错误分类终态，再做文案归一化：归一会把竞速败出前缀改写为中文，分类必须在前。
+	status := getStatusFromResult(success, errorInfo)
 	errorInfo = normalizeChannelLogErrorInfo(errorInfo)
 	// 日志侧 guardrail：写日志前扫描 errorInfo 中的凭据，防御性掩码。
 	if errorInfo != "" {
@@ -402,13 +405,6 @@ func RecordChannelLogWithSource(
 	now := time.Now()
 	startTime := now.Add(-time.Duration(durationMs) * time.Millisecond)
 	requestID := GenerateRequestID()
-
-	var status string
-	if success {
-		status = metrics.StatusCompleted
-	} else {
-		status = metrics.StatusFailed
-	}
 
 	channelLogStore.Record(metricsKey, &metrics.ChannelLog{
 		RequestID:     requestID,
