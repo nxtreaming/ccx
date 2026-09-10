@@ -1,8 +1,8 @@
 <template>
   <div class="newapi-subscription-form d-flex flex-column ga-4">
-    <!-- Step 1: 验证 -->
-    <v-form @submit.prevent="handleVerify">
-      <div class="text-subtitle-2 mb-2 text-medium-emphasis">
+    <!-- Step 1: 验证（订阅中心两步流程；添加渠道的自动接入模式无步骤结构） -->
+    <v-form @submit.prevent="autoProvision ? handleAutoSubmit() : handleVerify()">
+      <div v-if="!autoProvision" class="text-subtitle-2 mb-2 text-medium-emphasis">
         {{ t('subscription.newApi.step1Title') }}
       </div>
       <v-text-field
@@ -63,17 +63,21 @@
         class="mb-2"
         :disabled="verified || !verifyForm.proxyUrl?.trim()"
       />
-      <v-text-field
-        v-model="verifyForm.displayName"
-        :label="t('subscription.field.name')"
-        variant="outlined"
-        density="compact"
-        class="mb-2"
-        :disabled="verified"
-      />
+      <!-- 显示名称不收用户输入：验证后自动取上游账号用户名 -->
 
+      <!-- 自动接入模式：单按钮直达（验证 → 自动建渠道）；订阅中心保留 验证/重新验证 两步 -->
       <v-btn
-        v-if="!verified"
+        v-if="autoProvision"
+        color="primary"
+        type="submit"
+        :loading="verifying || provisioning"
+        :disabled="!canVerify"
+        block
+      >
+        {{ t('subscription.newApi.verifyAndProvision') }}
+      </v-btn>
+      <v-btn
+        v-else-if="!verified"
         color="primary"
         type="submit"
         :loading="verifying"
@@ -92,8 +96,8 @@
       </v-btn>
     </v-form>
 
-    <!-- 验证结果展示 -->
-    <v-card v-if="verified && verifyResult" variant="outlined" class="pa-3">
+    <!-- 验证结果展示（仅订阅中心两步流程） -->
+    <v-card v-if="!autoProvision && verified && verifyResult" variant="outlined" class="pa-3">
       <div class="text-subtitle-2 mb-2">{{ t('subscription.newApi.accountPreview') }}</div>
       <div class="d-flex flex-column ga-1 text-body-2">
         <div>{{ t('subscription.newApi.username') }}: {{ verifyResult.username }}</div>
@@ -118,8 +122,8 @@
       </div>
     </v-card>
 
-    <!-- Step 2: 接入 -->
-    <v-form v-if="verified" @submit.prevent="handleProvision">
+    <!-- Step 2: 接入（仅订阅中心两步流程；自动接入模式由验证成功后自动完成） -->
+    <v-form v-if="!autoProvision && verified" @submit.prevent="handleProvision">
       <v-divider class="my-2" />
       <div class="text-subtitle-2 mb-2 text-medium-emphasis">
         {{ t('subscription.newApi.step2Title') }}
@@ -223,6 +227,21 @@ import {
 
 const { t } = useI18n()
 
+interface Props {
+  /**
+   * 自动接入模式（添加渠道场景）：单按钮「验证并接入」直达建渠道，
+   * 无验证预览与第二步配置；订阅 ID 自动生成、渠道类型取 defaultChannelKind
+   */
+  autoProvision?: boolean
+  /** 自动接入模式使用的渠道类型（跟随添加渠道对话框当前 tab） */
+  defaultChannelKind?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  autoProvision: false,
+  defaultChannelKind: 'messages'
+})
+
 const emit = defineEmits<{
   created: [result: NewApiProvisionResponse]
   error: [message: string]
@@ -239,7 +258,6 @@ const verifyForm = ref<NewApiVerifyRequest>({
   accessToken: '',
   userId: '',
   authTokenMode: 'bearer',
-  displayName: '',
   proxyUrl: '',
   proxyPreferDirect: false,
 })
@@ -303,19 +321,18 @@ async function handleVerify() {
       accessToken: verifyForm.value.accessToken,
       userId: verifyForm.value.userId?.trim() || undefined,
       authTokenMode: verifyForm.value.authTokenMode || undefined,
-      displayName: verifyForm.value.displayName || undefined,
       proxyUrl: verifyForm.value.proxyUrl?.trim() || undefined,
       proxyPreferDirect: verifyForm.value.proxyPreferDirect || undefined,
     })
     verifyResult.value = result
     verified.value = true
 
-    // 预填第 2 步表单
+    // 预填第 2 步表单（显示名称自动取上游账号用户名，不收用户输入）
     provisionForm.value.baseUrl = verifyForm.value.baseUrl.trim()
     provisionForm.value.accessToken = verifyForm.value.accessToken
     provisionForm.value.userId = verifyForm.value.userId?.trim() || undefined
     provisionForm.value.authTokenMode = verifyForm.value.authTokenMode || undefined
-    provisionForm.value.displayName = verifyForm.value.displayName || result.username
+    provisionForm.value.displayName = result.username || verifyForm.value.userId?.trim() || 'new-api'
     provisionForm.value.proxyUrl = verifyForm.value.proxyUrl?.trim() || undefined
     provisionForm.value.proxyPreferDirect = verifyForm.value.proxyPreferDirect
   } catch (e) {
@@ -359,8 +376,72 @@ async function handleProvision() {
   }
 }
 
-/** 当前步骤的主操作（供承载对话框的 ⌘/Ctrl+Enter 快捷键接线）：未验证→验证，已验证→接入 */
+// ---- 自动接入模式（添加渠道场景） ----
+
+/** 订阅 ID 自动生成：8 位随机后缀避开与既有订阅冲突（后端 409 兜底） */
+function generateAutoSubscriptionUid(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  let suffix = ''
+  for (let i = 0; i < 8; i++) suffix += chars.charAt(Math.floor(Math.random() * chars.length))
+  return `newapi-${suffix}`
+}
+
+/** 验证成功后自动接入：默认倍率上限 + 全部合格分组，接入失败解锁表单供整段重试 */
+async function autoProvisionAfterVerify() {
+  const result = verifyResult.value
+  if (!result) return
+
+  // 分组未知或无合格分组时后端会硬性拦截，提前以明确文案失败，避免无效建 key 请求
+  if (result.groupFetchError || eligibleGroupItems.value.length === 0) {
+    resetVerification()
+    emit(
+      'error',
+      result.groupFetchError
+        ? `${t('subscription.newApi.groupFetchError')} ${result.groupFetchError}`
+        : t('subscription.newApi.noEligibleGroups', { limit: maxGroupMultiplier.value })
+    )
+    return
+  }
+
+  provisioning.value = true
+  try {
+    const provisioned = await api.provisionNewApiSubscription({
+      subscriptionUid: generateAutoSubscriptionUid(),
+      displayName: provisionForm.value.displayName,
+      baseUrl: provisionForm.value.baseUrl,
+      accessToken: provisionForm.value.accessToken,
+      channelKind: props.defaultChannelKind,
+      userId: provisionForm.value.userId || undefined,
+      authTokenMode: provisionForm.value.authTokenMode || undefined,
+      provisionAllEligibleGroups: true,
+      maxGroupMultiplier: maxGroupMultiplier.value,
+      proxyUrl: provisionForm.value.proxyUrl?.trim() || undefined,
+      proxyPreferDirect: provisionForm.value.proxyPreferDirect || undefined,
+    })
+    emit('created', provisioned)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown error'
+    resetVerification()
+    emit('error', message)
+  } finally {
+    provisioning.value = false
+  }
+}
+
+/** 自动接入模式的单按钮主操作：验证 → 自动接入 */
+async function handleAutoSubmit() {
+  if (!canVerify.value || verifying.value || provisioning.value) return
+  await handleVerify()
+  if (!verified.value) return
+  await autoProvisionAfterVerify()
+}
+
+/** 当前步骤的主操作（供承载对话框的 ⌘/Ctrl+Enter 快捷键接线）：自动模式直达接入，否则未验证→验证、已验证→接入 */
 function requestPrimaryAction() {
+  if (props.autoProvision) {
+    void handleAutoSubmit()
+    return
+  }
   if (verified.value) {
     if (canProvision.value && !provisioning.value) void handleProvision()
   } else if (canVerify.value && !verifying.value) {

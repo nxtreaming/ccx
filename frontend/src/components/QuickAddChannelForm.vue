@@ -26,7 +26,13 @@
     <!-- new-api 通用接入：不额外弹窗，表单体就地切换为订阅接入表单（与订阅中心同一表单）；
          经顶部服务商下拉或 Esc 退回常规快速添加 -->
     <template v-if="isNewApiMode">
-      <NewApiSubscriptionForm ref="newApiFormRef" @created="onNewApiCreated" @error="onNewApiError" />
+      <NewApiSubscriptionForm
+        ref="newApiFormRef"
+        auto-provision
+        :default-channel-kind="channelType"
+        @created="onNewApiCreated"
+        @error="onNewApiError"
+      />
       <v-alert v-if="submitError" color="error" variant="tonal" density="comfortable" icon="mdi-alert-circle-outline">
         {{ submitError }}
       </v-alert>

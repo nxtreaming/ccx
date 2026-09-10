@@ -1254,6 +1254,7 @@
   "subscription.newApi.proxyInheritedHint": "Binding, verification and sync reuse the channel proxy URL configured under Custom Parameters below.",
   "subscription.newApi.proxyDirectHint": "No channel proxy configured: binding and verification go direct. Configure a channel proxy under Custom Parameters if the site is restricted.",
   "subscription.newApi.verify": "Verify",
+  "subscription.newApi.verifyAndProvision": "Verify & Provision",
   "subscription.newApi.reVerify": "Re-verify",
   "subscription.newApi.accountPreview": "Account Preview",
   "subscription.newApi.quota": "Quota",
