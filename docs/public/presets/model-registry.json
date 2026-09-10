@@ -923,6 +923,53 @@
     },
     {
       "patterns": [
+        "(?:^|[-/])gpt-image-2\\.5(?:-\\d{4}-\\d{2}-\\d{2})?(?=$|@)"
+      ],
+      "provider": "openai",
+      "displayName": "GPT Image 2.5",
+      "description": "OpenAI GPT Image 2.5 family base alias; the API exposes two concrete variants (Flare as the fast default, Sunburst as the precision tier), both supporting text-to-image, image editing and variations via OpenAI-compatible /v1/images endpoints. Token rates match GPT Image 2: text input $5.00/M (cached $1.25/M), image input $8.00/M (cached $2.00/M), image output $30.00/M.",
+      "capabilities": {
+        "imageGeneration": true
+      },
+      "sources": [
+        "https://openai.com/index/introducing-chatgpt-images-2-5/",
+        "https://artificialanalysis.ai/leaderboards/image-generation"
+      ]
+    },
+    {
+      "patterns": [
+        "(?:^|[-/])gpt-image-2\\.5-flare(?:-\\d{4}-\\d{2}-\\d{2})?(?=$|@)"
+      ],
+      "provider": "openai",
+      "displayName": "GPT Image 2.5 Flare",
+      "description": "OpenAI fast, high-quality everyday image generation and editing model (small GPT Image 2.5 variant optimized for speed, ~50% lower latency than GPT Image 2 with comparable image quality). Supports low/medium/high/xhigh/max/auto quality settings via OpenAI-compatible /v1/images endpoints. Dated snapshot gpt-image-2.5-flare-2026-09-08 shares the same pattern. Token rates match GPT Image 2: text input $5.00/M (cached $1.25/M), image input $8.00/M (cached $2.00/M), image output $30.00/M.",
+      "capabilities": {
+        "imageGeneration": true
+      },
+      "sources": [
+        "https://developers.openai.com/api/docs/models/gpt-image-2.5-flare",
+        "https://openai.com/index/introducing-chatgpt-images-2-5/",
+        "https://artificialanalysis.ai/leaderboards/image-generation"
+      ]
+    },
+    {
+      "patterns": [
+        "(?:^|[-/])gpt-image-2\\.5-sunburst(?:-\\d{4}-\\d{2}-\\d{2})?(?=$|@)"
+      ],
+      "provider": "openai",
+      "displayName": "GPT Image 2.5 Sunburst",
+      "description": "OpenAI flagship-precision image generation and editing model (base GPT Image 2.5 variant optimized for quality, higher image fidelity than GPT Image 2 with longer generation times). Supports low/medium/high/xhigh/max/auto quality settings via OpenAI-compatible /v1/images endpoints. Dated snapshot gpt-image-2.5-sunburst-2026-09-08 shares the same pattern. Token rates match GPT Image 2: text input $5.00/M (cached $1.25/M), image input $8.00/M (cached $2.00/M), image output $30.00/M.",
+      "capabilities": {
+        "imageGeneration": true
+      },
+      "sources": [
+        "https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst",
+        "https://openai.com/index/introducing-chatgpt-images-2-5/",
+        "https://artificialanalysis.ai/leaderboards/image-generation"
+      ]
+    },
+    {
+      "patterns": [
         "(?:^|[-/])glm-5\\.3(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)",
         "(?:^|[-/])glm-5\\.3\\[1m\\](?=$|@)"
       ],
@@ -2359,6 +2406,36 @@
       },
       "sources": [
         "https://agnes-ai.com/zh-Hans/docs/agnes-video-v20"
+      ]
+    },
+    {
+      "patterns": [
+        "(?:^|[-/])wan3\\.0-video(?=$|@)"
+      ],
+      "provider": "dashscope",
+      "displayName": "Wan 3.0 Video",
+      "description": "Alibaba Wan 3.0 standard-tier all-in-one video generation model on Model Studio (DashScope), unifying text-to-video, first-frame / first+last-frame image-to-video and multimodal reference-to-video without switching model names. Generates up to 30s at 30fps in 480P/720P/1080P with optional output audio via the async video-synthesis task API (create task then poll task_id). Official China pricing CNY 0.3/0.6/1.2 per second by resolution (limited-time 30% off).",
+      "capabilities": {
+        "videoGeneration": true
+      },
+      "sources": [
+        "https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference",
+        "https://help.aliyun.com/zh/model-studio/model-pricing"
+      ]
+    },
+    {
+      "patterns": [
+        "(?:^|[-/])wan3\\.0-video-prime(?=$|@)"
+      ],
+      "provider": "dashscope",
+      "displayName": "Wan 3.0 Video Prime",
+      "description": "Alibaba Wan 3.0 high-speed-tier all-in-one video generation model on Model Studio (DashScope); capability-aligned with the standard wan3.0-video but with significantly improved end-to-end speed. Same task coverage (text-to-video, image-to-video, reference-to-video), up to 30s at 30fps in 480P/720P/1080P with optional output audio via the async video-synthesis task API. Official China pricing CNY 0.45/0.9/1.8 per second by resolution.",
+      "capabilities": {
+        "videoGeneration": true
+      },
+      "sources": [
+        "https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference",
+        "https://help.aliyun.com/zh/model-studio/model-pricing"
       ]
     },
     {
@@ -5935,7 +6012,7 @@
           "metric": "pass_at_1",
           "rawValue": 0.598,
           "uncertainty": 0,
-          "cohortPercentile": 0.25,
+          "cohortPercentile": 0.188,
           "taskCount": 87,
           "cohortSize": 16,
           "effort": "high",
@@ -5965,9 +6042,9 @@
           "sourceModel": "glm-5.3-flash",
           "domain": "coding",
           "metric": "pass_at_1",
-          "rawValue": 0.589,
+          "rawValue": 0.598,
           "uncertainty": 0,
-          "cohortPercentile": 0.125,
+          "cohortPercentile": 0.25,
           "taskCount": 112,
           "cohortSize": 16,
           "effort": "max",

@@ -913,6 +913,67 @@ func TestResolveUpstreamCapability_ClaudeMythos51Variants(t *testing.T) {
 	}
 }
 
+func TestResolveUpstreamCapability_GPTImage25Variants(t *testing.T) {
+	tests := []struct {
+		model       string
+		displayName string
+	}{
+		{model: "gpt-image-2.5", displayName: "GPT Image 2.5"},
+		{model: "gpt-image-2.5-2026-09-08", displayName: "GPT Image 2.5"},
+		{model: "openai/gpt-image-2.5", displayName: "GPT Image 2.5"},
+		// Flare / Sunburst 是独立 tier，不归并到 2.5 家族别名
+		{model: "gpt-image-2.5-flare", displayName: "GPT Image 2.5 Flare"},
+		{model: "gpt-image-2.5-flare-2026-09-08", displayName: "GPT Image 2.5 Flare"},
+		{model: "openai/gpt-image-2.5-flare", displayName: "GPT Image 2.5 Flare"},
+		{model: "GPT-Image-2.5-Flare", displayName: "GPT Image 2.5 Flare"},
+		{model: "gpt-image-2.5-sunburst", displayName: "GPT Image 2.5 Sunburst"},
+		{model: "gpt-image-2.5-sunburst-2026-09-08", displayName: "GPT Image 2.5 Sunburst"},
+		{model: "openai/gpt-image-2.5-sunburst", displayName: "GPT Image 2.5 Sunburst"},
+		{model: "GPT-Image-2.5-Sunburst", displayName: "GPT Image 2.5 Sunburst"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			resolved := ResolveUpstreamCapability(tt.model, nil, nil)
+			if !resolved.Known || resolved.Source != "builtin" {
+				t.Fatalf("resolved = %+v, want builtin capability for %s", resolved, tt.model)
+			}
+			capability := resolved.Capability
+			if capability.DisplayName != tt.displayName || capability.Provider != "openai" ||
+				!capability.Capabilities["imageGeneration"] {
+				t.Fatalf("capability = %+v for model %s", capability, tt.model)
+			}
+		})
+	}
+}
+
+func TestResolveUpstreamCapability_Wan30VideoModels(t *testing.T) {
+	tests := []struct {
+		model       string
+		displayName string
+	}{
+		{model: "wan3.0-video", displayName: "Wan 3.0 Video"},
+		{model: "dashscope/wan3.0-video", displayName: "Wan 3.0 Video"},
+		{model: "Wan3.0-Video", displayName: "Wan 3.0 Video"},
+		{model: "wan3.0-video-prime", displayName: "Wan 3.0 Video Prime"},
+		{model: "dashscope/wan3.0-video-prime", displayName: "Wan 3.0 Video Prime"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			resolved := ResolveUpstreamCapability(tt.model, nil, nil)
+			if !resolved.Known || resolved.Source != "builtin" {
+				t.Fatalf("resolved = %+v, want builtin capability for %s", resolved, tt.model)
+			}
+			capability := resolved.Capability
+			if capability.DisplayName != tt.displayName || capability.Provider != "dashscope" ||
+				!capability.Capabilities["videoGeneration"] {
+				t.Fatalf("capability = %+v for model %s", capability, tt.model)
+			}
+		})
+	}
+}
+
 func TestResolveUpstreamCapability_MultimodalAgentModels(t *testing.T) {
 	for _, model := range []string{
 		"k3",
