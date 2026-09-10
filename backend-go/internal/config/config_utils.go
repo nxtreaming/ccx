@@ -288,13 +288,10 @@ func migrateAutoDeriveChannelNamesInSlice(channels *[]UpstreamConfig) bool {
 		if up.Name == resolved {
 			continue
 		}
-		old := strings.TrimSpace(up.Name)
-		if old != "" && strings.TrimSpace(up.Remark) == "" {
-			if remarkRuneCount(old) > remarkMaxRunes {
-				old = string([]rune(old)[:remarkMaxRunes])
-			}
-			up.Remark = old
-		}
+		// 只改名，不把旧名写进备注：旧名→备注的保留机制是 2026-08 一次性存量迁移用的
+		// （自定义名→自动派生名过渡期防止语义丢失），迁移完成后该机制只剩副作用——
+		// 用户删除备注后，任何名字漂移（逻辑层同步、地址池调整）再触发迁移都会把
+		// 旧名截断写回空备注，「删了保存再打开又出现」即此循环（09-42 agentrouter 复活根因）。
 		up.Name = resolved
 		changed = true
 	}
