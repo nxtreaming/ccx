@@ -27,6 +27,8 @@
       "planHint": "deepseek_anthropic",
       "modelsUrl": "https://api.deepseek.com/models",
       "modelIds": [
+        "deepseek-flash",
+        "deepseek-v4.1-flash",
         "deepseek-v4-pro",
         "deepseek-v4-flash",
         "deepseek-v4-flash-vision-exp"
@@ -39,6 +41,8 @@
       "planHint": "deepseek_openai",
       "modelsUrl": "https://api.deepseek.com/models",
       "modelIds": [
+        "deepseek-flash",
+        "deepseek-v4.1-flash",
         "deepseek-v4-pro",
         "deepseek-v4-flash",
         "deepseek-v4-flash-vision-exp"

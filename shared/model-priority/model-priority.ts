@@ -86,6 +86,8 @@ const modelPriorityPatterns: RegExp[] = [
   /qwen-?3/i,
 
   // DeepSeek
+  /deepseek-v4\.1-flash/i,
+  /deepseek-flash/i,
   /deepseek-v4-pro/i,
   /deepseek-v4-flash-vision/i,
   /deepseek-v4-flash/i,

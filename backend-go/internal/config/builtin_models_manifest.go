@@ -243,6 +243,8 @@ func kimiCodeModelIDs() []string {
 
 func deepseekModelIDs() []string {
 	return []string{
+		"deepseek-flash",
+		"deepseek-v4.1-flash",
 		"deepseek-v4-pro",
 		"deepseek-v4-flash",
 		"deepseek-v4-flash-vision-exp",

@@ -88,6 +88,9 @@ export const ARTIFICIAL_ANALYSIS_MODEL_MAP = {
   'deepseek-v3-2': 'deepseek-v3.2',
   'deepseek-v4-flash': 'deepseek-v4-flash',
   'deepseek-v4-pro': 'deepseek-v4-pro',
+  // DeepSeek V4.1 Flash（2026-09-10 发布）：AA slug 用连字符分段版本号
+  'deepseek-v4-1-flash': 'deepseek-v4.1-flash',
+  'deepseek-flash': 'deepseek-v4.1-flash',
   // deepseek 日期快照（-MMDD）归并到对应基模型
   'deepseek-v4-flash-0420': 'deepseek-v4-flash',
   'deepseek-v4-pro-0424': 'deepseek-v4-pro',
