@@ -6682,7 +6682,7 @@
           "metric": "pass_at_1",
           "rawValue": 0.723,
           "uncertainty": 0,
-          "cohortPercentile": 0.875,
+          "cohortPercentile": 0.813,
           "taskCount": 112,
           "cohortSize": 16,
           "effort": "medium",
@@ -7192,7 +7192,7 @@
           "selectionBasis": "per_effort",
           "sourceUrl": "https://deng.codexradar.com/",
           "capturedAt": "2026-09-10",
-          "costUsd": 0.33
+          "costUsd": 0.34
         },
         {
           "benchmark": "deepswe",
