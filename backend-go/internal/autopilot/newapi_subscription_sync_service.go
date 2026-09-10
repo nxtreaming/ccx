@@ -395,7 +395,7 @@ func (s *NewApiSubscriptionSyncService) SyncNow(ctx context.Context, uid string)
 		return s.handleHardFailure(profile, result, newApiSyncStatusRelinkRequired, fmt.Errorf("key ownership 冲突，需要重新关联"))
 	}
 	// 常规同步只更新已存在 config；渠道侧被误删的自动接入 key 在此自愈找回。
-	s.healMissingProvisionedKeys(ctx, profile, adapter, profile.BaseURL, profile.AccessToken, userID, mode, desired)
+	s.healMissingProvisionedKeys(ctx, profile, adapter, profile.BaseURL, profile.AccessToken, userID, mode, desired, "")
 
 	if result.ModelsHashChanged && s.runner != nil && s.cfgManager != nil {
 		for _, channel := range changedChannels {
@@ -511,7 +511,7 @@ func (s *NewApiSubscriptionSyncService) syncOneAccount(ctx context.Context, prof
 			}
 		}
 		// 账号侧被误删的自动接入 key 同样自愈找回（凭证走该账号自己的 accessToken）。
-		s.healMissingProvisionedKeys(ctx, profile, adapter, profile.BaseURL, account.AccessToken, userID, mode, desired)
+		s.healMissingProvisionedKeys(ctx, profile, adapter, profile.BaseURL, account.AccessToken, userID, mode, desired, account.AccountUID)
 	}
 	return statuses, nil
 }
@@ -552,13 +552,20 @@ func (s *NewApiSubscriptionSyncService) markAccountKeys(profile *SubscriptionPro
 // 同时从 APIKeys 列表移除对应明文 key。返回被移除的 tokenID 集合，供调用方回收远端 key。
 func (s *NewApiSubscriptionSyncService) RemoveAccountKeysFromChannels(profile *SubscriptionProfile, account NewApiAccount) map[int64]struct{} {
 	removed := make(map[int64]struct{}, len(account.ProvisionedKeys))
-	if s.cfgManager == nil {
-		return removed
-	}
-	tokenIDs := make(map[int64]struct{}, len(account.ProvisionedKeys))
 	for _, k := range account.ProvisionedKeys {
-		tokenIDs[int64(k.TokenID)] = struct{}{}
+		removed[int64(k.TokenID)] = struct{}{}
 	}
+	s.removeTokenKeysFromChannels(profile, removed)
+	return removed
+}
+
+// removeTokenKeysFromChannels 按 tokenID 集合从订阅关联渠道剔除 key 配置与对应明文 key，
+// 返回发生剔除的渠道数。
+func (s *NewApiSubscriptionSyncService) removeTokenKeysFromChannels(profile *SubscriptionProfile, tokenIDs map[int64]struct{}) int {
+	if s.cfgManager == nil || len(tokenIDs) == 0 {
+		return 0
+	}
+	changedChannels := 0
 	for _, uid := range profile.LinkedChannelUIDs {
 		kind, index, channel, ok := findNewApiChannel(s.cfgManager, uid)
 		if !ok {
@@ -569,7 +576,6 @@ func (s *NewApiSubscriptionSyncService) RemoveAccountKeysFromChannels(profile *S
 		for _, cfg := range channel.APIKeyConfigs {
 			if cfg.SourceSubscriptionUID == profile.SubscriptionUID {
 				if _, owned := tokenIDs[cfg.SourceRemoteTokenID]; owned {
-					removed[cfg.SourceRemoteTokenID] = struct{}{}
 					if cfg.Key != "" {
 						removedKeys[cfg.Key] = struct{}{}
 					}
@@ -586,10 +592,12 @@ func (s *NewApiSubscriptionSyncService) RemoveAccountKeysFromChannels(profile *S
 			keptKeys = append(keptKeys, k)
 		}
 		if len(keptConfigs) != len(channel.APIKeyConfigs) || len(keptKeys) != len(channel.APIKeys) {
-			_, _ = updateChannelForKind(s.cfgManager, kind, index, config.UpstreamUpdate{APIKeys: keptKeys, APIKeyConfigs: keptConfigs})
+			if _, err := updateChannelForKind(s.cfgManager, kind, index, config.UpstreamUpdate{APIKeys: keptKeys, APIKeyConfigs: keptConfigs}); err == nil {
+				changedChannels++
+			}
 		}
 	}
-	return removed
+	return changedChannels
 }
 
 // accountKeyStatuses 生成指定账号 key 的状态条目。
@@ -932,7 +940,11 @@ type newApiTokenHealer interface {
 // 用户误删渠道 key 后，常规同步只更新已存在 config、无法找回；此处按 desired 的
 // tokenID 从远端 token 列表取回明文（掩码经揭示端点换回），经 injectProvisionedKeys
 // 重建 config 并入 APIKeys。远端 token 也已删除的项跳过，绝不注入空 key。
-func (s *NewApiSubscriptionSyncService) healMissingProvisionedKeys(ctx context.Context, profile *SubscriptionProfile, adapter NewApiSyncAdapter, baseURL, accessToken, userID, authTokenMode string, desired []newApiDesiredKey) {
+// healMissingProvisionedKeys 对账关联渠道与本订阅拥有的自动接入 key：
+// 正向——渠道缺失的 key 按 tokenID 从远端列表找回并重新注入（掩码 key 经揭示端点换明文）；
+// 反向——远端已删除的 token 同步从渠道与 profile 清理（ownerAccountUID 为空表示订阅级凭证）。
+// 反向清理仅在远端列表成功拉全且非空时判定，防止接口异常导致误删。
+func (s *NewApiSubscriptionSyncService) healMissingProvisionedKeys(ctx context.Context, profile *SubscriptionProfile, adapter NewApiSyncAdapter, baseURL, accessToken, userID, authTokenMode string, desired []newApiDesiredKey, ownerAccountUID string) {
 	if s.cfgManager == nil || len(profile.LinkedChannelUIDs) == 0 || len(desired) == 0 {
 		return
 	}
@@ -950,12 +962,16 @@ func (s *NewApiSubscriptionSyncService) healMissingProvisionedKeys(ctx context.C
 		}
 		byToken := make(map[int64]struct{})
 		byUID := make(map[string]struct{})
+		hasOwnedConfig := false
 		for _, cfg := range channel.APIKeyConfigs {
 			if cfg.SourceRemoteTokenID > 0 {
 				byToken[int64(cfg.SourceRemoteTokenID)] = struct{}{}
 			}
 			if cfg.KeyUID != "" {
 				byUID[cfg.KeyUID] = struct{}{}
+			}
+			if cfg.SourceSubscriptionUID == profile.SubscriptionUID {
+				hasOwnedConfig = true
 			}
 		}
 		for _, d := range desired {
@@ -967,10 +983,11 @@ func (s *NewApiSubscriptionSyncService) healMissingProvisionedKeys(ctx context.C
 			}
 			missing = append(missing, d)
 		}
+		// 渠道里没有本订阅的任何 key 且无缺失时无需远端交互，避免空转请求。
+		if !hasOwnedConfig && len(missing) == 0 {
+			return
+		}
 		break
-	}
-	if len(missing) == 0 {
-		return
 	}
 
 	need := make(map[int64]struct{}, len(missing))
@@ -978,18 +995,18 @@ func (s *NewApiSubscriptionSyncService) healMissingProvisionedKeys(ctx context.C
 		need[d.tokenID] = struct{}{}
 	}
 	remote := make(map[int64]string, len(missing))
+	remoteIDs := make(map[int64]struct{})
+	listComplete := false
 	const pageSize = 100
-	for page := 1; len(need) > 0; page++ {
+	for page := 1; ; page++ {
 		tokens, err := healer.ListTokens(ctx, baseURL, accessToken, userID, authTokenMode, page, pageSize)
 		if err != nil {
-			log.Printf("[NewApi-Sync] 自愈拉取远端 token 列表失败 subscription=%s: %v", profile.SubscriptionUID, err)
+			log.Printf("[NewApi-Sync] 对账拉取远端 token 列表失败 subscription=%s: %v", profile.SubscriptionUID, err)
 			return
-		}
-		if len(tokens) == 0 {
-			break
 		}
 		for i := range tokens {
 			id := int64(tokens[i].ID)
+			remoteIDs[id] = struct{}{}
 			if _, wanted := need[id]; !wanted {
 				continue
 			}
@@ -1006,26 +1023,79 @@ func (s *NewApiSubscriptionSyncService) healMissingProvisionedKeys(ctx context.C
 			delete(need, id)
 		}
 		if len(tokens) < pageSize {
+			listComplete = true
 			break
 		}
 	}
-	if len(remote) == 0 {
-		return
-	}
 
-	healed := make([]newApiDesiredKey, 0, len(remote))
-	plaintextByToken := make(map[int64]string, len(remote))
-	for _, d := range desired {
-		if key, found := remote[d.tokenID]; found {
-			healed = append(healed, d)
-			plaintextByToken[d.tokenID] = key
+	// 正向：远端仍在的缺失 key 重新注入渠道。
+	if len(remote) > 0 {
+		healed := make([]newApiDesiredKey, 0, len(remote))
+		plaintextByToken := make(map[int64]string, len(remote))
+		for _, d := range desired {
+			if key, found := remote[d.tokenID]; found {
+				healed = append(healed, d)
+				plaintextByToken[d.tokenID] = key
+			}
+		}
+		if len(healed) > 0 {
+			if err := s.injectProvisionedKeys(profile, healed, plaintextByToken); err != nil {
+				log.Printf("[NewApi-Sync] 自愈注入渠道失败 subscription=%s: %v", profile.SubscriptionUID, err)
+			} else {
+				log.Printf("[NewApi-Sync] 自愈找回自动接入 key subscription=%s count=%d tokens=%v", profile.SubscriptionUID, len(healed), needKeys(remote))
+			}
 		}
 	}
-	if err := s.injectProvisionedKeys(profile, healed, plaintextByToken); err != nil {
-		log.Printf("[NewApi-Sync] 自愈注入渠道失败 subscription=%s: %v", profile.SubscriptionUID, err)
-		return
+
+	// 反向：远端已删除的 token 从渠道与 profile 清理。
+	if listComplete && len(remoteIDs) > 0 {
+		stale := make([]newApiDesiredKey, 0)
+		for _, d := range desired {
+			if _, exists := remoteIDs[d.tokenID]; !exists {
+				stale = append(stale, d)
+			}
+		}
+		if len(stale) > 0 {
+			s.pruneRemoteDeletedKeys(profile, stale, ownerAccountUID)
+		}
 	}
-	log.Printf("[NewApi-Sync] 自愈找回自动接入 key subscription=%s count=%d tokens=%v", profile.SubscriptionUID, len(healed), needKeys(remote))
+}
+
+// pruneRemoteDeletedKeys 把远端已删除的 token 从关联渠道与订阅画像中移除。
+func (s *NewApiSubscriptionSyncService) pruneRemoteDeletedKeys(profile *SubscriptionProfile, stale []newApiDesiredKey, ownerAccountUID string) {
+	tokenIDs := make(map[int64]struct{}, len(stale))
+	staleIDs := make([]int64, 0, len(stale))
+	for _, d := range stale {
+		tokenIDs[d.tokenID] = struct{}{}
+		staleIDs = append(staleIDs, d.tokenID)
+	}
+	removed := s.removeTokenKeysFromChannels(profile, tokenIDs)
+	if s.store != nil {
+		_ = s.store.Patch(profile.SubscriptionUID, nil, func(p *SubscriptionProfile) error {
+			if ownerAccountUID == "" {
+				p.ProvisionedKeys = dropProvisionedKeysByTokenIDs(p.ProvisionedKeys, tokenIDs)
+				return nil
+			}
+			for i := range p.Accounts {
+				if p.Accounts[i].AccountUID == ownerAccountUID {
+					p.Accounts[i].ProvisionedKeys = dropProvisionedKeysByTokenIDs(p.Accounts[i].ProvisionedKeys, tokenIDs)
+				}
+			}
+			return nil
+		})
+	}
+	log.Printf("[NewApi-Sync] 远端已删除的自动接入 key 已清理 subscription=%s account=%s tokens=%v channels=%d", profile.SubscriptionUID, ownerAccountUID, staleIDs, removed)
+}
+
+func dropProvisionedKeysByTokenIDs(keys []NewApiProvisionedKey, tokenIDs map[int64]struct{}) []NewApiProvisionedKey {
+	kept := keys[:0]
+	for _, k := range keys {
+		if _, drop := tokenIDs[int64(k.TokenID)]; drop {
+			continue
+		}
+		kept = append(kept, k)
+	}
+	return kept
 }
 
 func needKeys(remote map[int64]string) []int64 {

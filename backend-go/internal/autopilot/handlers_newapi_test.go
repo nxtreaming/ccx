@@ -889,7 +889,8 @@ func TestHandleNewApiProvision_ReuseExistingKey_Succeeds(t *testing.T) {
 	}
 }
 
-func TestHandleNewApiProvision_ExistingKeyInDifferentGroupReturnsConflict(t *testing.T) {
+func TestHandleNewApiProvision_ExistingKeyInDifferentGroupSuffixesNewKey(t *testing.T) {
+	// 站点上已存在同名但分组不同的 key：加后缀避让新建，而不是报 409 阻断接入。
 	site := mockNewApiSiteWithGroups(
 		t,
 		defaultNewApiProvisionKeyNameForGroup("default"),
@@ -916,11 +917,15 @@ func TestHandleNewApiProvision_ExistingKeyInDifferentGroupReturnsConflict(t *tes
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("期望 409, got %d, body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("期望 201, got %d, body=%s", w.Code, w.Body.String())
 	}
-	if store.Get("sub-group-mismatch") != nil || len(cfgManager.GetConfig().Upstream) != 0 {
-		t.Fatal("分组冲突不得创建订阅或渠道")
+	profile := store.Get("sub-group-mismatch")
+	if profile == nil {
+		t.Fatal("避让成功后应创建订阅")
+	}
+	if len(profile.ProvisionedKeys) != 1 || profile.ProvisionedKeys[0].Name == defaultNewApiProvisionKeyNameForGroup("default") {
+		t.Fatalf("新 key 应带避让后缀: %+v", profile.ProvisionedKeys)
 	}
 }
 

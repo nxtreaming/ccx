@@ -274,22 +274,23 @@ func provisionNewApiGroupKeys(
 		cleanupNewApiProvisionedKeys(ctx, adapter, req, userID, keys)
 	}
 	for i, group := range groups {
-		tokenID, keyPlain, reused, err := adapter.ProvisionKey(ctx, req.BaseURL, req.AccessToken, userID, req.AuthTokenMode, NewApiProvisionOptions{
+		tokenID, keyPlain, reused, finalName, err := adapter.ProvisionKey(ctx, req.BaseURL, req.AccessToken, userID, req.AuthTokenMode, NewApiProvisionOptions{
 			Name:   names[i],
 			Group:  group.Name,
 			Models: req.ProvisionModels,
 		})
 		if err != nil {
 			if tokenID > 0 && !reused {
-				rollback(newApiProvisionedKey{NewApiProvisionedKey: NewApiProvisionedKey{Name: names[i], Group: group.Name, GroupMultiplier: group.Ratio, TokenID: tokenID}})
+				rollback(newApiProvisionedKey{NewApiProvisionedKey: NewApiProvisionedKey{Name: finalName, Group: group.Name, GroupMultiplier: group.Ratio, TokenID: tokenID}})
 			} else {
 				rollback()
 			}
 			return nil, fmt.Errorf("分组 %q 建 key 失败: %w", group.Name, err)
 		}
+		// 记录实际使用的名字：同名冲突避让时 finalName 会带后缀，与远端保持一致。
 		current := newApiProvisionedKey{
 			NewApiProvisionedKey: NewApiProvisionedKey{
-				Name:            names[i],
+				Name:            finalName,
 				Group:           group.Name,
 				GroupMultiplier: group.Ratio,
 				TokenID:         tokenID,
