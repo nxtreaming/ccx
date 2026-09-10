@@ -736,9 +736,14 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* Vuetify reset 层让按钮字号继承容器（card-title 22px），须显式钉住，
+   口径对齐图表控件 chart-control-btn（11px/600） */
 .log-view-toggle :deep(.v-btn) {
   min-width: auto;
   padding-inline: 8px;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
 }
 
 .log-view-toggle :deep(.v-btn__content) {
