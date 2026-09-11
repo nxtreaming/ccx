@@ -566,8 +566,23 @@ func TryUpstreamWithAllKeys(
 			return false, "", 0, nil, nil, fmt.Errorf("execution model rewrite failed: %w", rewriteErr)
 		}
 		requestBody = rewritten
-		RestoreRequestBody(c, requestBody)
-		c.Set("requestBodyBytes", requestBody)
+		// 跨模型改写后，客户端按原模型窗口注入的上下文预算提醒必然失真，
+		// 按请求协议剥离（统一语义见 providers/client_budget_reminders.go）。
+		// 转换路径后续会再剔一次，幂等无害；此处兜住直通执行协议的缺口。
+		switch kind {
+		case scheduler.ChannelKindMessages:
+			if stripped := providers.StripCCBudgetRemindersFromBody(requestBody); string(stripped) != string(requestBody) {
+				requestBody = stripped
+				RestoreRequestBody(c, requestBody)
+				c.Set("requestBodyBytes", requestBody)
+			}
+		case scheduler.ChannelKindResponses:
+			if stripped := providers.StripCodexBudgetRemindersFromResponsesBody(requestBody); string(stripped) != string(requestBody) {
+				requestBody = stripped
+				RestoreRequestBody(c, requestBody)
+				c.Set("requestBodyBytes", requestBody)
+			}
+		}
 		RequestLogf(c, "[%s-Federation] 请求协议 %s 走执行协议 %s，模型改写: %s -> %s",
 			apiType, kind, executionKind, originalModel, tryOpts.executionModel)
 		model = tryOpts.executionModel
