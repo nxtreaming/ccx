@@ -401,7 +401,7 @@ func (s *ChannelScheduler) GetFederatedCandidateCount(kind ChannelKind) int {
 	for _, ch := range s.getActiveChannelsWithTrace(context.Background(), kind, "", newSelectionTrace(SelectionOptions{Kind: kind})) {
 		seen[ch.Route.Key()] = struct{}{}
 	}
-	if !s.protocolFederationEnabled(kind) {
+	if !s.protocolFederationApplicable(kind) {
 		return len(seen)
 	}
 	cfg := s.configManager.GetConfig()

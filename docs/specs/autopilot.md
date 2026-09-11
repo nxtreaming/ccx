@@ -671,6 +671,7 @@ health(40) > fastDecay(25) > successRate(20) > latency(10) > cost(5)
 
 - 候选粒度从渠道级变为 (渠道, 模型) 级：`RoutingCandidate`/`RoutingPlanCandidate`/`channelScoreEntry` 新增 `CandidateKey = channelUID + "|" + normalizeRoutingModelID(model)`（`smart_router.go:1318`）；单渠道候选行上限 `routingCandidateFanoutLimit = 8`。
 - AutoManaged 渠道走 `ResolveModelsAnyEndpointWithFloor`（能力过滤 + `betterRankedModel` 排序 + 截断 top8）；精确/等价命中只产该行；无精确命中且意图不允许替代（`AllowsSubstitution()` 为 false）→ 渠道不产候选行（保持 exact_model_required 不变量）。
+- 路由意图按协议划分，不再按模型名白名单放行（`model_routing_policy.go`）：messages/responses 逻辑入口对任意请求模型都是自适应（gpt-6-astra、第三方模型名与 claude/gpt-5.x 同权，精确命中仍优先短路）；chat/gemini/images/vectors 执行侧协议保持 exact_only。协议联邦同为常开行为：`ProtocolFederationConfig` 配置开关已删除，默认 Autopilot 路径无条件拉入同账号 AutoManaged 的 chat/responses sibling（执行边界 `protocolFederationExecutionKinds`，转换惩罚固定 0.35）。
 - **精确命中短路例外（运行期否决）**：精确模型在画像中命中、但被运行期负信号否决（Key 全禁用/持久限制/模型熔断/endpoint binding 判死，`exactModelRuntimeViable`）时，自适应意图渠道不短路，改产替代模型行（被否决的精确模型不再产行，`MappingReason` 带 `exact_vetoed:` 前缀）；单数版 `resolveChannelModel` 的 AutoManaged 同名承接路径同样改取最佳非精确候选。非自适应意图与手动显式映射渠道不受影响。
 - 显式/白名单渠道从 `ModelMapping` 值 + redirect 目标枚举，逐个过 `ExplainModelSupport`；枚举为空但单数版认为 supported 时回退单模型行（fail-open）。
 - 同名承接（映射后模型名 == 请求模型名）的行 `MappedModel` 保持空——`applyModelQualityTier` 依赖 MappedModel 判空做映射质量档折算；模型名展示由前端经 CandidateKey 回退解析（`AutopilotTraceDetailDialog.vue` 加 Model 列）。

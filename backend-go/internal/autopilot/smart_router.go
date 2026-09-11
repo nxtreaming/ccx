@@ -1608,7 +1608,7 @@ func (r *SmartRouter) resolveChannelModel(
 			resolution.MappingSource = "explicit_mapping"
 			resolution.MappingReason = "matched configured model mapping"
 		} else if upstream.AutoManaged &&
-			ClassifyModelRoutingIntent(profile.ChannelKind, requestModel).AllowsSubstitution() &&
+			ClassifyModelRoutingIntent(profile.ChannelKind).AllowsSubstitution() &&
 			!r.exactModelRuntimeViable(upstream, profile, resolution.ActualModel) {
 			// AutoManaged 同名承接（无显式映射）被运行期负信号否决：
 			// 改取最佳非精确候选，与复数版 resolveChannelModels 的否决展开一致。
@@ -1636,7 +1636,7 @@ func (r *SmartRouter) resolveChannelModel(
 			// 精确命中但被运行期负信号否决：自适应意图下改取最佳非精确候选，
 			// 与复数版 resolveChannelModels 的否决展开保持一致。
 			if normalizeRoutingModelID(target.Model) == normalizeRoutingModelID(requestModel) &&
-				ClassifyModelRoutingIntent(profile.ChannelKind, requestModel).AllowsSubstitution() &&
+				ClassifyModelRoutingIntent(profile.ChannelKind).AllowsSubstitution() &&
 				!r.exactModelRuntimeViable(upstream, profile, target.Model) {
 				if substitute, ok := r.bestSubstituteModel(profile, upstream, requestModel); ok {
 					target.Model = substitute
@@ -1699,7 +1699,7 @@ func (r *SmartRouter) resolveChannelModels(
 		// 被否决的精确模型本身不再产行，让位替代模型。
 		exactVetoed := false
 		if exactModel != "" &&
-			ClassifyModelRoutingIntent(profile.ChannelKind, requestModel).AllowsSubstitution() &&
+			ClassifyModelRoutingIntent(profile.ChannelKind).AllowsSubstitution() &&
 			!r.exactModelRuntimeViable(upstream, profile, exactModel) {
 			log.Printf("[SmartRouter-ExactVeto] 渠道 %s: 精确模型 %q 被运行期负信号否决，展开替代模型行", channelUID, requestModel)
 			exactModel = ""
@@ -1707,7 +1707,7 @@ func (r *SmartRouter) resolveChannelModels(
 		}
 		// 非自适应入口禁止跨模型替代：无精确/等价命中且意图要求精确时，
 		// 交由单数版返回 Supported=false（该渠道不产生候选行）。
-		if exactModel == "" && !exactVetoed && !ClassifyModelRoutingIntent(profile.ChannelKind, requestModel).AllowsSubstitution() {
+		if exactModel == "" && !exactVetoed && !ClassifyModelRoutingIntent(profile.ChannelKind).AllowsSubstitution() {
 			return nil
 		}
 		resolutions := make([]channelModelResolution, 0, len(ranked))

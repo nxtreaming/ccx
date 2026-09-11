@@ -158,7 +158,7 @@ func NewModelResolver(profileStore *ModelProfileStore, cfgManager *config.Config
 //   - 显式 modelMapping（用户手动配置）始终优先，不经过能力下界检查
 //   - 禁止链式映射：candidate 源始终是原始 GetModelProfiles 结果
 //   - 仅 autoManaged 渠道走自动映射；手动渠道由 config.RedirectModel 短路
-//   - 只有 ModelRoutingPolicy 白名单入口允许跨模型替代；其余请求必须精确命中模型 ID
+//   - 自适应协议入口（messages/responses）允许跨模型替代；其余请求必须精确命中模型 ID
 func (r *ModelResolver) ResolveModel(
 	requestModel string,
 	channelUID string,
@@ -236,7 +236,7 @@ func (r *ModelResolver) ResolveModel(
 		effort, decided := r.resolveSingleProfileEffort(equivalent, floor)
 		return ResolvedRouteTarget{Model: equivalent.ModelID, Effort: effort, EffortDecided: decided, Reason: rsn}, true, rsn
 	}
-	intent := ClassifyModelRoutingIntent(channelKind, requestModel)
+	intent := ClassifyModelRoutingIntent(channelKind)
 	if !intent.AllowsSubstitution() {
 		return ResolvedRouteTarget{Model: requestModel, Reason: "exact_model_required"}, false, "exact_model_required"
 	}
@@ -357,7 +357,7 @@ func (r *ModelResolver) resolveModelAnyEndpoint(
 		rsn := modelResolutionReason("found_equivalent_model_in_profile", qualityFallback)
 		return ResolvedRouteTarget{Model: equivalent.ModelID, Reason: rsn}, true, rsn
 	}
-	intent := ClassifyModelRoutingIntent(channelKind, requestModel)
+	intent := ClassifyModelRoutingIntent(channelKind)
 	if !intent.AllowsSubstitution() {
 		return ResolvedRouteTarget{Model: requestModel, Reason: "exact_model_required"}, false, "exact_model_required"
 	}
