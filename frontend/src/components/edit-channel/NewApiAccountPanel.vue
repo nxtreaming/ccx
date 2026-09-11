@@ -90,7 +90,7 @@
     </v-alert>
 
     <!-- 订阅凭证行与账号列表平权展示：同样可删除（清空订阅凭证并剔除其自动接入 key），
-         换凭证 = 删除后经「添加账号」重新提供，首个添加的账号凭证将承担套餐同步。
+         换凭证 = 删除后经「添加账号」重新提供，首个添加的账号凭证将承担账号同步。
          订阅凭证缺失但账号在列属平权正常态，不打扰（提示仅在账号列表也为空时出现）。 -->
     <div v-if="subscription && subscription.accessTokenMasked" class="account-item mb-2">
       <div
@@ -342,7 +342,8 @@
         </v-expand-transition>
       </div>
     </div>
-    <v-alert v-else color="info" variant="tonal" density="compact">
+    <!-- 空账号提示仅在完全无账号时出现：已有主账号凭证行（或任一子账号）时不重复提醒 -->
+    <v-alert v-else-if="!(subscription && subscription.accessTokenMasked)" color="info" variant="tonal" density="compact">
       {{ t('subscription.newApi.noAccounts') }}
     </v-alert>
     </template>
@@ -538,7 +539,7 @@ async function refreshPrimaryAccount() {
 }
 
 // 账号平权：订阅凭证行同样可删除（清空订阅级凭证并剔除其自动接入 key）；
-// 换凭证 = 删除后经「添加账号」重新提供，首个添加的账号凭证将承担套餐同步。
+// 换凭证 = 删除后经「添加账号」重新提供，首个添加的账号凭证将承担账号同步。
 async function deletePrimaryAccount() {
   if (!effectiveSubscriptionUid.value || !subscription.value?.accessTokenMasked) return
   deletingPrimary.value = true
@@ -606,7 +607,8 @@ async function handleAddAccount() {
       provisionModels: verified.availableModels,
     })
     addForm.value = { accessToken: '', userId: '', authTokenMode: 'bearer' }
-    await fetchAccounts()
+    // 添加账号会自动接入新 Key，主账号行与账号列表都要重拉，避免 Key 统计停留在旧值
+    await Promise.all([fetchPrimaryAccount(), fetchAccounts()])
     emit('updated')
   } catch (e) {
     addError.value = e instanceof Error ? e.message : 'Unknown error'
@@ -619,7 +621,8 @@ async function refreshAccount(accountUid: string) {
   refreshing.value = accountUid
   try {
     await api.refreshSubscriptionAccount(effectiveSubscriptionUid.value, accountUid)
-    await fetchAccounts()
+    // 刷新账号可能重新接入 Key 并更新余额，主账号统计同步重拉
+    await Promise.all([fetchPrimaryAccount(), fetchAccounts()])
   } catch (e) {
     console.error('Failed to refresh account:', e)
   } finally {
@@ -632,7 +635,8 @@ async function deleteAccount(accountUid: string) {
   try {
     await api.deleteSubscriptionAccount(effectiveSubscriptionUid.value, accountUid)
     if (expandedAccountUid.value === accountUid) expandedAccountUid.value = ''
-    await fetchAccounts()
+    // 删除账号会剔除其自动接入 Key，主账号统计同步重拉
+    await Promise.all([fetchPrimaryAccount(), fetchAccounts()])
     emit('updated')
   } catch (e) {
     console.error('Failed to delete account:', e)

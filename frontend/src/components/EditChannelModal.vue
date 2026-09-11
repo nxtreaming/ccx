@@ -182,15 +182,17 @@
                 />
               </div>
 
-              <!-- 竞速参与：卡片式设置行（参与=可作主触发也可作影子目标） -->
-              <div class="proxy-direct-row mt-4" :class="{ 'proxy-direct-row--on': form.racing?.enabled === true }">
+              <!-- 竞速参与：卡片式设置行（参与=可作主触发也可作影子目标）。
+                   后端默认开启：未显式配置（nil）的渠道开关显示为开，仅显式 false 显示为关；
+                   未触碰开关保存时 racing 保持缺省，渠道继续跟随全局/默认值。 -->
+              <div class="proxy-direct-row mt-4" :class="{ 'proxy-direct-row--on': form.racing?.enabled !== false }">
                 <v-icon size="20" class="proxy-direct-row-icon">mdi-flag-checkered</v-icon>
                 <div class="flex-grow-1">
                   <div class="text-body-2 font-weight-medium">{{ t('channelEditor.transport.racing.label') }}</div>
                   <div class="text-caption text-medium-emphasis">{{ t('channelEditor.transport.racing.hint') }}</div>
                 </div>
                 <v-switch
-                  :model-value="form.racing?.enabled === true"
+                  :model-value="form.racing?.enabled !== false"
                   color="primary"
                   density="compact"
                   hide-details

@@ -6,7 +6,7 @@ import "log"
 // 极简面：仅总开关。影子数、触发阈值、候选成本过滤等行为参数由请求的
 // CostPreference 经 internal/racing 策略表自动推导，不作为配置项暴露。
 type GlobalRacingConfig struct {
-	Enabled *bool `json:"enabled,omitempty"` // 全局开关（nil=关闭）
+	Enabled *bool `json:"enabled,omitempty"` // 全局开关（nil=默认开启）
 }
 
 // ChannelRacingConfig 渠道级竞速参与配置。
@@ -16,9 +16,9 @@ type ChannelRacingConfig struct {
 }
 
 // ResolveRacingPolicy 解析渠道最终是否参与竞速。
-// 覆盖优先级：渠道级字段 > 全局字段 > 默认关闭。
+// 覆盖优先级：渠道级字段 > 全局字段 > 默认开启。
 func (c *Config) ResolveRacingPolicy(u *UpstreamConfig) bool {
-	enabled := false
+	enabled := true
 	if c != nil && c.Racing != nil && c.Racing.Enabled != nil {
 		enabled = *c.Racing.Enabled
 	}
@@ -44,7 +44,7 @@ func (cm *ConfigManager) SetRacingEnabled(enabled bool) error {
 	return nil
 }
 
-// GetRacingEnabled 读取竞速全局开关（nil 配置视为关闭）。
+// GetRacingEnabled 读取竞速全局开关（nil 配置视为默认开启）。
 func (cm *ConfigManager) GetRacingEnabled() bool {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()

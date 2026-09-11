@@ -215,6 +215,43 @@ describe('NewApiAccountPanel', () => {
     expect(wrapper.text()).toContain('BenedictKing')
   })
 
+  it('已有主账号凭证且暂无子账号时不显示空账号提示', async () => {
+    apiMocks.getSubscriptionAccounts.mockResolvedValue({ accounts: [] })
+    const wrapper = mountPanel()
+    await vi.waitFor(() => expect(apiMocks.getSubscription).toHaveBeenCalled())
+    await nextTick()
+
+    // 主账号凭证行在列（有脱敏 token），空账号提示不再出现，避免误读为“没有账号”
+    expect(wrapper.text()).toContain('****oken')
+    expect(wrapper.text()).not.toContain('subscription.newApi.noAccounts')
+  })
+
+  it('添加账号成功后重拉主账号与账号列表（自动接入 Key 统计同步刷新）', async () => {
+    apiMocks.verifyNewApiSubscription.mockResolvedValue({
+      userId: 42,
+      username: 'linuxdo_3388',
+      groups: { default: 1 },
+      availableModels: ['gpt-4o'],
+    })
+    apiMocks.addSubscriptionAccount.mockResolvedValue(undefined)
+    const wrapper = mountPanel()
+    await vi.waitFor(() => expect(apiMocks.getSubscription).toHaveBeenCalledWith('sub-main'))
+    await nextTick()
+    const fetchPrimaryCalls = apiMocks.getSubscription.mock.calls.length
+
+    await wrapper.find('input[type="password"]').setValue('second-account-token')
+    await wrapper.find('input:not([type="password"])').setValue('42')
+    await wrapper.findAll('button').find(button => button.text().includes('app.actions.add'))!.trigger('click')
+
+    await vi.waitFor(() => expect(apiMocks.addSubscriptionAccount).toHaveBeenCalledWith('sub-main', expect.objectContaining({
+      accessToken: 'second-account-token',
+      userId: '42',
+      displayName: 'linuxdo_3388',
+    })))
+    await vi.waitFor(() => expect(apiMocks.getSubscription.mock.calls.length).toBeGreaterThan(fetchPrimaryCalls))
+    expect(apiMocks.getSubscriptionAccounts.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('new_api 渠道缺失 subscriptionUid 时按 channelUid 兜底拉取订阅', async () => {
     const wrapper = mountPanel({
       subscriptionUid: '',
@@ -289,5 +326,7 @@ describe('NewApiAccountPanel', () => {
     apiMocks.deleteSubscriptionAccount.mockResolvedValue(undefined)
     await deleteButtons[deleteButtons.length - 1]!.trigger('click')
     await vi.waitFor(() => expect(apiMocks.deleteSubscriptionAccount).toHaveBeenCalledWith('sub-main', 'acct_sub_1'))
+    // 删除子账号会剔除其自动接入 Key：主账号订阅同步重拉
+    await vi.waitFor(() => expect(apiMocks.getSubscription.mock.calls.filter(c => c[0] === 'sub-main').length).toBeGreaterThanOrEqual(2))
   })
 })
