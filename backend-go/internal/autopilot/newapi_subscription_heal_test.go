@@ -162,7 +162,7 @@ func TestHealPrunesRemoteDeletedTokens(t *testing.T) {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
 	profile := &SubscriptionProfile{
-		SubscriptionUID: "newapi-ch-1",
+		SubscriptionUID:   "newapi-ch-1",
 		LinkedChannelUIDs: []string{"ch-1"},
 		ProvisionedKeys: []NewApiProvisionedKey{
 			{Name: "ccx-11", Group: "default", TokenID: 11},
@@ -209,9 +209,9 @@ func TestHealSkipsPruneWhenRemoteListEmpty(t *testing.T) {
 		t.Fatalf("创建 store 失败: %v", err)
 	}
 	profile := &SubscriptionProfile{
-		SubscriptionUID: "newapi-ch-1",
+		SubscriptionUID:   "newapi-ch-1",
 		LinkedChannelUIDs: []string{"ch-1"},
-		ProvisionedKeys: []NewApiProvisionedKey{{Name: "ccx-11", Group: "default", TokenID: 11}},
+		ProvisionedKeys:   []NewApiProvisionedKey{{Name: "ccx-11", Group: "default", TokenID: 11}},
 	}
 	if err := store.Create(profile); err != nil {
 		t.Fatalf("创建订阅失败: %v", err)
