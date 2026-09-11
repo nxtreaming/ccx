@@ -26,6 +26,7 @@ import (
 	"github.com/BenedictKing/ccx/internal/eventbus"
 	"github.com/BenedictKing/ccx/internal/guardrails"
 	"github.com/BenedictKing/ccx/internal/handlers"
+	"github.com/BenedictKing/ccx/internal/handlers/alpha"
 	channelsv2 "github.com/BenedictKing/ccx/internal/handlers/channels"
 	"github.com/BenedictKing/ccx/internal/handlers/chat"
 	"github.com/BenedictKing/ccx/internal/handlers/common"
@@ -1845,6 +1846,12 @@ func main() {
 	}
 	r.POST("/v1/responses/compact", compactWithTemplates)
 	r.POST("/:routePrefix/v1/responses/compact", compactWithTemplates)
+
+	// 代理端点 - Codex 记忆层数据面（history/notes 透传，粘 Responses 渠道池）
+	// 路径格式：/v1/alpha/history/v2/* 或 /v1/alpha/notes/v2/*
+	alphaHandler := alpha.Handler(envCfg, cfgManager, channelScheduler)
+	r.POST("/v1/alpha/*rest", alphaHandler)
+	r.POST("/:routePrefix/v1/alpha/*rest", alphaHandler)
 
 	// 代理端点 - Gemini API (原生协议)
 	// 使用通配符捕获 model:action 格式，如 gemini-pro:generateContent
