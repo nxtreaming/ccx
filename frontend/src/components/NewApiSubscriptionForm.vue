@@ -5,16 +5,25 @@
       <div v-if="!autoProvision" class="text-subtitle-2 mb-2 text-medium-emphasis">
         {{ t('subscription.newApi.step1Title') }}
       </div>
-      <v-text-field
-        v-model="verifyForm.baseUrl"
-        :label="t('subscription.newApi.baseUrl')"
-        placeholder="https://your-newapi-instance.com"
-        variant="outlined"
-        density="compact"
-        class="mb-2"
-        :disabled="verified"
-        required
-      />
+      <div>
+        <v-text-field
+          v-model="verifyForm.baseUrl"
+          :label="t('subscription.newApi.baseUrl')"
+          placeholder="https://your-newapi-instance.com"
+          variant="outlined"
+          density="compact"
+          :class="recognizedBaseUrl ? '' : 'mb-2'"
+          :disabled="verified"
+          required
+        />
+        <div
+          v-if="recognizedBaseUrl"
+          class="recognized-base-url d-flex align-start ga-1 text-caption text-medium-emphasis mb-2"
+        >
+          <v-icon size="14" color="success" class="mt-1">mdi-arrow-right</v-icon>
+          <span>{{ t('autopilot.quickAdd.recognizedBaseUrl', { url: recognizedBaseUrl }) }}</span>
+        </div>
+      </div>
       <v-text-field
         v-model="verifyForm.accessToken"
         :label="t('subscription.newApi.accessToken')"
@@ -224,6 +233,7 @@ import {
   eligibleNewApiGroups,
   isValidNewApiGroupMultiplier
 } from '@/utils/newApiGroups'
+import { parseQuickInput } from '@/utils/quickInputParser'
 
 const { t } = useI18n()
 
@@ -304,6 +314,11 @@ const eligibleGroupItems = computed(() =>
 const blockedGroupCount = computed(() => groupItems.value.length - eligibleGroupItems.value.length)
 
 const canVerify = computed(() => !!verifyForm.value.baseUrl.trim() && !!verifyForm.value.accessToken.trim() && !!(verifyForm.value.userId ?? '').trim())
+
+// 与标准模式同一套识别：粘贴面板页地址（如 .../keys）或端点 URL 时剥到站点根；
+// 识别不出（空/非法输入）时回退原始输入，保持原有提交行为
+const recognizedBaseUrl = computed(() => parseQuickInput(verifyForm.value.baseUrl.trim()).detectedBaseUrl)
+const submitBaseUrl = computed(() => recognizedBaseUrl.value || verifyForm.value.baseUrl.trim())
 const canProvision = computed(
   () =>
     !!provisionForm.value.subscriptionUid.trim() &&
@@ -317,7 +332,7 @@ async function handleVerify() {
   verifying.value = true
   try {
     const result = await api.verifyNewApiSubscription({
-      baseUrl: verifyForm.value.baseUrl.trim(),
+      baseUrl: submitBaseUrl.value,
       accessToken: verifyForm.value.accessToken,
       userId: verifyForm.value.userId?.trim() || undefined,
       authTokenMode: verifyForm.value.authTokenMode || undefined,
@@ -328,7 +343,7 @@ async function handleVerify() {
     verified.value = true
 
     // 预填第 2 步表单（显示名称自动取上游账号用户名，不收用户输入）
-    provisionForm.value.baseUrl = verifyForm.value.baseUrl.trim()
+    provisionForm.value.baseUrl = submitBaseUrl.value
     provisionForm.value.accessToken = verifyForm.value.accessToken
     provisionForm.value.userId = verifyForm.value.userId?.trim() || undefined
     provisionForm.value.authTokenMode = verifyForm.value.authTokenMode || undefined
@@ -451,3 +466,9 @@ function requestPrimaryAction() {
 
 defineExpose({ requestPrimaryAction })
 </script>
+
+<style scoped>
+.recognized-base-url {
+  overflow-wrap: anywhere;
+}
+</style>
