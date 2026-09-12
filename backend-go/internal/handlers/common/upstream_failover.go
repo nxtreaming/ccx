@@ -845,7 +845,9 @@ func TryUpstreamWithAllKeys(
 									RequestLogf(c, "[%s-AutoModel] override %s -> %s 不在工具白名单内，放弃 override 按原始模型透传（渠道 %s 白名单 %d 组合）",
 										apiType, model, target.Model, upstream.Name, len(verified))
 									target = nil
-									mappingFailReason = "tool_whitelist_conflict"
+									// 外层 else-if 只在未进入本块时消费 mappingFailReason，
+									// 冲突原因须直接落 context 才不会静默丢失。
+									c.Set("mappingFailReason", "tool_whitelist_conflict")
 								}
 							}
 						}
@@ -874,8 +876,9 @@ func TryUpstreamWithAllKeys(
 							apiType, euid, model, target.Model, target.Effort, target.EffortDecided)
 					}
 
-					// 记录 effort 决策来源与钳位状态，供 ChannelLog 可观测性字段使用
-					if target.EffortDecided {
+					// 记录 effort 决策来源与钳位状态，供 ChannelLog 可观测性字段使用。
+					// target 可能已被上方白名单终审置 nil（放弃 override 透传），须判空。
+					if target != nil && target.EffortDecided {
 						c.Set("effortDecisionSource", "autopilot")
 						// 注意：ExtractClientEffortExplicit 按 scheduler.ChannelKind（小写 messages/chat/...）
 						// 分支判断协议字段，而非 apiType 显示名（Messages/Chat/...），此处须传入 kind。
