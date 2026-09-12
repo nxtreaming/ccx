@@ -51,6 +51,57 @@ func DetectPseudoToolCallMarker(text string) bool {
 	return false
 }
 
+// maxPseudoMarkerBytes 最长伪标记的字节数（流式扫描器的尾部保留长度依据）。
+var maxPseudoMarkerBytes = func() int {
+	maxLen := 0
+	for _, marker := range pseudoToolCallMarkerPatterns {
+		if len(marker) > maxLen {
+			maxLen = len(marker)
+		}
+	}
+	return maxLen
+}()
+
+// PseudoToolCallMarkerScanner 流式文本增量的伪标记扫描器（标记可能跨 delta
+// 切断，尾部保留 maxMarker-1 字节拼接判定；幂等：命中后不再扫描）。
+type PseudoToolCallMarkerScanner struct {
+	tail  string
+	found bool
+}
+
+// Feed 送入一段新增文本，返回自本次调用起是否已检测到标记。
+func (s *PseudoToolCallMarkerScanner) Feed(text string) bool {
+	if s == nil || s.found {
+		return s != nil && s.found
+	}
+	joined := s.tail + text
+	if DetectPseudoToolCallMarker(joined) {
+		s.found = true
+		s.tail = ""
+		return true
+	}
+	keep := maxPseudoMarkerBytes - 1
+	if len(joined) > keep {
+		s.tail = joined[len(joined)-keep:]
+	} else {
+		s.tail = joined
+	}
+	return false
+}
+
+// Found 返回是否已检测到标记。
+func (s *PseudoToolCallMarkerScanner) Found() bool {
+	return s != nil && s.found
+}
+
+// MarkPseudoToolCallMarkerIfHit 扫描一段完整文本（如 responses 预检缓冲），
+// 命中则标记观察器（MarkSeverityTagIfHit 的对偶）。
+func MarkPseudoToolCallMarkerIfHit(c *gin.Context, text string) {
+	if DetectPseudoToolCallMarker(text) {
+		MarkPseudoToolCallMarker(c)
+	}
+}
+
 // RacingClaimClientCommitForStream 流式路径的竞速提交裁决（带伪标记软校验）。
 // bufferedOutput 为 preflight 期间缓冲的输出文本（各协议的 text delta/原始行拼接）。
 // 无闸门时直接放行（零开销）；有闸门时带工具请求且缓冲输出命中伪标记的

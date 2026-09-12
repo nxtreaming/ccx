@@ -25,8 +25,11 @@ type StreamTimeoutObserver struct {
 	toolCallPending        bool
 	sawToolCall            bool
 	sawSeverityTag         bool
-	maxStreamIdleMs        int64
-	maxToolCallIdleMs      int64
+	// sawPseudoToolCallMarker 流式输出文本中命中过伪工具调用标记
+	// （MaybeCountPseudoToolCallMiss 的负反馈信号源）。
+	sawPseudoToolCallMarker bool
+	maxStreamIdleMs         int64
+	maxToolCallIdleMs       int64
 }
 
 func StartStreamTimeoutObservation(c *gin.Context, store *metrics.ChannelLogStore, metricsKey, requestID string, startedAt time.Time) {
@@ -229,6 +232,34 @@ func (o *StreamTimeoutObserver) SawSeverityTag() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.sawSeverityTag
+}
+
+// MarkPseudoToolCallMarker 标记本次流式输出文本中命中了伪工具调用标记。
+// 由各协议流处理器的文本扫描点调用，供 MaybeCountPseudoToolCallMiss 读取。
+func MarkPseudoToolCallMarker(c *gin.Context) {
+	if observer := GetStreamTimeoutObserver(c); observer != nil {
+		observer.markPseudoToolCallMarker()
+	}
+}
+
+// markPseudoToolCallMarker 线程安全地记录"已见到伪工具调用标记"事实。
+func (o *StreamTimeoutObserver) markPseudoToolCallMarker() {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.sawPseudoToolCallMarker = true
+}
+
+// SawPseudoToolCallMarker 返回本次流式输出中是否命中过伪工具调用标记。
+func (o *StreamTimeoutObserver) SawPseudoToolCallMarker() bool {
+	if o == nil {
+		return false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.sawPseudoToolCallMarker
 }
 
 func (o *StreamTimeoutObserver) markToolCallCompleteLocked(now time.Time) {

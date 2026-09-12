@@ -1716,6 +1716,11 @@ func TryUpstreamWithAllKeys(
 					// 事件 → 记入正向白名单（覆盖 tool_choice=auto 场景，强于探针）。
 					MaybeLearnVerifiedToolCalls(c, upstream, apiKey, attemptModel, attemptBody,
 						GetStreamTimeoutObserver(c).SawToolCall(), string(executionKind))
+					// 白名单负反馈补盲：auto 模式干净 2xx 但零真实工具调用且输出命中
+					// 伪工具调用标记文本（模型纯文本"扮演"工具调用）→ 连续计数撤销 verified。
+					MaybeCountPseudoToolCallMiss(c, upstream, apiKey, attemptModel, attemptBody,
+						GetStreamTimeoutObserver(c).SawToolCall(), GetStreamTimeoutObserver(c).SawPseudoToolCallMarker(),
+						err, string(executionKind))
 					// 安全分类能力自学习（被动侧·成功路径）：分类形状请求 2xx 完成但
 					// 输出无 <severity> 标记，说明该渠道×模型不遵循格式约束。
 					// 同样仅 messages/responses（只有这两条流式路径接了标记扫描）。

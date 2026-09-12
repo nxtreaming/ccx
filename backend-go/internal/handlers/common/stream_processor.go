@@ -670,6 +670,8 @@ func ProcessStreamEvents(
 	defer keepaliveTicker.Stop()
 	// 安全分类格式标记扫描：输出文本增量里检测 <severity，供运行期能力学习读取。
 	severityScanner := &SeverityTagScanner{}
+	// 伪工具调用标记扫描：模型用纯文本"扮演"工具调用时命中，供白名单负反馈读取。
+	pseudoScanner := &PseudoToolCallMarkerScanner{}
 
 	for {
 		select {
@@ -690,6 +692,9 @@ func ProcessStreamEvents(
 				progress.Tick()
 				if severityScanner.Feed(delta) {
 					MarkStreamSeverityTag(c)
+				}
+				if pseudoScanner.Feed(delta) {
+					MarkPseudoToolCallMarker(c)
 				}
 			}
 			eventHasActivity := ctx.OutputTextBuffer.Len() > prevTextLen || HasClaudeSemanticContent(event) || HasStreamEventActivity(event)

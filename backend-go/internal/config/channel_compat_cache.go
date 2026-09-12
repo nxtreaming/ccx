@@ -162,6 +162,10 @@ type CompatTraitState struct {
 	Evidence   string    `json:"evidence"`    // 触发时的错误/探测摘要（截断）
 	LearnedAt  time.Time `json:"learned_at"`  // 首次学到的时间
 	ApplyCount int       `json:"apply_count"` // 命中记忆并主动改写的次数
+	// AutoMissStreak 连续伪标记未命中计数：仅 verified_tool_calls 使用的负反馈
+	// 计数器（auto 模式干净 2xx 但输出伪工具调用标记文本的连续次数），达阈值
+	// 撤销 Enabled。易失语义：计数变更不落盘，仅撤销（结论翻转）时持久化。
+	AutoMissStreak int `json:"auto_miss_streak,omitempty"`
 }
 
 // 上下文上限的两种证据来源，强弱不同，合成规则也不同（见 RecordContextLimit）。
@@ -558,6 +562,69 @@ func (c *ChannelCompatCache) Record(channelUID, keyHash, model string, trait Com
 		log.Printf("[ChannelCompat-Flush] 落盘渠道兼容性记忆失败: %v", err)
 	}
 	return true
+}
+
+// verifiedToolCallPseudoMissRevokeThreshold 白名单伪标记负反馈的撤销阈值：
+// 连续 N 次「auto 模式干净 2xx + 零真实工具调用 + 输出命中伪标记」即撤销 verified。
+const verifiedToolCallPseudoMissRevokeThreshold = 3
+
+// RecordVerifiedToolCallPseudoMiss 白名单负反馈计数：该 (路由,Key,模型) 上又出现
+// 一次伪标记未命中。返回当前连续计数与是否已触发撤销。无 verified 记录（或已
+// 禁用）时无可撤销，直接返回。计数变更不落盘（易失信号），仅撤销（结论翻转）
+// 时持久化；真实工具调用成功经 ClearVerifiedToolCallPseudoMiss 重置计数。
+func (c *ChannelCompatCache) RecordVerifiedToolCallPseudoMiss(routeIdentity, keyHash, model string) (int, bool) {
+	c.mu.Lock()
+	key := GenerateCacheKey(routeIdentity, keyHash, model)
+	entry, ok := c.cache[key]
+	if !ok || time.Since(entry.DetectedAt) > channelCompatTTL {
+		c.mu.Unlock()
+		return 0, false
+	}
+	state, ok := entry.Traits[TraitVerifiedToolCalls]
+	if !ok || !state.Enabled {
+		c.mu.Unlock()
+		return 0, false
+	}
+	state.AutoMissStreak++
+	streak := state.AutoMissStreak
+	revoked := false
+	if streak >= verifiedToolCallPseudoMissRevokeThreshold {
+		state.Enabled = false
+		state.AutoMissStreak = 0
+		state.Source = CompatSourceRuntimeSignal
+		state.Evidence = truncateCompatEvidence("auto 模式连续伪工具调用标记文本（零真实工具调用），撤销正向白名单")
+		state.LearnedAt = time.Now()
+		revoked = true
+	}
+	entry.Traits[TraitVerifiedToolCalls] = state
+	c.mu.Unlock()
+
+	if revoked {
+		c.mu.Lock()
+		c.dirty = true
+		c.mu.Unlock()
+		if err := c.Flush(); err != nil {
+			log.Printf("[ChannelCompat-Flush] 落盘渠道兼容性记忆失败: %v", err)
+		}
+	}
+	return streak, revoked
+}
+
+// ClearVerifiedToolCallPseudoMiss 真实工具调用成功时重置伪标记连续计数
+// （MaybeLearnVerifiedToolCalls 的配套，保证撤销语义是「连续」而非「累计」）。
+func (c *ChannelCompatCache) ClearVerifiedToolCallPseudoMiss(routeIdentity, keyHash, model string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.cache[GenerateCacheKey(routeIdentity, keyHash, model)]
+	if !ok {
+		return
+	}
+	state, ok := entry.Traits[TraitVerifiedToolCalls]
+	if !ok || state.AutoMissStreak == 0 {
+		return
+	}
+	state.AutoMissStreak = 0
+	entry.Traits[TraitVerifiedToolCalls] = state
 }
 
 // Trait 返回该组合上某个兼容性事实的学习结论。条目过期或未学习过时第二个返回值为 false。

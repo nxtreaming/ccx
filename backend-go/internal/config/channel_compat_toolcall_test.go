@@ -120,3 +120,48 @@ func TestVerifiedToolCallRoutesKindScoping(t *testing.T) {
 		t.Fatalf("空 kind 应返回 nil，got %v", got)
 	}
 }
+
+// RecordVerifiedToolCallPseudoMiss / ClearVerifiedToolCallPseudoMiss 的口径：
+// 无 verified 条目不计数；连续计数达阈值撤销并摘牌；真实工具调用重置（连续而非累计）。
+func TestRecordVerifiedToolCallPseudoMiss(t *testing.T) {
+	cache := NewChannelCompatCache()
+
+	// 无 verified 条目：无可撤销，不计数
+	if streak, revoked := cache.RecordVerifiedToolCallPseudoMiss("lc_a#responses", "k1", "m1"); streak != 0 || revoked {
+		t.Fatalf("无条目时应返回 (0,false)，got (%d,%v)", streak, revoked)
+	}
+
+	_ = cache.Record("lc_a#responses", "k1", "m1", TraitVerifiedToolCalls, true, CompatSourceRuntimeSignal, "e")
+
+	// 第 1、2 次：计数递增但不撤销
+	for i, want := range []int{1, 2} {
+		streak, revoked := cache.RecordVerifiedToolCallPseudoMiss("lc_a#responses", "k1", "m1")
+		if streak != want || revoked {
+			t.Fatalf("第 %d 次计数应=%d 且不撤销，got (%d,%v)", i+1, want, streak, revoked)
+		}
+	}
+	if routes := cache.VerifiedToolCallRoutes("responses", true); !routes["lc_a#responses"] {
+		t.Fatal("未达阈值时条目应保持启用")
+	}
+
+	// Clear 重置：连续语义（真实工具调用成功后重新计数）
+	cache.ClearVerifiedToolCallPseudoMiss("lc_a#responses", "k1", "m1")
+	if streak, _ := cache.RecordVerifiedToolCallPseudoMiss("lc_a#responses", "k1", "m1"); streak != 1 {
+		t.Fatalf("Clear 后计数应从 1 开始，got %d", streak)
+	}
+
+	// 连续达阈值：撤销并摘牌
+	cache.RecordVerifiedToolCallPseudoMiss("lc_a#responses", "k1", "m1")
+	streak, revoked := cache.RecordVerifiedToolCallPseudoMiss("lc_a#responses", "k1", "m1")
+	if streak != 3 || !revoked {
+		t.Fatalf("第 3 次应触发撤销，got (%d,%v)", streak, revoked)
+	}
+	if routes := cache.VerifiedToolCallRoutes("responses", true); len(routes) != 0 {
+		t.Fatalf("撤销后路由集合应为空，got %v", routes)
+	}
+
+	// 已禁用条目：不再计数（等下次真实成功重建）
+	if streak, revoked := cache.RecordVerifiedToolCallPseudoMiss("lc_a#responses", "k1", "m1"); streak != 0 || revoked {
+		t.Fatalf("已禁用条目应返回 (0,false)，got (%d,%v)", streak, revoked)
+	}
+}

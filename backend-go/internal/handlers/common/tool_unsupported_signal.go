@@ -189,6 +189,8 @@ func MaybeLearnVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig
 		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 真实工具调用成功，已记入正向白名单（agentic 流量优先）",
 			upstream.Name, model)
 	}
+	// 真实工具调用是白名单有效的对偶证据：重置伪标记连续计数（撤销语义为「连续」）
+	cache.ClearVerifiedToolCallPseudoMiss(routeIdentity, keyHash, model)
 }
 
 // MaybeForgetVerifiedToolCalls 白名单的失败撤销（学习闭环的负向对偶）。
@@ -218,5 +220,47 @@ func MaybeForgetVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfi
 	if cache.Record(routeIdentity, keyHash, model, config.TraitVerifiedToolCalls, false, config.CompatSourceRuntimeSignal, "带工具请求收到空/无效响应，撤销正向白名单记录") {
 		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 带工具请求无效响应，已撤销正向白名单（排他将 fail-open 放开候选）",
 			upstream.Name, model)
+	}
+}
+
+// MaybeCountPseudoToolCallMiss 白名单负反馈补盲：agentic 干净 200 却零真实工具调用、
+// 且输出命中伪工具调用标记文本（模型用纯文本"扮演"工具调用）时，对该组合的 verified
+// 条目计一次连续 miss，连续达阈值即撤销（与 MaybeForgetVerifiedToolCalls 的失败路径
+// 撤销互补，覆盖"假成功"形态）。
+//
+// 防误判约束（缺一不可）：
+//   - 流式 2xx 干净完成（streamErr == nil）——出错流不算证据；
+//   - 请求带工具且非强制 tool_choice——强制形态走 MaybeLearnForcedToolChoiceMiss，不双算；
+//   - 全程零真实工具调用（!sawToolCall）且有伪标记命中——纯文本正常回答（无标记）是
+//     模型合法选择，不计数；
+//   - 该组合存在启用中的 verified 条目——无可撤销时不计数（避免无谓状态）。
+//
+// kind 为该次尝试的执行协议（executionKind），与 MaybeLearnVerifiedToolCalls 同路由身份。
+func MaybeCountPseudoToolCallMiss(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte, sawToolCall, sawPseudoMarker bool, streamErr error, kind string) {
+	if c == nil || upstream == nil || model == "" {
+		return
+	}
+	if streamErr != nil || sawToolCall || !sawPseudoMarker {
+		return
+	}
+	if !BodyHasTools(attemptBody) || ForcedToolChoiceInBody(attemptBody) {
+		return
+	}
+	routeIdentity := config.ToolRouteIdentity(upstream, kind)
+	if routeIdentity == "" {
+		return
+	}
+	cache := config.SharedChannelCompatCache()
+	if cache == nil {
+		return
+	}
+	keyHash := autopilot.KeyHashFromAPIKey(apiKey)
+	streak, revoked := cache.RecordVerifiedToolCallPseudoMiss(routeIdentity, keyHash, model)
+	if revoked {
+		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 连续伪工具调用标记文本，已撤销正向白名单（排他将 fail-open 放开候选）",
+			upstream.Name, model)
+	} else if streak > 0 {
+		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 输出伪工具调用标记文本（连续 %d/%d 次）",
+			upstream.Name, model, streak, 3)
 	}
 }

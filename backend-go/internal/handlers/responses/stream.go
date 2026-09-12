@@ -324,6 +324,8 @@ func handleStreamSuccess(
 					}
 					// 安全分类格式标记：短分类响应可能整体在预检阶段完成，此处必须一并扫描。
 					common.MarkSeverityTagIfHit(c, preflightTextBuf.String())
+					// 伪工具调用标记同理：整体在预检完成的响应也要参与白名单负反馈观测。
+					common.MarkPseudoToolCallMarkerIfHit(c, preflightTextBuf.String())
 					// 检查是否有实际内容（文本或工具调用）
 					preflightEmpty = !preflightHasNonTextContent && common.IsEffectivelyEmptyStreamText(preflightTextBuf.String())
 					// 如果有工具调用，不算空响应
@@ -579,6 +581,8 @@ func handleStreamSuccess(
 	postCommitToolTracker := common.NewStreamToolCallTracker()
 	// 安全分类格式标记扫描：post-commit 阶段逐 SSE 行检测 <severity（分片安全）。
 	severityScanner := &common.SeverityTagScanner{}
+	// 伪工具调用标记扫描：逐 SSE 行检测文本扮演工具调用的标记，供白名单负反馈读取。
+	pseudoScanner := &common.PseudoToolCallMarkerScanner{}
 	observePostCommitEvents := func(events []string) bool {
 		hadChange := false
 		wasPending := postCommitToolTracker.HasPendingToolCall()
@@ -657,6 +661,9 @@ func handleStreamSuccess(
 			events := processLine(sl.text)
 			if severityScanner.Feed(sl.text) {
 				common.MarkStreamSeverityTag(c)
+			}
+			if pseudoScanner.Feed(sl.text) {
+				common.MarkPseudoToolCallMarker(c)
 			}
 			keepaliveTicker.Reset(15 * time.Second)
 			wasToolCallPending := postCommitToolTracker.HasPendingToolCall()
