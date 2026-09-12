@@ -27,6 +27,7 @@ var pseudoToolCallMarkerPatterns = []string{
 	"<tool_call>",
 	"</tool_call>", // 闭标记：实测形态常只输出闭标记段（</parameter></function></tool_call>）
 	"<tool_calls>",
+	"<tool_return>",        // DeepSeek 系工具返回标记（实测 modelScope V4-Pro 输出 <tool_return>/<return>）
 	"<｜tool▁calls▁begin｜>", // DeepSeek 官方标记（U+2581 下划线连接）
 	"<｜DSML｜",              // DeepSeek DSML 族总前缀
 	"<function=",           // Qwen function 变体开头

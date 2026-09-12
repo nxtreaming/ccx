@@ -27,6 +27,7 @@ func TestDetectPseudoToolCallMarker(t *testing.T) {
 		{"DSML ToolCode（实测形态）", "<｜DSML｜ToolCode>", true},
 		{"Qwen function 变体（实测形态）", "</function>\n<parameter=timeout>10</parameter>\n</tool_call>", true},
 		{"仅闭标记段（实测漏网形态）", "git log --oneline -1\n</parameter></function></tool_call>", true},
+		{"DeepSeek tool_return（实测形态）", "<tool_return>\n<return>......", true},
 		{"大小写不敏感", "<TOOL_CALL>", true},
 		{"正文讨论 tool 一词不算", "tool call 是模型调工具的机制", false},
 		{"HTML 标签不算", "<div>hello</div>", false},
