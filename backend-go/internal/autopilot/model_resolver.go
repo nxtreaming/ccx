@@ -206,7 +206,7 @@ func (r *ModelResolver) ResolveModel(
 	// 白名单模式：渠道内存在任一运行期验证组合时，候选只从验证组合产生；
 	// 无交集回退黑名单逻辑不空转（语义同 eligibleModelsAnyEndpoint）。
 	if floor.NeedsToolCalls {
-		candidates = filterLearnedToolCallCapable(candidates, channelUID)
+		candidates = filterLearnedToolCallCapable(candidates, r.toolRouteIdentity(channelUID, channelKind))
 		if len(candidates) == 0 {
 			return ResolvedRouteTarget{Model: requestModel, Reason: "no_capable_model"}, false, "no_capable_model"
 		}
@@ -401,7 +401,7 @@ func (r *ModelResolver) eligibleModelsAnyEndpoint(
 	}
 
 	if floor.NeedsToolCalls {
-		candidates = filterLearnedToolCallCapable(candidates, channelUID)
+		candidates = filterLearnedToolCallCapable(candidates, r.toolRouteIdentity(channelUID, channelKind))
 		if len(candidates) == 0 {
 			return nil, false, "no_capable_model"
 		}
@@ -442,7 +442,7 @@ func (r *ModelResolver) capabilityFilteredModelsAnyEndpoint(
 	}
 	// 工具调用学习黑名单同安全分类：带工具请求的兜底枚举同样避开实测不执行工具的组合。
 	if floor.NeedsToolCalls {
-		candidates = filterLearnedToolCallCapable(candidates, channelUID)
+		candidates = filterLearnedToolCallCapable(candidates, r.toolRouteIdentity(channelUID, channelKind))
 		if len(candidates) == 0 {
 			return nil, "no_capable_model"
 		}
@@ -764,17 +764,19 @@ func filterSeverityClassCapable(profiles []ModelProfile, channelUID string) []Mo
 }
 
 // filterLearnedToolCallCapable 带工具请求的候选过滤（两级）：
-//  1. 白名单模式：渠道内存在任一「实测真实工具调用」组合（TraitVerifiedToolCalls，
+//  1. 白名单模式：路由内存在任一「实测真实工具调用」组合（TraitVerifiedToolCalls，
 //     探针/运行期正向证据）时，候选只从验证组合中产生——伪工具标记方言是开放
 //     长尾（qwen/deepseek/glm 各族 auto 下文本化工具调用），负向清单打地鼠，
 //     正向白名单才是根治；验证组合与候选无交集时回退黑名单逻辑（不空转）。
 //  2. 黑名单模式：剔除实测不能执行工具调用的组合（TraitNoToolCallSupport）。
 //
+// routeIdentity 为 config.ToolRouteIdentity 的返回值（逻辑渠道×协议的稳定身份，
+// 调用方负责从物理 UID 翻译），直接作为兼容性记忆的键使用。
 // 画像的 SupportsToolCalls 来自注册表静态表，覆盖不了「静态宣称支持、渠道实例
 // 实际不执行（假成功/幻觉工具输出）」的组合——这类只能靠学习规避。
 // 与 filterSeverityClassCapable 对称：带工具请求在替代映射阶段即避开。
-func filterLearnedToolCallCapable(profiles []ModelProfile, channelUID string) []ModelProfile {
-	if verified := verifiedToolCallModels(channelUID); len(verified) > 0 {
+func filterLearnedToolCallCapable(profiles []ModelProfile, routeIdentity string) []ModelProfile {
+	if verified := verifiedToolCallModels(routeIdentity); len(verified) > 0 {
 		whitelisted := make([]ModelProfile, 0, len(profiles))
 		for _, p := range profiles {
 			if verified[strings.ToLower(p.ModelID)] {
@@ -789,7 +791,7 @@ func filterLearnedToolCallCapable(profiles []ModelProfile, channelUID string) []
 	}
 	eligible := make([]ModelProfile, 0, len(profiles))
 	for _, p := range profiles {
-		if learnedToolCallUnsupported(channelUID, p.ModelID) {
+		if learnedToolCallUnsupported(routeIdentity, p.ModelID) {
 			continue
 		}
 		eligible = append(eligible, p)
@@ -1686,4 +1688,21 @@ func (r *ModelResolver) findUpstream(channelUID, channelKind string) *config.Ups
 		}
 	}
 	return nil
+}
+
+// toolRouteIdentity 把画像侧的物理渠道 UID 翻译为工具能力学习的稳定路由身份。
+// resolver 的调用链以 KeyEndpointProfile.ChannelUID（物理 ch_）为线索，而工具能力
+// 记忆按逻辑渠道 UID×协议存取（物理 UID 会随渠道重建被重铸，见 config.ToolRouteIdentity）。
+// 渠道已从 config 消失（画像残留的幽灵 UID）或无 cfgManager 时回退原始 UID——
+// 查询自然 miss，fail-open，不阻塞请求。
+func (r *ModelResolver) toolRouteIdentity(channelUID, channelKind string) string {
+	if channelUID == "" {
+		return ""
+	}
+	if upstream := r.findUpstream(channelUID, channelKind); upstream != nil {
+		if identity := config.ToolRouteIdentity(upstream, channelKind); identity != "" {
+			return identity
+		}
+	}
+	return channelUID
 }

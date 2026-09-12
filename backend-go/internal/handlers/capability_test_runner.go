@@ -754,7 +754,7 @@ func executeModelTest(ctx context.Context, channel *config.UpstreamConfig, proto
 			toolSummary := runCapabilityToolCallProbe(reqCtx, channel, protocol, actualModel, apiKey)
 			if toolSummary.Tested {
 				modelResult.ToolCalls = &toolSummary
-				recordToolCallProbeResult(channel, apiKey, actualModel, toolSummary)
+				recordToolCallProbeResult(channel, apiKey, actualModel, protocol, toolSummary)
 				log.Printf("[CapabilityTest-ToolCall] 渠道 %s 模型 %s 工具调用探针完成 (支持: %v, %s)",
 					channel.Name, actualModel, toolSummary.Supported, toolSummary.Evidence)
 			}

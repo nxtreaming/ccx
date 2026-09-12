@@ -1890,19 +1890,22 @@ func (r *SmartRouter) buildChannelEntryForKey(
 	}
 	// 工具调用同款：能力测试探针/运行期负信号实测不能执行工具调用的渠道×模型，
 	// 带工具请求经工具硬约束自动规避（docs/specs/tool-call-capability.md）。
-	if learnedToolCallUnsupported(channelUID, actualModel) {
+	// 工具能力记忆按稳定路由身份存取（逻辑渠道×协议，物理 UID 重铸不失效）。
+	toolRoute := config.ToolRouteIdentity(upstream, channelKind)
+	if learnedToolCallUnsupported(toolRoute, actualModel) {
 		entry.SupportsToolCalls = false
 	}
 	// 工具调用正向白名单（两级收紧，经既有工具硬约束剔除）：
-	// 1) 渠道间排他——全局存在任一「运行期 auto 实测真实工具调用」渠道时，
-	//    非白名单渠道的候选行不再承接带工具请求。伪工具标记方言是开放长尾
-	//    （qwen/deepseek/glm/atc 各族 auto 下文本化工具调用），负向清单打地鼠，
-	//    白名单渠道排他才是根治；无任何白名单渠道时 fail-open（冷启动不堵）。
-	// 2) 渠道内白名单——白名单渠道内只放行验证过的模型组合。
+	// 1) 渠道间排他——该协议上全局存在任一「运行期 auto 实测真实工具调用」路由时，
+	//    非白名单路由的候选行不再承接带工具请求。伪工具标记方言是开放长尾
+	//    （qwen/deepseek/glm/atc 各族 auto 下文本化），负向清单打地鼠，
+	//    白名单路由排他才是根治；该协议无任何白名单路由时 fail-open（冷启动不堵）。
+	//    按协议独立判定——messages 流量不被 responses 证据锁死，反之亦然。
+	// 2) 路由内白名单——白名单路由内只放行验证过的模型组合。
 	// 影子候选行直接携带模型（不经 resolver 过滤），必须在此收紧。
-	if verifiedChannels := verifiedToolCallChannels(); len(verifiedChannels) > 0 && !verifiedChannels[channelUID] {
+	if routes := verifiedToolCallRoutes(channelKind); len(routes) > 0 && !routes[toolRoute] {
 		entry.SupportsToolCalls = false
-	} else if verified := verifiedToolCallModels(channelUID); len(verified) > 0 && !verified[strings.ToLower(actualModel)] {
+	} else if verified := verifiedToolCallModels(toolRoute); len(verified) > 0 && !verified[strings.ToLower(actualModel)] {
 		entry.SupportsToolCalls = false
 	}
 	// 协议端点学习同款收紧：已学到「渠道×模型×此执行协议端点不可用」的组合，

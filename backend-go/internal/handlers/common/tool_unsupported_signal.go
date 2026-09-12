@@ -136,8 +136,13 @@ func ForcedToolChoiceInBody(body []byte) bool {
 // "没调用"与"没观测"，参与学习必然误杀。
 //
 // 学习条件：请求强制 tool_choice + 上游 2xx 完成 + 全程零工具调用块。
-func MaybeLearnForcedToolChoiceMiss(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte, sawToolCall bool) {
-	if c == nil || upstream == nil || upstream.ChannelUID == "" || model == "" {
+// kind 为该次尝试的执行协议（executionKind），与 upstream 一起构成稳定路由身份。
+func MaybeLearnForcedToolChoiceMiss(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte, sawToolCall bool, kind string) {
+	if c == nil || upstream == nil || model == "" {
+		return
+	}
+	routeIdentity := config.ToolRouteIdentity(upstream, kind)
+	if routeIdentity == "" {
 		return
 	}
 	if sawToolCall || !ForcedToolChoiceInBody(attemptBody) {
@@ -149,7 +154,7 @@ func MaybeLearnForcedToolChoiceMiss(c *gin.Context, upstream *config.UpstreamCon
 	}
 	keyHash := autopilot.KeyHashFromAPIKey(apiKey)
 	evidence := "强制 tool_choice 请求 2xx 完成但全程未产生任何工具调用"
-	if cache.Record(upstream.ChannelUID, keyHash, model, config.TraitNoToolCallSupport, true, config.CompatSourceRuntimeSignal, evidence) {
+	if cache.Record(routeIdentity, keyHash, model, config.TraitNoToolCallSupport, true, config.CompatSourceRuntimeSignal, evidence) {
 		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 强制工具调用未被执行（流式全程无工具调用块），已记忆并将在后续路由中规避",
 			upstream.Name, model)
 	}
@@ -160,10 +165,16 @@ func MaybeLearnForcedToolChoiceMiss(c *gin.Context, upstream *config.UpstreamCon
 // 条件：请求携带 tools + 上游 2xx 完成 + 流中观察到真实 function_call 事件
 // （SawToolCall 由流式路径的工具活动标记供给）。真实流量里的成功工具调用是
 // 强于探针的正向证据（覆盖 tool_choice=auto 场景——探针只测强制形态）。
-// 记入 TraitVerifiedToolCalls 供白名单模式消费：渠道内存在任一验证组合时，
+// 记入 TraitVerifiedToolCalls 供白名单模式消费：路由内存在任一验证组合时，
 // 带工具请求的候选只从验证组合产生。
-func MaybeLearnVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte, sawToolCall bool) {
-	if c == nil || upstream == nil || upstream.ChannelUID == "" || model == "" {
+// kind 为该次尝试的执行协议（executionKind）；与 upstream 一起构成稳定路由身份
+// （逻辑渠道×协议，物理 UID 重铸后学习不失效）。
+func MaybeLearnVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte, sawToolCall bool, kind string) {
+	if c == nil || upstream == nil || model == "" {
+		return
+	}
+	routeIdentity := config.ToolRouteIdentity(upstream, kind)
+	if routeIdentity == "" {
 		return
 	}
 	if !sawToolCall || !BodyHasTools(attemptBody) {
@@ -174,7 +185,7 @@ func MaybeLearnVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig
 		return
 	}
 	keyHash := autopilot.KeyHashFromAPIKey(apiKey)
-	if cache.Record(upstream.ChannelUID, keyHash, model, config.TraitVerifiedToolCalls, true, config.CompatSourceRuntimeSignal, "带工具请求 2xx 完成且流中出现真实 function_call 事件") {
+	if cache.Record(routeIdentity, keyHash, model, config.TraitVerifiedToolCalls, true, config.CompatSourceRuntimeSignal, "带工具请求 2xx 完成且流中出现真实 function_call 事件") {
 		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 真实工具调用成功，已记入正向白名单（agentic 流量优先）",
 			upstream.Name, model)
 	}
@@ -187,8 +198,13 @@ func MaybeLearnVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig
 // 带工具请求在该组合上以无效响应（空流/无效响应体）失败时撤销 verified
 // 记录——渠道级集合随即摘牌，排他 fail-open 放开全部渠道；后续真实成功
 // 经 MaybeLearnVerifiedToolCalls 重建。白名单由此成为动态自愈集合。
-func MaybeForgetVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte) {
-	if c == nil || upstream == nil || upstream.ChannelUID == "" || model == "" {
+// kind 为该次尝试的执行协议，撤销必须与学习落在同一路由身份上。
+func MaybeForgetVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte, kind string) {
+	if c == nil || upstream == nil || model == "" {
+		return
+	}
+	routeIdentity := config.ToolRouteIdentity(upstream, kind)
+	if routeIdentity == "" {
 		return
 	}
 	if !BodyHasTools(attemptBody) {
@@ -199,7 +215,7 @@ func MaybeForgetVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfi
 		return
 	}
 	keyHash := autopilot.KeyHashFromAPIKey(apiKey)
-	if cache.Record(upstream.ChannelUID, keyHash, model, config.TraitVerifiedToolCalls, false, config.CompatSourceRuntimeSignal, "带工具请求收到空/无效响应，撤销正向白名单记录") {
+	if cache.Record(routeIdentity, keyHash, model, config.TraitVerifiedToolCalls, false, config.CompatSourceRuntimeSignal, "带工具请求收到空/无效响应，撤销正向白名单记录") {
 		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 带工具请求无效响应，已撤销正向白名单（排他将 fail-open 放开候选）",
 			upstream.Name, model)
 	}

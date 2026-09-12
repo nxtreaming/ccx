@@ -833,13 +833,15 @@ func TryUpstreamWithAllKeys(
 				if target != nil && target.Model != "" {
 					// 白名单终审：override target 可能来自 policy 构建期的预解析缓存
 					// （targetByUID/ModelByUID 等 map，其构建时机与评分来源不经本次请求的
-					// ResolveModel 过滤）。带工具请求的 override 目标必须在渠道白名单内
-					// （渠道存在运行期验证组合时），否则放弃 override 按原始模型透传——
+					// ResolveModel 过滤）。带工具请求的 override 目标必须在路由白名单内
+					// （该路由存在运行期验证组合时），否则放弃 override 按原始模型透传——
 					// 后续 404/不支持走正常 failover，优于把流量交给未验证组合交付伪工具标记。
+					// 白名单按稳定路由身份（逻辑渠道×执行协议）查询。
 					if BodyHasTools(requestBody) {
 						if wlCache := config.SharedChannelCompatCache(); wlCache != nil {
-							if verifiedChannels := wlCache.VerifiedToolCallChannels(true); len(verifiedChannels) > 0 && verifiedChannels[upstream.ChannelUID] {
-								if verified := wlCache.VerifiedToolCallModelsForChannel(upstream.ChannelUID, true); len(verified) > 0 && !verified[strings.ToLower(target.Model)] {
+							routeIdentity := config.ToolRouteIdentity(upstream, string(executionKind))
+							if routes := wlCache.VerifiedToolCallRoutes(string(executionKind), true); len(routes) > 0 && routes[routeIdentity] {
+								if verified := wlCache.VerifiedToolCallModelsForChannel(routeIdentity, true); len(verified) > 0 && !verified[strings.ToLower(target.Model)] {
 									RequestLogf(c, "[%s-AutoModel] override %s -> %s 不在工具白名单内，放弃 override 按原始模型透传（渠道 %s 白名单 %d 组合）",
 										apiType, model, target.Model, upstream.Name, len(verified))
 									target = nil
@@ -1525,7 +1527,7 @@ func TryUpstreamWithAllKeys(
 				if (resp.StatusCode == 400 || resp.StatusCode == 422) && upstream.ChannelUID != "" {
 					if signal := ToolUnsupportedFromError(resp.StatusCode, respBodyBytes, BodyHasTools(attemptBody)); signal != nil {
 						keyHash := autopilot.KeyHashFromAPIKey(apiKey)
-						if channelCompatCache.Record(upstream.ChannelUID, keyHash, attemptModel,
+						if channelCompatCache.Record(config.ToolRouteIdentity(upstream, string(executionKind)), keyHash, attemptModel,
 							config.TraitNoToolCallSupport, true, config.CompatSourceErrorSignal, signal.Evidence) {
 							RequestLogf(c, "[%s-ToolCallCompat] 渠道 %s 模型 %s 拒绝工具调用（%s），已记忆并将在后续路由中规避",
 								apiType, upstream.Name, attemptModel, signal.Evidence)
@@ -1706,11 +1708,11 @@ func TryUpstreamWithAllKeys(
 				MaybeLearnLatencyDegradation(c, upstream.ChannelUID, apiKey, attemptModel, racingSuperseded)
 				if !racingSuperseded && (executionKind == scheduler.ChannelKindMessages || executionKind == scheduler.ChannelKindResponses) {
 					MaybeLearnForcedToolChoiceMiss(c, upstream, apiKey, attemptModel, attemptBody,
-						GetStreamTimeoutObserver(c).SawToolCall())
+						GetStreamTimeoutObserver(c).SawToolCall(), string(executionKind))
 					// 正向证据学习：带工具请求 2xx 完成且流中有真实 function_call
 					// 事件 → 记入正向白名单（覆盖 tool_choice=auto 场景，强于探针）。
 					MaybeLearnVerifiedToolCalls(c, upstream, apiKey, attemptModel, attemptBody,
-						GetStreamTimeoutObserver(c).SawToolCall())
+						GetStreamTimeoutObserver(c).SawToolCall(), string(executionKind))
 					// 安全分类能力自学习（被动侧·成功路径）：分类形状请求 2xx 完成但
 					// 输出无 <severity> 标记，说明该渠道×模型不遵循格式约束。
 					// 同样仅 messages/responses（只有这两条流式路径接了标记扫描）。
@@ -1781,7 +1783,7 @@ func TryUpstreamWithAllKeys(
 					recordModelCircuitFailure(c, metricsManager, upstream, apiKey, model, err.Error(), apiType)
 					// 白名单失败撤销：带工具请求的无效响应撤销该组合的 verified 记录，
 					// 渠道摘牌后排他 fail-open 放开候选（白名单渠道故障时无路可退的兜底）。
-					MaybeForgetVerifiedToolCalls(c, upstream, apiKey, attemptModel, attemptBody)
+					MaybeForgetVerifiedToolCalls(c, upstream, apiKey, attemptModel, attemptBody, string(executionKind))
 					if markURLFailure != nil {
 						markURLFailure(currentBaseURL)
 					}

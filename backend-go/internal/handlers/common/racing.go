@@ -350,23 +350,26 @@ type racingRuns struct {
 	spawned         bool
 }
 
-// toolWhitelistAllows 带工具请求的影子候选渠道排他判定：
-// 全局存在任一「运行期 auto 实测真实工具调用」渠道（TraitVerifiedToolCalls
-// runtime 来源）时，非白名单渠道不放行；无白名单渠道 fail-open。
-// 不带工具的请求恒放行。兜底重选路径不经 SmartRouter 行构建，须在此挡。
-func (r *racingRuns) toolWhitelistAllows(channelUID string) bool {
-	if !r.needsToolWhitelist || channelUID == "" {
+// toolWhitelistAllows 带工具请求的影子候选路由排他判定：
+// 本次请求的执行协议上存在任一「运行期 auto 实测真实工具调用」路由
+// （TraitVerifiedToolCalls runtime 来源）时，非白名单路由不放行；该协议无任何
+// 白名单路由 fail-open。不带工具的请求恒放行。兜底重选路径不经 SmartRouter
+// 行构建，须在此挡。白名单按稳定路由身份（逻辑渠道×协议）比对，渠道重建
+// 重铸物理 UID 不影响判定。
+func (r *racingRuns) toolWhitelistAllows(upstream *config.UpstreamConfig) bool {
+	if !r.needsToolWhitelist || upstream == nil {
 		return true
 	}
 	cache := config.SharedChannelCompatCache()
 	if cache == nil {
 		return true
 	}
-	channels := cache.VerifiedToolCallChannels(true)
-	if len(channels) == 0 {
+	kind := string(r.in.Kind)
+	routes := cache.VerifiedToolCallRoutes(kind, true)
+	if len(routes) == 0 {
 		return true
 	}
-	return channels[channelUID]
+	return routes[config.ToolRouteIdentity(upstream, kind)]
 }
 
 // RunRacingAttempt 包装一次渠道尝试：竞速未武装时行为与直接调用闭包完全一致；
@@ -670,9 +673,9 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 			return nil
 		}
 	}
-	// 工具调用白名单渠道间排他（带工具请求）：兜底重选不经影子构建出口，
+	// 工具调用白名单路由排他（带工具请求）：兜底重选不经影子构建出口，
 	// 须单独挡（语义同 buildSelectionFromCandidate 内的排他）。
-	if !r.toolWhitelistAllows(sel.Upstream.ChannelUID) {
+	if !r.toolWhitelistAllows(sel.Upstream) {
 		return nil
 	}
 	r.mu.Lock()
@@ -689,11 +692,11 @@ func (r *racingRuns) buildSelectionFromCandidate(cand autopilot.RoutingCandidate
 	if upstream == nil {
 		return nil
 	}
-	// 工具调用白名单渠道间排他（带工具请求）：排名缓存行由本请求以外的
+	// 工具调用白名单路由排他（带工具请求）：排名缓存行由本请求以外的
 	// 历史/并发排名产生，其 Selected 语义不含本请求的工具白名单约束，
-	// 须在影子构建出口统一挡——全局存在任一运行期验证渠道时，影子不从
-	// 非白名单渠道派（伪工具标记方言的根治约束；无白名单渠道 fail-open）。
-	if !r.toolWhitelistAllows(upstream.ChannelUID) {
+	// 须在影子构建出口统一挡——本次执行协议上存在任一运行期验证路由时，
+	// 影子不从非白名单路由派（伪工具标记方言的根治约束；该协议无白名单 fail-open）。
+	if !r.toolWhitelistAllows(upstream) {
 		return nil
 	}
 	if !cfgSnapshot.ResolveRacingPolicy(upstream) {

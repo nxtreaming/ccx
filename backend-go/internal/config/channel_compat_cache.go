@@ -87,6 +87,39 @@ func ProtocolUnsupportedTrait(protocol string) CompatTrait {
 	return CompatTrait(TraitProtocolUnsupportedPrefix + strings.ToLower(strings.TrimSpace(protocol)))
 }
 
+// ToolRouteIdentity 返回工具能力学习（TraitVerifiedToolCalls / TraitNoToolCallSupport）
+// 的稳定路由身份，作为 CompatCache 键的 channelUID 段。
+//
+// 锚选逻辑渠道 UID（LogicalChannelUID）：物理 ChannelUID 会随渠道重建/账号同步被
+// 重铸（实测 ark 两个月 ≥5 代，画像库累积 580 个已不在 config 中的幽灵 UID），以其为
+// 学习键的结论在重铸后静默失效；逻辑卡经 RebuildLogicalChannels 的 absorb 语义保持
+// UID 不变，是「站点账号×协议路由」的稳定锚。无逻辑 UID 的旧配置回退物理 UID
+// （加载期 ensureLogicalBackfill 会补齐，回退仅防御手工构造的内存态）。
+//
+// kind 维度（messages/chat/responses/gemini）必须保留：同一站点不同协议端点的工具
+// 行为可能相反（tokenrhythm chat 返回真实 function_call / responses 把工具调用透传
+// 为伪标记文本），证据不得跨协议外溢。kind 为空时返回裸锚——查询侧用带 kind 的
+// 身份查不到它，等价于无证据 fail-open，不会误伤。
+//
+// 返回值形如 "lc_xxx#responses"；分隔符用 '#' 而非 ':'，避免与缓存键
+// "channelUID:keyHash:model" 的分段符冲突（模型名本身可含冒号，必须 SplitN 3 段）。
+func ToolRouteIdentity(u *UpstreamConfig, kind string) string {
+	if u == nil {
+		return ""
+	}
+	anchor := strings.TrimSpace(u.LogicalChannelUID)
+	if anchor == "" {
+		anchor = strings.TrimSpace(u.ChannelUID)
+	}
+	if anchor == "" {
+		return ""
+	}
+	if kind = strings.ToLower(strings.TrimSpace(kind)); kind != "" {
+		return anchor + "#" + kind
+	}
+	return anchor
+}
+
 // AllCompatTraits 全部可学习兼容项，供配置迁移与诊断遍历。
 func AllCompatTraits() []CompatTrait {
 	return []CompatTrait{
@@ -940,8 +973,10 @@ func (c *ChannelCompatCache) IsToolCallUnsupportedForChannelModel(channelUID, mo
 	return c.isTraitEnabledForChannelModel(channelUID, model, TraitNoToolCallSupport)
 }
 
-// VerifiedToolCallModelsForChannel 返回该渠道上实测产生过真实 function_call
+// VerifiedToolCallModelsForChannel 返回该路由上实测产生过真实 function_call
 // 事件的模型集合（任一 Key 验证过即纳入，键为小写模型名）。
+// channelUID 参数应传 ToolRouteIdentity 的返回值（逻辑渠道×协议的稳定身份）；
+// 传入裸渠道 UID 只会命中同形态的历史键，视为无证据 fail-open。
 // onlyRuntime=true 时仅聚合运行期证据（带 tools 的真实流量 2xx 完成且流中
 // 有真实 function_call 事件，覆盖 tool_choice=auto 场景）——探针只验证强制
 // tool_choice（协议层），「强制通过、auto 下文本化工具调用」的组合实测存在
@@ -987,20 +1022,31 @@ func (c *ChannelCompatCache) IsToolCallVerifiedForChannelModel(channelUID, model
 	return c.VerifiedToolCallModelsForChannel(channelUID, false)[strings.ToLower(model)]
 }
 
-// VerifiedToolCallChannels 返回存在实测真实工具调用组合的渠道 UID 集合。
+// VerifiedToolCallRoutes 返回指定执行协议上存在实测真实工具调用组合的路由身份集合
+// （键为 ToolRouteIdentity 形态的复合身份，即缓存键的 channelUID 段原样值）。
 // onlyRuntime 语义同 VerifiedToolCallModelsForChannel。渠道间排他的判定依据：
-// 集合非空时，带工具请求的候选池中非成员渠道不再承接（硬约束剔除），
-// 无任何成员时 fail-open（冷启动不堵）。
-func (c *ChannelCompatCache) VerifiedToolCallChannels(onlyRuntime bool) map[string]bool {
+// 该协议的集合非空时，带工具请求的候选池中非成员路由不再承接（硬约束剔除），
+// 该协议无任何成员时 fail-open（冷启动不堵）。按协议独立判定集合——messages 流量
+// 不被 responses 证据锁死，反之亦然。历史裸键（无 #kind 段，重铸前旧格式）不参与
+// 任何协议的集合，TTL 内自然淘汰。
+func (c *ChannelCompatCache) VerifiedToolCallRoutes(kind string, onlyRuntime bool) map[string]bool {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		return nil
+	}
+	suffix := "#" + kind
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	var channels map[string]bool
+	var routes map[string]bool
 	for key, entry := range c.cache {
 		if entry == nil {
 			continue
 		}
 		parts := strings.SplitN(key, ":", 3)
 		if len(parts) != 3 || parts[0] == "" {
+			continue
+		}
+		if !strings.HasSuffix(parts[0], suffix) {
 			continue
 		}
 		if time.Since(entry.DetectedAt) > channelCompatTTL {
@@ -1010,13 +1056,13 @@ func (c *ChannelCompatCache) VerifiedToolCallChannels(onlyRuntime bool) map[stri
 			if onlyRuntime && state.Source != CompatSourceRuntimeSignal {
 				continue
 			}
-			if channels == nil {
-				channels = make(map[string]bool)
+			if routes == nil {
+				routes = make(map[string]bool)
 			}
-			channels[parts[0]] = true
+			routes[parts[0]] = true
 		}
 	}
-	return channels
+	return routes
 }
 
 // IsProtocolUnsupportedForChannelModel 返回该渠道-模型在指定执行协议端点是否有任一
