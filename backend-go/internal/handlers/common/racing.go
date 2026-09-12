@@ -14,13 +14,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ── 竞速编排：首字明显慢时向五元组候选并行派影子请求，先交付者胜 ──
+// ── 竞速编排：首字明显慢时向跨渠道候选并行派影子请求，先交付者胜 ──
 //
 // 编排器包在多渠道 failover 外壳的单次渠道尝试外：
 //   - 主分支照常执行；阈值定时器到期且复核通过时派 1..N 条影子分支；
 //   - 全部分支共享一个提交闸门（racing.Gate），赢家 claim 即取消其余分支；
-//   - 影子候选按五元组粒度取 SmartRouter 排名（同渠道不同 key/模型也可入选），
-//     缓存为空时回退调度器按路由重选；
+//   - 影子候选取 SmartRouter 排名并整渠道排除主渠道（同渠道影子只是同
+//     provider 同队列的重复消耗），缓存为空时回退调度器按路由重选；
 //   - 行为参数（影子数/触发 floor/成本过滤）由请求 CostPreference 经策略表推导，
 //     用户只控制全局与渠道级开关。
 
@@ -548,7 +548,7 @@ func (r *racingRuns) spawnShadows(c *gin.Context, primaryCost float64) {
 		sel := r.nextShadowSelection(primaryCost)
 		if sel == nil {
 			r.hub.Sem.Release()
-			RequestLogf(c, "[Racing] 阈值已到但无可用影子候选（缓存无可行五元组且路由重选无果），本次放弃竞速")
+			RequestLogf(c, "[Racing] 阈值已到但无可用影子候选（缓存无跨渠道可行候选且路由重选无果），本次放弃竞速")
 			return
 		}
 		r.startShadow(c, sel)
@@ -597,7 +597,7 @@ func (r *racingRuns) startShadow(c *gin.Context, sel *scheduler.SelectionResult)
 	}()
 }
 
-// nextShadowSelection 选取下一个影子候选：排名缓存优先（五元组排除），
+// nextShadowSelection 选取下一个影子候选：排名缓存优先（整渠道排除主渠道），
 // 缓存不可用时回退调度器按已用路由重选。nil 表示无可用候选。
 func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.SelectionResult {
 	r.mu.Lock()
@@ -611,14 +611,7 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 	}
 	r.mu.Unlock()
 
-	// 路径一：SmartRouter 排名缓存（五元组粒度）。
-	// 主行身份的模型维用「执行模型为空时回退请求模型」：自动映射发生在 attempt
-	// 内部（endpoint policy），非联邦路径 selection.ExecutionModel 常为空，
-	// 直接用空串比对会漏排除主行、把影子重复打到主尝试正在用的候选上。
-	primaryIdentityModel := r.in.Selection.ExecutionModel
-	if primaryIdentityModel == "" {
-		primaryIdentityModel = r.in.Model
-	}
+	// 路径一：SmartRouter 排名缓存（同渠道行由候选函数整渠道排除）。
 	if r.hub.CandidateProvider != nil {
 		cands := r.hub.CandidateProvider(r.in.Model, string(r.in.Kind))
 		if len(cands) > 0 {
@@ -626,7 +619,6 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 				cands,
 				r.in.Selection.Upstream.ChannelUID,
 				r.in.Selection.ExecutionKeyIdentity,
-				primaryIdentityModel,
 				len(cands),
 			)
 			for _, cand := range picked {
