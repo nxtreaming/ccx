@@ -65,6 +65,19 @@ const (
 	TraitUnsupportedBetaHeader CompatTrait = "unsupported_beta_header"
 )
 
+// TraitProtocolUnsupportedPrefix 「模型×执行协议端点不可用」记忆的 trait 键前缀，
+// 按执行协议参数化（如 no_protocol_support:responses）。写入方是 failover 错误路径
+// （上游 400 明确报 model_not_supported_on_endpoint 或等价文案），读取方是
+// ModelResolver——跨模型替代映射的候选剔除该 渠道×协议×模型 组合，同模型在其他
+// 协议下不受影响。与 TraitNoToolCallSupport 同类：无请求改写可兜底，不进 AllCompatTraits。
+const TraitProtocolUnsupportedPrefix = "no_protocol_support:"
+
+// ProtocolUnsupportedTrait 构造指定执行协议的「端点不支持」trait 键。
+// protocol 传调度层 ChannelKind 字符串（responses/chat/messages/gemini）。
+func ProtocolUnsupportedTrait(protocol string) CompatTrait {
+	return CompatTrait(TraitProtocolUnsupportedPrefix + strings.ToLower(strings.TrimSpace(protocol)))
+}
+
 // AllCompatTraits 全部可学习兼容项，供配置迁移与诊断遍历。
 func AllCompatTraits() []CompatTrait {
 	return []CompatTrait{
@@ -916,6 +929,17 @@ func (c *ChannelCompatCache) IsDocumentUnsupportedForChannelModel(channelUID, mo
 // 任一 Key 已知不支持就按不支持处理。无学习记录 = false（fail-open）。
 func (c *ChannelCompatCache) IsToolCallUnsupportedForChannelModel(channelUID, model string) bool {
 	return c.isTraitEnabledForChannelModel(channelUID, model, TraitNoToolCallSupport)
+}
+
+// IsProtocolUnsupportedForChannelModel 返回该渠道-模型在指定执行协议端点是否有任一
+// 已知 Key 学到过「不可用」结论（no_protocol_support:<protocol>）。
+//
+// 写入方是 failover 错误路径（上游 400 明确报模型不支持该协议端点），读取方是
+// ModelResolver 的候选过滤——协议是画像 ChannelKind 之外按需校验的独立维度，
+// 同模型 chat 端点可用不代表 responses 端点可用。口径与工具调用记忆一致：
+// 任一 Key 已知不可用即按不可用处理（保守）；无学习记录 = false（fail-open）。
+func (c *ChannelCompatCache) IsProtocolUnsupportedForChannelModel(channelUID, protocol, model string) bool {
+	return c.isTraitEnabledForChannelModel(channelUID, model, ProtocolUnsupportedTrait(protocol))
 }
 
 // IsSeverityClassUnsupportedForChannelModel 返回该渠道-模型是否有任一已知 Key 学到过

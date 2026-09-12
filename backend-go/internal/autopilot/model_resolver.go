@@ -387,6 +387,13 @@ func (r *ModelResolver) eligibleModelsAnyEndpoint(
 		return nil, false, reason
 	}
 
+	if floor.NeedsToolCalls {
+		candidates = filterLearnedToolCallCapable(candidates, channelUID)
+		if len(candidates) == 0 {
+			return nil, false, "no_capable_model"
+		}
+	}
+
 	if r.cfgManager != nil {
 		routingCfg := r.cfgManager.GetAutopilotRouting()
 		if routingCfg.ModelMapping.CapabilityFloorEnabled {
@@ -420,6 +427,13 @@ func (r *ModelResolver) capabilityFilteredModelsAnyEndpoint(
 			return nil, "no_capable_model"
 		}
 	}
+	// 工具调用学习黑名单同安全分类：带工具请求的兜底枚举同样避开实测不执行工具的组合。
+	if floor.NeedsToolCalls {
+		candidates = filterLearnedToolCallCapable(candidates, channelUID)
+		if len(candidates) == 0 {
+			return nil, "no_capable_model"
+		}
+	}
 	// 仅按真实能力硬约束过滤，跳过质量档约束：低质量模型保留为低分行，由评分拉开差距。
 	// 此处是跨模型兜底枚举，无请求同名模型概念，传空串禁用试探放宽。
 	candidates = filterByCapabilityFloorWithoutQuality(candidates, floor, "")
@@ -431,6 +445,9 @@ func (r *ModelResolver) capabilityFilteredModelsAnyEndpoint(
 
 // probedModelsAnyEndpoint 收集渠道内已探测成功且协议匹配的模型画像（含自动发现能力刷新）。
 // 空集 reason 为 "model_profile_store_unavailable" / "no_probed_model_profiles"。
+// 已学到「该渠道×模型×此协议端点不可用」（no_protocol_support:<protocol>）的组合
+// 在此剔除：画像协议维与端点协议发现是两套数据源，协议端点拒绝是强证据事实，
+// 替代映射不得再把请求送往已实测拒绝的组合。
 func (r *ModelResolver) probedModelsAnyEndpoint(channelUID, channelKind string) ([]ModelProfile, string) {
 	if r.profileStore == nil {
 		return nil, "model_profile_store_unavailable"
@@ -442,6 +459,9 @@ func (r *ModelResolver) probedModelsAnyEndpoint(channelUID, channelKind string) 
 			continue
 		}
 		if !p.ProbeSuccess {
+			continue
+		}
+		if learnedProtocolUnsupported(channelUID, channelKind, p.ModelID) {
 			continue
 		}
 		candidates = append(candidates, p)
@@ -723,6 +743,22 @@ func filterSeverityClassCapable(profiles []ModelProfile, channelUID string) []Mo
 	eligible := make([]ModelProfile, 0, len(profiles))
 	for _, p := range profiles {
 		if learnedSeverityClassUnsupported(channelUID, p.ModelID) {
+			continue
+		}
+		eligible = append(eligible, p)
+	}
+	return eligible
+}
+
+// filterLearnedToolCallCapable 剔除该渠道上实测不能执行工具调用的模型（TraitNoToolCallSupport）。
+// 画像的 SupportsToolCalls 来自注册表静态表，覆盖不了「静态宣称支持、渠道实例
+// 实际不执行（假成功/幻觉工具输出）」的组合——这类只能靠运行期学习规避。
+// 与 filterSeverityClassCapable 对称：带工具请求在替代映射阶段即避开已学黑名单，
+// 不必等 SmartRouter 选完渠道后再被 failover 弹回。
+func filterLearnedToolCallCapable(profiles []ModelProfile, channelUID string) []ModelProfile {
+	eligible := make([]ModelProfile, 0, len(profiles))
+	for _, p := range profiles {
+		if learnedToolCallUnsupported(channelUID, p.ModelID) {
 			continue
 		}
 		eligible = append(eligible, p)

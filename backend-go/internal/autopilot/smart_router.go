@@ -1893,6 +1893,12 @@ func (r *SmartRouter) buildChannelEntryForKey(
 	if learnedToolCallUnsupported(channelUID, actualModel) {
 		entry.SupportsToolCalls = false
 	}
+	// 协议端点学习同款收紧：已学到「渠道×模型×此执行协议端点不可用」的组合，
+	// 带工具请求同样规避——竞速影子候选行直接携带模型，不经 resolver 的
+	// probedModelsAnyEndpoint 过滤，须在候选行构建处同步收紧。
+	if learnedProtocolUnsupported(channelUID, channelKind, actualModel) {
+		entry.SupportsToolCalls = false
+	}
 	// 安全分类同款：实测无法完成 </severity> 格式分类的渠道×模型，
 	// 分类形状请求经 CapabilityFloor 硬约束自动规避（docs/specs/severity-class-capability.md）。
 	if learnedSeverityClassUnsupported(channelUID, actualModel) {

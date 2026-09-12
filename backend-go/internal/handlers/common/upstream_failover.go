@@ -1516,6 +1516,23 @@ func TryUpstreamWithAllKeys(
 					}
 				}
 
+				// 协议端点能力自学习（被动侧）：上游 400 明确报「该模型不支持当前执行协议
+				// 端点」时，记忆该 渠道-Key-模型-协议 组合不可用，供 ModelResolver 在替代
+				// 映射候选中剔除——画像协议维与端点协议发现是两套数据源，跨模型替代可能
+				// 把请求映射到该协议下从未验证过的模型（chat-only 模型被推上 responses
+				// 端点即此形态）。协议端点是持久事实：只记录不重试，TTL 过期前后续映射
+				// 直接避开；同模型在其他协议端点的可用性不受影响。
+				if resp.StatusCode == 400 && upstream.ChannelUID != "" {
+					if signal := ProtocolEndpointUnsupportedFromError(resp.StatusCode, respBodyBytes); signal != nil {
+						keyHash := autopilot.KeyHashFromAPIKey(apiKey)
+						if channelCompatCache.Record(upstream.ChannelUID, keyHash, attemptModel,
+							ProtocolUnsupportedLearningTrait(string(executionKind)), true, config.CompatSourceErrorSignal, signal.Evidence) {
+							RequestLogf(c, "[%s-ProtocolCompat] 渠道 %s 模型 %s 不支持 %s 协议端点（%s），已记忆并将在模型映射中规避",
+								apiType, upstream.Name, attemptModel, executionKind, signal.Evidence)
+						}
+					}
+				}
+
 				if shouldFailover {
 					lastError = fmt.Errorf("上游错误: %d", resp.StatusCode)
 					failedKeys[apiKey] = true
