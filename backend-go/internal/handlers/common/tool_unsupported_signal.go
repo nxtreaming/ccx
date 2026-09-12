@@ -72,14 +72,20 @@ func ToolUnsupportedFromError(statusCode int, bodyBytes []byte, hasTools bool) *
 	return nil
 }
 
-// BodyHasTools 检测请求体是否携带工具定义。四类文本协议的工具字段都是顶层 tools 数组
-// （Claude Messages / OpenAI Chat / Responses / Gemini）。
+// BodyHasTools 检测请求体是否携带工具语义。两种形态：
+//  1. 顶层 tools 数组（Claude Messages / OpenAI Chat / Responses / Gemini 通用）；
+//  2. 顶层 tool_choice 字段——codex 等客户端不发送明文 tools 数组（工具定义经
+//     Responses 协议内置/加密协商，实测 2026-09-12 codex 0.153.4 请求体 84KB
+//     仅含 tool_choice:"auto"），该字段的存在即声明了工具语义。
 func BodyHasTools(body []byte) bool {
 	if len(body) == 0 {
 		return false
 	}
 	tools := gjson.GetBytes(body, "tools")
-	return tools.Exists() && len(tools.Array()) > 0
+	if tools.Exists() && len(tools.Array()) > 0 {
+		return true
+	}
+	return gjson.GetBytes(body, "tool_choice").Exists()
 }
 
 // ForcedToolChoiceInBody 检测请求是否强制产生工具调用。

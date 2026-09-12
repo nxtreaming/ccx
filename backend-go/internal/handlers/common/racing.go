@@ -655,12 +655,6 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 	if err != nil || sel == nil || sel.Upstream == nil {
 		return nil
 	}
-	// 工具调用白名单渠道间排他（带工具请求）：兜底重选不经 SmartRouter 行
-	// 构建，须在此挡——全局存在任一运行期验证渠道时，影子不从非白名单渠道
-	// 派（伪工具标记方言的根治约束；无白名单渠道 fail-open）。
-	if !r.toolWhitelistAllows(sel.Upstream.ChannelUID) {
-		return nil
-	}
 	cfgSnapshot := r.in.CfgManager.GetConfig()
 	if !cfgSnapshot.ResolveRacingPolicy(sel.Upstream) {
 		return nil
@@ -676,6 +670,11 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 			return nil
 		}
 	}
+	// 工具调用白名单渠道间排他（带工具请求）：兜底重选不经影子构建出口，
+	// 须单独挡（语义同 buildSelectionFromCandidate 内的排他）。
+	if !r.toolWhitelistAllows(sel.Upstream.ChannelUID) {
+		return nil
+	}
 	r.mu.Lock()
 	r.usedRouteKeys[sel.Route.Key()] = true
 	r.mu.Unlock()
@@ -688,6 +687,13 @@ func (r *racingRuns) buildSelectionFromCandidate(cand autopilot.RoutingCandidate
 	cfgSnapshot := r.in.CfgManager.GetConfig()
 	upstream, index := findRacingChannelByUID(&cfgSnapshot, cand.ChannelUID, r.in.Kind)
 	if upstream == nil {
+		return nil
+	}
+	// 工具调用白名单渠道间排他（带工具请求）：排名缓存行由本请求以外的
+	// 历史/并发排名产生，其 Selected 语义不含本请求的工具白名单约束，
+	// 须在影子构建出口统一挡——全局存在任一运行期验证渠道时，影子不从
+	// 非白名单渠道派（伪工具标记方言的根治约束；无白名单渠道 fail-open）。
+	if !r.toolWhitelistAllows(upstream.ChannelUID) {
 		return nil
 	}
 	if !cfgSnapshot.ResolveRacingPolicy(upstream) {

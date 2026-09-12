@@ -141,3 +141,19 @@ func TestBodyHasTools(t *testing.T) {
 		})
 	}
 }
+
+func TestBodyHasToolsCodexForm(t *testing.T) {
+	// codex 形态：无明文 tools 数组，仅顶层 tool_choice（2026-09-12 实测 0.153.4）
+	if !BodyHasTools([]byte(`{"model":"gpt-6-astra","tool_choice":"auto","input":"hi"}`)) {
+		t.Fatal("codex 形态（tool_choice 存在）应判定为带工具语义")
+	}
+	if !BodyHasTools([]byte(`{"tools":[{"type":"function"}]}`)) {
+		t.Fatal("标准 tools 数组形态应判定为带工具")
+	}
+	if BodyHasTools([]byte(`{"model":"x","input":"hi"}`)) {
+		t.Fatal("无任何工具字段的普通请求不应误判")
+	}
+	if BodyHasTools([]byte(`{"tools":[]}`)) {
+		t.Fatal("空 tools 数组不算带工具")
+	}
+}
