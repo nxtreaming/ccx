@@ -388,6 +388,14 @@ func (e *responsesFoldHTTPEmitter) commit() error {
 	if e.committed {
 		return nil
 	}
+	// 竞速提交裁决：fold 路径是 native responses 流的主出口，写 Header 前必须
+	// 仲裁——赢家 claim 桥接分支缓冲，败者返回 ErrRacingSuperseded 零字节退出
+	// （ForStream 版带伪工具标记软校验，同 43fc0967 给转换器路径补的闸门）。
+	// 这是当时漏掉的第四条路径：竞速武装后 fold 的全部写出只进分支缓冲、无人
+	// Commit，客户端拿到空 200（2026-09-12 晚间 native responses 流量全空实测）。
+	if !common.RacingClaimClientCommitForStream(e.c, e.preflightText.String()) {
+		return common.ErrRacingSuperseded
+	}
 	utils.ForwardResponseHeaders(e.resp.Header, e.c.Writer)
 	e.c.Header("Content-Type", "text/event-stream")
 	e.c.Header("Cache-Control", "no-cache")
