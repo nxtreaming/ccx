@@ -347,6 +347,15 @@ func handleStreamSuccess(
 	// 重置 converterState 以便回放时重新转换
 	converterState = nil
 
+	// 竞速提交闸门：preflight 确认首字有效后才裁决——赢家 claim 并写出，
+	// 败者在此返回 ErrRacingSuperseded（Header 未写，零字节污染）。
+	// 流式路径漏掉此裁决时，分支 writer 的缓冲内容永远不会 Commit 到
+	// 真实客户端 writer，客户端只会拿到空 200。
+	if !common.RacingClaimClientCommit(c) {
+		close(scanDone)
+		return nil, common.ErrRacingSuperseded
+	}
+
 	utils.ForwardResponseHeaders(resp.Header, c.Writer)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
