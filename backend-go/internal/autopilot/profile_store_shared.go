@@ -1,6 +1,7 @@
 package autopilot
 
 import (
+	"sort"
 	"strings"
 	"sync"
 )
@@ -53,6 +54,15 @@ func ProtocolModelsForChannel(store *ProfileStore, channelUID, protocol string) 
 	if len(profiles) == 0 {
 		return nil
 	}
+	// ListActiveByChannel 按缓存 map 迭代，顺序随机；「按首现保序去重」的口径
+	// 要求多 key 渠道的聚合顺序确定（能力测试的探测清单顺序影响候选补位保序），
+	// 先按 KeyHash 稳定排序再聚合。
+	sort.Slice(profiles, func(i, j int) bool {
+		if profiles[i].KeyHash != profiles[j].KeyHash {
+			return profiles[i].KeyHash < profiles[j].KeyHash
+		}
+		return profiles[i].EndpointUID < profiles[j].EndpointUID
+	})
 	seen := make(map[string]bool)
 	var merged []string
 	collect := func(models []string) {
