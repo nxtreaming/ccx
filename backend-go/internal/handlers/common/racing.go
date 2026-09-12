@@ -336,6 +336,9 @@ type racingRuns struct {
 	trySelectedChannel TrySelectedChannelFunc
 	behavior           racing.Behavior
 	thresholdMs        int
+	// needsToolWhitelist 本请求带工具定义（spawnShadows 时判定一次）：
+	// true 时影子候选受工具调用白名单渠道间排他约束。
+	needsToolWhitelist bool
 	// clientWriter 真实客户端 writer（主分支包装前的原值），影子分支 writer 的桥接目标。
 	clientWriter    gin.ResponseWriter
 	runs            []*racingShadowRun
@@ -345,6 +348,25 @@ type racingRuns struct {
 	usedRouteKeys   map[scheduler.ChannelRouteKey]bool
 	failedRouteKeys []scheduler.ChannelRouteKey
 	spawned         bool
+}
+
+// toolWhitelistAllows 带工具请求的影子候选渠道排他判定：
+// 全局存在任一「运行期 auto 实测真实工具调用」渠道（TraitVerifiedToolCalls
+// runtime 来源）时，非白名单渠道不放行；无白名单渠道 fail-open。
+// 不带工具的请求恒放行。兜底重选路径不经 SmartRouter 行构建，须在此挡。
+func (r *racingRuns) toolWhitelistAllows(channelUID string) bool {
+	if !r.needsToolWhitelist || channelUID == "" {
+		return true
+	}
+	cache := config.SharedChannelCompatCache()
+	if cache == nil {
+		return true
+	}
+	channels := cache.VerifiedToolCallChannels(true)
+	if len(channels) == 0 {
+		return true
+	}
+	return channels[channelUID]
 }
 
 // RunRacingAttempt 包装一次渠道尝试：竞速未武装时行为与直接调用闭包完全一致；
@@ -392,6 +414,7 @@ func RunRacingAttempt(
 		trySelectedChannel: trySelectedChannel,
 		behavior:           behavior,
 		thresholdMs:        thresholdMs,
+		needsToolWhitelist: BodyHasTools(GetEffectiveRequestBody(c, nil)),
 		clientWriter:       origWriter,
 		results:            make(map[int]MultiChannelAttemptResult),
 		nextBranchID:       1,
@@ -630,6 +653,12 @@ func (r *racingRuns) nextShadowSelection(primaryCost float64) *scheduler.Selecti
 		return opts
 	}())
 	if err != nil || sel == nil || sel.Upstream == nil {
+		return nil
+	}
+	// 工具调用白名单渠道间排他（带工具请求）：兜底重选不经 SmartRouter 行
+	// 构建，须在此挡——全局存在任一运行期验证渠道时，影子不从非白名单渠道
+	// 派（伪工具标记方言的根治约束；无白名单渠道 fail-open）。
+	if !r.toolWhitelistAllows(sel.Upstream.ChannelUID) {
 		return nil
 	}
 	cfgSnapshot := r.in.CfgManager.GetConfig()
