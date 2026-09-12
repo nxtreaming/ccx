@@ -831,10 +831,27 @@ func TryUpstreamWithAllKeys(
 					}
 				}
 				if target != nil && target.Model != "" {
+					// 白名单终审：override target 可能来自 policy 构建期的预解析缓存
+					// （targetByUID/ModelByUID 等 map，其构建时机与评分来源不经本次请求的
+					// ResolveModel 过滤）。带工具请求的 override 目标必须在渠道白名单内
+					// （渠道存在运行期验证组合时），否则放弃 override 按原始模型透传——
+					// 后续 404/不支持走正常 failover，优于把流量交给未验证组合交付伪工具标记。
+					if BodyHasTools(requestBody) {
+						if wlCache := config.SharedChannelCompatCache(); wlCache != nil {
+							if verifiedChannels := wlCache.VerifiedToolCallChannels(true); len(verifiedChannels) > 0 && verifiedChannels[upstream.ChannelUID] {
+								if verified := wlCache.VerifiedToolCallModelsForChannel(upstream.ChannelUID, true); len(verified) > 0 && !verified[strings.ToLower(target.Model)] {
+									RequestLogf(c, "[%s-AutoModel] override %s -> %s 不在工具白名单内，放弃 override 按原始模型透传（渠道 %s 白名单 %d 组合）",
+										apiType, model, target.Model, upstream.Name, len(verified))
+									target = nil
+									mappingFailReason = "tool_whitelist_conflict"
+								}
+							}
+						}
+					}
 					// 五元组调度 pin：binding 解析未决档（passthrough）时用调度选中档填充。
 					// 拷贝填充，勿改 policy 缓存中的共享 target；模型以 per-key 解析为准
 					//（与调度同源 resolver，冲突时信任执行近实时结论）。
-					if target.Effort == "" && tryOpts.executionEffort != "" {
+					if target != nil && target.Effort == "" && tryOpts.executionEffort != "" {
 						pinnedTarget := *target
 						pinnedTarget.Effort = autopilot.EffortLevel(tryOpts.executionEffort)
 						pinnedTarget.EffortDecided = true
