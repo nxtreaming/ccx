@@ -15,11 +15,12 @@
         :disabled="verified"
         required
       >
-        <!-- 借 details 插槽渲染：紧贴输入框下沿，与其余字段的空 details 占位同高，不打乱表单节奏 -->
+        <!-- 借 details 插槽渲染：紧贴输入框下沿，与其余字段的空 details 占位同高，不打乱表单节奏；
+             details 容器是 space-between 的 flex（左侧固定渲染 0 宽 messages），w-100 占满整行才不会右贴 -->
         <template #details>
           <div
             v-if="recognizedBaseUrl"
-            class="recognized-base-url d-flex align-center ga-1 text-caption text-medium-emphasis"
+            class="recognized-base-url d-flex align-center ga-1 w-100 text-caption text-medium-emphasis"
           >
             <v-icon size="14" color="success">mdi-arrow-right</v-icon>
             <span>{{ t('autopilot.quickAdd.recognizedBaseUrl', { url: recognizedBaseUrl }) }}</span>
