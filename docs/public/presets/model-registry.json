@@ -1753,18 +1753,22 @@
         "(?:^|[-/])kimi-for-coding(?=$|@)"
       ],
       "provider": "moonshot",
-      "displayName": "Kimi K2.7 Code (Kimi Code 会员)",
-      "description": "Kimi Code standard coding model. Thinking is enabled by the service and the model is available to all Kimi Code membership tiers.",
-      "contextWindowTokens": 262144,
+      "displayName": "Kimi K2.8 Preview (Kimi Code 会员)",
+      "description": "Kimi Code standard coding model, upgraded to K2.8 Preview (2026-09) under the same model ID. Overall performance close to K3 with more efficient thinking; 1M context for all membership tiers; reasoning effort low/high/max (default max); requests with thinking disabled are served by the non-thinking K2.8 Preview path.",
+      "contextWindowTokens": 1048576,
       "maxOutputTokens": 32768,
       "defaultOutputTokens": 32768,
       "recommendedOutputTokens": 32768,
       "thinkingMode": "thinking",
       "reasoningEfforts": [
-        "high"
+        "low",
+        "high",
+        "max"
       ],
       "capabilities": {
         "document": false,
+        "vision": true,
+        "videoInput": true,
         "toolCalls": true,
         "contextCaching": true
       },
@@ -10018,7 +10022,7 @@
       "patterns": [
         "(?:^|[-/])kimi-k2\\.7(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)",
         "(?:^|[-/])kimi-k2\\.7-code(?:-highspeed)?(?:-\\d{4}-\\d{2}-\\d{2}|-\\d{6,8})?(?=$|@)",
-        "(?:^|[-/])kimi-for-coding(?:-highspeed)?(?=$|@)"
+        "(?:^|[-/])kimi-for-coding-highspeed(?=$|@)"
       ],
       "canonicalModel": "kimi-k2.7-code",
       "benchmarkEvidence": [
