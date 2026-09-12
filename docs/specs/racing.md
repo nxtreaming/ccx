@@ -18,9 +18,9 @@
 
 | CostPreference | 影子数 | 流式触发 floor | 影子候选过滤 |
 |---|---|---|---|
-| quality_first | 3 | 2s | 无限制 |
-| balanced（默认） | 1 | 3s | 无限制 |
-| cost_first | 1 | 5s | 仅综合倍率 ≤ 主候选一半（渠道 CostMultiplier × key GroupMultiplier）；无合适候选不派 |
+| quality_first | 3 | 4s | 无限制 |
+| balanced（默认） | 1 | 8s | 无限制 |
+| cost_first | 1 | 8s | 仅综合倍率 ≤ 主候选一半（渠道 CostMultiplier × key GroupMultiplier）；无合适候选不派 |
 
 其余内部常量：分位数 p90、样本门槛 20、观测窗口 15 分钟、窗口容量 512、全局并发影子信号量 12、非流式 floor 10s。
 

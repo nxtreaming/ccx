@@ -88,16 +88,21 @@ type Behavior struct {
 }
 
 // BehaviorForCostPreference 按请求的 CostPreference 推导竞速行为。
-// quality_first：速度优先，3 影子 + 更早触发；balanced：1 影子；
-// cost_first：1 影子且仅更便宜候选，无合适候选即不竞速。空值/未知值按 balanced。
+// 流式首字 floor 两档（2026-09-12 拍板）：quality_first=4s（速度敏感，早对冲），
+// balanced / cost_first=8s（信任主渠道/少烧影子钱）。
+// 旧值 2s/3s/5s 对"慢而真"的渠道（如 ark kimi-k3 真实首字 2-4s）系统性误判慢，
+// 且家族分位数窗口混入快而差的中转假模型首字后 p90 被拉低，2s 档形同虚设——
+// 抢闸交付伪工具标记文本的根因之一。floor 上调后 clamp 兜底两类污染。
+// quality_first：3 影子；balanced：1 影子；cost_first：1 影子且仅更便宜候选，
+// 无合适候选即不竞速。空值/未知值按 balanced。
 func BehaviorForCostPreference(costPreference string) Behavior {
 	switch strings.TrimSpace(costPreference) {
 	case "quality_first":
-		return Behavior{MaxShadows: 3, StreamFloorMs: 2000}
+		return Behavior{MaxShadows: 3, StreamFloorMs: 4000}
 	case "cost_first":
-		return Behavior{MaxShadows: 1, StreamFloorMs: 5000, CheapCandidateOnly: true}
+		return Behavior{MaxShadows: 1, StreamFloorMs: 8000, CheapCandidateOnly: true}
 	default: // balanced / "" / 未知
-		return Behavior{MaxShadows: 1, StreamFloorMs: 3000}
+		return Behavior{MaxShadows: 1, StreamFloorMs: 8000}
 	}
 }
 

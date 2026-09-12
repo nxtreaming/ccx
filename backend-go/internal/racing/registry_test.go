@@ -37,11 +37,11 @@ func TestBehaviorForCostPreference(t *testing.T) {
 		wantFloorMs   int
 		wantCheapOnly bool
 	}{
-		{"quality_first", 3, 2000, false},
-		{"balanced", 1, 3000, false},
-		{"", 1, 3000, false},
-		{"unknown", 1, 3000, false},
-		{"cost_first", 1, 5000, true},
+		{"quality_first", 3, 4000, false},
+		{"balanced", 1, 8000, false},
+		{"", 1, 8000, false},
+		{"unknown", 1, 8000, false},
+		{"cost_first", 1, 8000, true},
 	}
 	for _, tc := range cases {
 		got := BehaviorForCostPreference(tc.pref)
