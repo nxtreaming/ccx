@@ -1,0 +1,73 @@
+package common
+
+import (
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// 竞速质量闸门：伪工具调用标记的软校验。
+//
+// 背景（2026-09-12 codex 事故链）：部分中转的 responses 端点在 tool_choice=auto
+// 下，模型把工具调用写成内部协议标记的纯文本（Qwen 的 <tool_call>/、DeepSeek
+// 的 <｜DSML｜/<｜tool▁calls▁begin｜>），协议层不会把它转成 function_call 事件
+// ——客户端拿到的是编造的"工具结果"文本。探针红线（只测强制 tool_choice）
+// 天然覆盖不到 auto 行为，无法学成黑名单；竞速场景下这类分支首字快、
+// 系统性抢赢真实但较慢的主分支。
+//
+// 定位与红线：仅在竞速闸门裁决时生效的软信号——命中伪标记的分支让出
+// 提交权（按竞速败出退位，免渠道惩罚、不进学习黑名单），主分支/其他影子
+// 继续服务；误杀（如用户确实让模型书写这类标记的文档）的代价只是换一个
+// 分支交付。无闸门的直连路径行为完全不变；仅对本请求携带 tools 的流式
+// 分支启用。
+
+// pseudoToolCallMarkerPatterns 伪工具调用标记的强特征（字面量子串）。
+// 这些是模型内部工具调用协议的标记词，正常 assistant 正文不应包含。
+var pseudoToolCallMarkerPatterns = []string{
+	"<tool_call>",
+	"<tool_calls>",
+	"<｜tool▁calls▁begin｜>", // DeepSeek 官方标记（U+2581 下划线连接）
+	"<｜DSML｜",              // DeepSeek DSML 族总前缀
+	"<function=",           // Qwen function 变体开头
+	"<parameter=",          // Qwen 参数标记（与 function/tool_call 标记同族使用）
+}
+
+// DetectPseudoToolCallMarker 检测缓冲输出是否包含伪工具调用标记。
+// 大小写不敏感（文本与标记双侧归一，覆盖 DSML 全大写特例）；空串与
+// 无标记文本返回 false。
+func DetectPseudoToolCallMarker(text string) bool {
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	for _, marker := range pseudoToolCallMarkerPatterns {
+		if strings.Contains(lower, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
+}
+
+// RacingClaimClientCommitForStream 流式路径的竞速提交裁决（带伪标记软校验）。
+// bufferedOutput 为 preflight 期间缓冲的输出文本（各协议的 text delta/原始行拼接）。
+// 无闸门时直接放行（零开销）；有闸门时带工具请求且缓冲输出命中伪标记的
+// 分支让出提交权并丢弃分支缓冲，调用方应以 ErrRacingSuperseded 收尾。
+func RacingClaimClientCommitForStream(c *gin.Context, bufferedOutput string) bool {
+	if gateFromContext(c) == nil {
+		return true
+	}
+	if bufferedOutput != "" && DetectPseudoToolCallMarker(bufferedOutput) && streamRequestHasTools(c) {
+		if bw, ok := c.Writer.(*racingBranchWriter); ok {
+			bw.Discard()
+		}
+		RequestLogf(c, "[Racing-QualityGate] 分支首包命中伪工具调用标记（tool_choice=auto 下模型把工具调用写成文本），让出提交权")
+		return false
+	}
+	return racingClaimClientCommit(c)
+}
+
+// streamRequestHasTools 本请求是否携带工具定义（伪标记校验仅对带工具请求启用）。
+func streamRequestHasTools(c *gin.Context) bool {
+	body := GetEffectiveRequestBody(c, nil)
+	return BodyHasTools(body)
+}

@@ -1285,7 +1285,9 @@ func HandleStreamResponse(
 	// 非空响应：正常流程
 	// 竞速提交闸门：preflight 确认首字有效后才裁决——赢家 claim 并写出，
 	// 败者在此返回 ErrRacingSuperseded（Header 未写，零字节污染）。
-	if !racingClaimClientCommit(c) {
+	// ForStream 版带伪工具调用标记软校验：tool_choice=auto 下把工具调用
+	// 写成 <tool_call>/DSML 文本的分支让出提交权（codex 事故链的收口）。
+	if !RacingClaimClientCommitForStream(c, strings.Join(preflight.BufferedEvents, "\n")) {
 		drainChannels(eventChan, errChan)
 		return nil, ErrRacingSuperseded
 	}

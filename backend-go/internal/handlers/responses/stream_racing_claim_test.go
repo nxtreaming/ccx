@@ -107,6 +107,56 @@ func TestHandleStreamSuccess_RacingWinnerBridgesBody(t *testing.T) {
 	}
 }
 
+// 质量闸门：带工具请求 + 伪工具调用标记文本（tool_choice=auto 下模型把
+// 工具调用写成 Qwen/DSML 标记文本）时，即使闸门空闲也不得 claim——
+// 分支按 ErrRacingSuperseded 让位，主分支/其他影子继续服务。
+func TestHandleStreamSuccess_RacingQualityGateBlocksPseudoToolMarker(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	requestBody := `{"model":"gpt-5","stream":true,"tools":[{"type":"function","name":"exec"}],"input":"hi"}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(requestBody))
+	c.Set("requestBodyBytes", []byte(requestBody))
+
+	gate := racing.NewGate()
+	c.Set(racing.ContextKeyGate, gate)
+	c.Set(racing.ContextKeyRole, racing.RoleShadow)
+
+	reader, writer := io.Pipe()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"text/event-stream"}},
+		Body:       reader,
+	}
+	go func() {
+		defer errutil.IgnoreDeferred(writer.Close)
+		writeSSE := func(s string) { _, _ = io.WriteString(writer, s) }
+		writeSSE("event: response.output_item.added\n")
+		writeSSE("data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"role\":\"assistant\"}}\n\n")
+		writeSSE("event: response.output_text.delta\n")
+		writeSSE("data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"我来执行。<tool_call>{\\\"name\\\":\\\"exec\\\"}\"}\n\n")
+		writeSSE("event: response.completed\n")
+		writeSSE("data: {\"type\":\"response.completed\",\"sequence_number\":2,\"response\":{\"id\":\"resp_pseudo_001\",\"status\":\"completed\",\"output\":[]}}\n\n")
+	}()
+
+	originalReq := &types.ResponsesRequest{Model: "gpt-5", Input: "hi", Stream: true}
+	_, err := handleStreamSuccess(
+		c, resp, "responses",
+		&config.EnvConfig{LogLevel: "info"},
+		session.NewSessionManager(time.Hour, 100, 100000),
+		time.Now(),
+		originalReq,
+		[]byte(requestBody),
+		common.StreamPreflightTimeouts{FirstContentTimeoutMs: 5000, InactivityTimeoutMs: 3000},
+	)
+	if !strings.Contains(errN(err), racing.ErrRacingSuperseded.Error()) {
+		t.Fatalf("伪标记分支应以 ErrRacingSuperseded 让位，实际 err = %v", err)
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("让位分支不得写出任何字节，实际写出 %d 字节", w.Body.Len())
+	}
+}
+
 func errN(err error) string {
 	if err == nil {
 		return "<nil>"

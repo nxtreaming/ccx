@@ -351,7 +351,9 @@ func handleStreamSuccess(
 	// 败者在此返回 ErrRacingSuperseded（Header 未写，零字节污染）。
 	// 流式路径漏掉此裁决时，分支 writer 的缓冲内容永远不会 Commit 到
 	// 真实客户端 writer，客户端只会拿到空 200。
-	if !common.RacingClaimClientCommit(c) {
+	// ForStream 版带伪工具调用标记软校验：tool_choice=auto 下把工具调用
+	// 写成 <tool_call>/DSML 文本的分支让出提交权（codex 事故链的收口）。
+	if !common.RacingClaimClientCommitForStream(c, preflightTextBuf.String()) {
 		close(scanDone)
 		return nil, common.ErrRacingSuperseded
 	}
