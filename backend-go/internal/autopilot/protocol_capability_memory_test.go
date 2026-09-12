@@ -103,3 +103,23 @@ func TestFilterLearnedToolCallCapableWhitelistMode(t *testing.T) {
 		t.Fatalf("白名单无交集时应回退黑名单模式，got %v", got)
 	}
 }
+
+// ── 渠道间排他（白名单渠道集合）──
+
+func TestVerifiedToolCallChannelExclusivity(t *testing.T) {
+	origModels := verifiedToolCallModelsLookup
+	origChannels := verifiedToolCallChannelsLookup
+	defer func() {
+		verifiedToolCallModelsLookup = origModels
+		verifiedToolCallChannelsLookup = origChannels
+	}()
+
+	profiles := []ModelProfile{{ModelID: "some-model"}}
+
+	// 全局无白名单渠道：fail-open，一切照旧（黑名单逻辑）
+	verifiedToolCallChannelsLookup = func() map[string]bool { return nil }
+	verifiedToolCallModelsLookup = func(string) map[string]bool { return nil }
+	if got := filterLearnedToolCallCapable(profiles, "ch_any"); len(got) != 1 {
+		t.Fatalf("无白名单渠道时应 fail-open，got %v", got)
+	}
+}

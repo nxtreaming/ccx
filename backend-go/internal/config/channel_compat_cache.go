@@ -987,6 +987,38 @@ func (c *ChannelCompatCache) IsToolCallVerifiedForChannelModel(channelUID, model
 	return c.VerifiedToolCallModelsForChannel(channelUID, false)[strings.ToLower(model)]
 }
 
+// VerifiedToolCallChannels 返回存在实测真实工具调用组合的渠道 UID 集合。
+// onlyRuntime 语义同 VerifiedToolCallModelsForChannel。渠道间排他的判定依据：
+// 集合非空时，带工具请求的候选池中非成员渠道不再承接（硬约束剔除），
+// 无任何成员时 fail-open（冷启动不堵）。
+func (c *ChannelCompatCache) VerifiedToolCallChannels(onlyRuntime bool) map[string]bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var channels map[string]bool
+	for key, entry := range c.cache {
+		if entry == nil {
+			continue
+		}
+		parts := strings.SplitN(key, ":", 3)
+		if len(parts) != 3 || parts[0] == "" {
+			continue
+		}
+		if time.Since(entry.DetectedAt) > channelCompatTTL {
+			continue
+		}
+		if state, ok := entry.Traits[TraitVerifiedToolCalls]; ok && state.Enabled {
+			if onlyRuntime && state.Source != CompatSourceRuntimeSignal {
+				continue
+			}
+			if channels == nil {
+				channels = make(map[string]bool)
+			}
+			channels[parts[0]] = true
+		}
+	}
+	return channels
+}
+
 // IsProtocolUnsupportedForChannelModel 返回该渠道-模型在指定执行协议端点是否有任一
 // 已知 Key 学到过「不可用」结论（no_protocol_support:<protocol>）。
 //

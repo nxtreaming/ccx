@@ -54,3 +54,18 @@ func verifiedToolCallModels(channelUID string) map[string]bool {
 	}
 	return verifiedToolCallModelsLookup(channelUID)
 }
+
+// verifiedToolCallChannelsLookup 供测试替换的渠道集合查询入口。
+var verifiedToolCallChannelsLookup = func() map[string]bool {
+	cache := config.SharedChannelCompatCache()
+	if cache == nil {
+		return nil
+	}
+	return cache.VerifiedToolCallChannels(true)
+}
+
+// verifiedToolCallChannels 返回存在运行期 auto 实测真实工具调用组合的渠道
+// UID 集合（渠道间排他的判定依据；空集合 = fail-open）。
+func verifiedToolCallChannels() map[string]bool {
+	return verifiedToolCallChannelsLookup()
+}
