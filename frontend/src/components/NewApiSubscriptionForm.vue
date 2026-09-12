@@ -5,25 +5,27 @@
       <div v-if="!autoProvision" class="text-subtitle-2 mb-2 text-medium-emphasis">
         {{ t('subscription.newApi.step1Title') }}
       </div>
-      <div>
-        <v-text-field
-          v-model="verifyForm.baseUrl"
-          :label="t('subscription.newApi.baseUrl')"
-          placeholder="https://your-newapi-instance.com"
-          variant="outlined"
-          density="compact"
-          :class="recognizedBaseUrl ? '' : 'mb-2'"
-          :disabled="verified"
-          required
-        />
-        <div
-          v-if="recognizedBaseUrl"
-          class="recognized-base-url d-flex align-start ga-1 text-caption text-medium-emphasis mb-2"
-        >
-          <v-icon size="14" color="success" class="mt-1">mdi-arrow-right</v-icon>
-          <span>{{ t('autopilot.quickAdd.recognizedBaseUrl', { url: recognizedBaseUrl }) }}</span>
-        </div>
-      </div>
+      <v-text-field
+        v-model="verifyForm.baseUrl"
+        :label="t('subscription.newApi.baseUrl')"
+        placeholder="https://your-newapi-instance.com"
+        variant="outlined"
+        density="compact"
+        class="mb-2"
+        :disabled="verified"
+        required
+      >
+        <!-- 借 details 插槽渲染：紧贴输入框下沿，与其余字段的空 details 占位同高，不打乱表单节奏 -->
+        <template #details>
+          <div
+            v-if="recognizedBaseUrl"
+            class="recognized-base-url d-flex align-center ga-1 text-caption text-medium-emphasis"
+          >
+            <v-icon size="14" color="success">mdi-arrow-right</v-icon>
+            <span>{{ t('autopilot.quickAdd.recognizedBaseUrl', { url: recognizedBaseUrl }) }}</span>
+          </div>
+        </template>
+      </v-text-field>
       <v-text-field
         v-model="verifyForm.accessToken"
         :label="t('subscription.newApi.accessToken')"
