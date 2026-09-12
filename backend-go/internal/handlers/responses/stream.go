@@ -86,6 +86,20 @@ func handleStreamSuccess(
 	preflightHasNonTextContent := false
 	preflightEmpty := false
 	preflightDiagnostic := ""
+	// 伪工具标记观察窗（仅竞速影子 + 带工具请求启用）：preflight 放行前
+	// 多收几个有效内容 delta 再做标记检测，见阶段 B 放行分支注释。
+	pseudoMarkerProbeMinDeltas := 5
+	pseudoProbeContentCount := 0
+	pseudoMarkerProbeArmed := -1 // 惰性判定：-1 未判定，0 关闭，1 开启
+	needsPseudoMarkerProbe := func() bool {
+		if pseudoMarkerProbeArmed < 0 {
+			pseudoMarkerProbeArmed = 0
+			if common.RacingShadowWithTools(c) {
+				pseudoMarkerProbeArmed = 1
+			}
+		}
+		return pseudoMarkerProbeArmed == 1
+	}
 	// 阶段A：首个有效内容等待超时
 	var firstContentTimer *time.Timer
 	firstContentChan := (<-chan time.Time)(nil)
@@ -262,7 +276,31 @@ func handleStreamSuccess(
 						}
 						resetInactivityTimer()
 					} else {
-						// 阶段B中收到第二个有效内容：健康流，放行
+						// 阶段B中收到后续有效内容：健康流，放行。
+						// 例外：竞速影子 + 带工具请求进入伪标记观察窗——每个有效内容
+						// 行都做伪工具调用标记检测（<tool_call>/DSML 通常紧跟首段干净
+						// 文本，实测 qwen 系在第 3+ delta 才吐标记），命中即让位；观察
+						// 满 5 个有效内容行仍干净才放行。影子多等几百毫秒无妨，主分支
+						// 不受影响（非影子路径保持原有放行节奏）。
+						// 仅 data 行计入观察窗计数：event 名行是协议开销，若计入会在
+						// 配对的 data 行（真正携带文本）到达前就满足计数放行，标记逃逸。
+						isDataLine := strings.HasPrefix(event, "data:")
+						if isDataLine {
+							pseudoProbeContentCount++
+						}
+						if needsPseudoMarkerProbe() {
+							// 原始行 + 已提取文本双通道检测：data 行 JSON 里的标记是字面
+							// 量子串，直接扫原始行不依赖 extract 的提取时机。
+							if common.DetectPseudoToolCallMarker(event) || common.DetectPseudoToolCallMarker(preflightTextBuf.String()) {
+								common.RequestLogf(c, "[Racing-QualityGate] 观察窗捕获伪工具调用标记（阶段B第 %d 个有效内容），影子分支让位", pseudoProbeContentCount)
+								close(scanDone)
+								return nil, common.ErrRacingSuperseded
+							}
+							if !isDataLine || pseudoProbeContentCount < pseudoMarkerProbeMinDeltas {
+								resetInactivityTimer()
+								continue
+							}
+						}
 						if streamObserver != nil {
 							streamObserver.MarkStreamActivity(time.Now())
 						}
@@ -275,6 +313,15 @@ func handleStreamSuccess(
 				// 检查是否为 response.completed 事件（流正常结束）
 				if isResponsesCompletedEvent(event) {
 					preflightDone = true
+					// 伪标记观察窗的兜底检测：短流在计数到达前的 completed 放行
+					// 同样不得放过伪标记（检测语义同阶段 B 放行分支）。
+					if needsPseudoMarkerProbe() {
+						if common.DetectPseudoToolCallMarker(event) || common.DetectPseudoToolCallMarker(preflightTextBuf.String()) {
+							common.RequestLogf(c, "[Racing-QualityGate] 观察窗捕获伪工具调用标记（completed 兜底），影子分支让位")
+							close(scanDone)
+							return nil, common.ErrRacingSuperseded
+						}
+					}
 					// 安全分类格式标记：短分类响应可能整体在预检阶段完成，此处必须一并扫描。
 					common.MarkSeverityTagIfHit(c, preflightTextBuf.String())
 					// 检查是否有实际内容（文本或工具调用）

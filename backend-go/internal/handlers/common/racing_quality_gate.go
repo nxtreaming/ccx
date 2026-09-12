@@ -25,10 +25,12 @@ import (
 // 这些是模型内部工具调用协议的标记词，正常 assistant 正文不应包含。
 var pseudoToolCallMarkerPatterns = []string{
 	"<tool_call>",
+	"</tool_call>", // 闭标记：实测形态常只输出闭标记段（</parameter></function></tool_call>）
 	"<tool_calls>",
 	"<｜tool▁calls▁begin｜>", // DeepSeek 官方标记（U+2581 下划线连接）
 	"<｜DSML｜",              // DeepSeek DSML 族总前缀
 	"<function=",           // Qwen function 变体开头
+	"</function>",          // Qwen function 闭标记
 	"<parameter=",          // Qwen 参数标记（与 function/tool_call 标记同族使用）
 }
 
@@ -70,4 +72,12 @@ func RacingClaimClientCommitForStream(c *gin.Context, bufferedOutput string) boo
 func streamRequestHasTools(c *gin.Context) bool {
 	body := GetEffectiveRequestBody(c, nil)
 	return BodyHasTools(body)
+}
+
+// RacingShadowWithTools 判定「竞速影子分支 + 本请求携带工具定义」——
+// 伪标记观察窗（preflight 延长收流）的启用条件。影子分支多观察几个
+// delta 不影响客户端（主分支同时在服务）；主分支与非竞速路径不启用，
+// 保持原有放行节奏。
+func RacingShadowWithTools(c *gin.Context) bool {
+	return gateFromContext(c) != nil && racingIsShadow(c) && streamRequestHasTools(c)
 }
