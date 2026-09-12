@@ -199,6 +199,19 @@ func (r *ModelResolver) ResolveModel(
 		candidates = filterSeverityClassCapable(candidates, channelUID)
 	}
 
+	// Step 3.6: 工具调用能力硬约束（负向黑名单 + 正向白名单，同安全分类挂载位）。
+	// 这是 endpoint policy 的实际 override 决策路径（resolveMappedModel→resolveAutoModel
+	// →本函数）；此前过滤只接在 AnyEndpoint 系列（调度器候选筛选），本路径漏接导致
+	// override 产出绕过白名单/黑名单的模型（2026-09-12 glm-5.3-flash@ark 实测）。
+	// 白名单模式：渠道内存在任一运行期验证组合时，候选只从验证组合产生；
+	// 无交集回退黑名单逻辑不空转（语义同 eligibleModelsAnyEndpoint）。
+	if floor.NeedsToolCalls {
+		candidates = filterLearnedToolCallCapable(candidates, channelUID)
+		if len(candidates) == 0 {
+			return ResolvedRouteTarget{Model: requestModel, Reason: "no_capable_model"}, false, "no_capable_model"
+		}
+	}
+
 	// Step 4: 能力过滤——上下文、推理、视觉、工具调用仍是硬约束；
 	// 质量档作为首选条件，只有更高质量候选完全不存在时才允许降档，
 	// 避免“没有 Opus 等价模型就整条请求不可用”。
