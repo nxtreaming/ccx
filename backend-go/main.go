@@ -680,6 +680,8 @@ func main() {
 			} else {
 				autopilotManager = mgr
 				autopilotDB = autopilotStore.DB() // Phase B.1: 复用 SQLite 连接
+				// 共享 ProfileStore：能力测试的探测范围对齐（画像 protocolModels 优先于内置通用清单）
+				autopilot.SetSharedProfileStore(autopilotStore)
 
 				// Phase 2: 创建 TraceStore（内存环形 + 可选 SQLite 落盘）
 				traceStore, tsErr := autopilot.NewTraceStoreWithDB(autopilotStore.DB())
