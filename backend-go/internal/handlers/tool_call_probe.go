@@ -116,7 +116,7 @@ func recordToolCallProbeResult(channel *config.UpstreamConfig, apiKey, actualMod
 	if channel == nil || channel.ChannelUID == "" || actualModel == "" {
 		return
 	}
-	if !summary.Tested || summary.Supported || !summary.ConfirmedUnsupported {
+	if !summary.Tested {
 		return
 	}
 	cache := config.SharedChannelCompatCache()
@@ -124,6 +124,19 @@ func recordToolCallProbeResult(channel *config.UpstreamConfig, apiKey, actualMod
 		return
 	}
 	keyHash := autopilot.KeyHashFromAPIKey(apiKey)
+	// 正向结论：实测返回了真实工具调用 → 记入正向白名单（agentic 流量
+	// 的候选来源；渠道内存在任一验证组合时，带工具请求只从验证组合产生）。
+	if summary.Supported {
+		if cache.Record(channel.ChannelUID, keyHash, actualModel,
+			config.TraitVerifiedToolCalls, true, config.CompatSourceProbe, summary.Evidence) {
+			log.Printf("[CapabilityTest-ToolCall] 渠道 %s 模型 %s 实测真实工具调用，已记入正向白名单（agentic 流量优先）",
+				channel.Name, actualModel)
+		}
+		return
+	}
+	if !summary.ConfirmedUnsupported {
+		return
+	}
 	if cache.Record(channel.ChannelUID, keyHash, actualModel,
 		config.TraitNoToolCallSupport, true, config.CompatSourceProbe, summary.Evidence) {
 		log.Printf("[CapabilityTest-ToolCall] 渠道 %s 模型 %s 未按强制 tool_choice 产生工具调用，已记忆并在后续路由中规避该组合（带工具请求）",

@@ -1893,6 +1893,13 @@ func (r *SmartRouter) buildChannelEntryForKey(
 	if learnedToolCallUnsupported(channelUID, actualModel) {
 		entry.SupportsToolCalls = false
 	}
+	// 工具调用正向白名单：渠道内存在任一「运行期 auto 流量实测真实工具调用」
+	// 组合时，未验证组合不再承接带工具请求——伪工具标记方言是开放长尾，负向
+	// 清单打地鼠，白名单是根治。影子候选行直接携带模型（不经 resolver 过滤），
+	// 必须在此收紧；无正向记录的渠道 fail-open 不受影响（冷启动不堵）。
+	if verified := verifiedToolCallModels(channelUID); len(verified) > 0 && !verified[strings.ToLower(actualModel)] {
+		entry.SupportsToolCalls = false
+	}
 	// 协议端点学习同款收紧：已学到「渠道×模型×此执行协议端点不可用」的组合，
 	// 带工具请求同样规避——竞速影子候选行直接携带模型，不经 resolver 的
 	// probedModelsAnyEndpoint 过滤，须在候选行构建处同步收紧。

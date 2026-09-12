@@ -1690,6 +1690,10 @@ func TryUpstreamWithAllKeys(
 				if !racingSuperseded && (executionKind == scheduler.ChannelKindMessages || executionKind == scheduler.ChannelKindResponses) {
 					MaybeLearnForcedToolChoiceMiss(c, upstream, apiKey, attemptModel, attemptBody,
 						GetStreamTimeoutObserver(c).SawToolCall())
+					// 正向证据学习：带工具请求 2xx 完成且流中有真实 function_call
+					// 事件 → 记入正向白名单（覆盖 tool_choice=auto 场景，强于探针）。
+					MaybeLearnVerifiedToolCalls(c, upstream, apiKey, attemptModel, attemptBody,
+						GetStreamTimeoutObserver(c).SawToolCall())
 					// 安全分类能力自学习（被动侧·成功路径）：分类形状请求 2xx 完成但
 					// 输出无 <severity> 标记，说明该渠道×模型不遵循格式约束。
 					// 同样仅 messages/responses（只有这两条流式路径接了标记扫描）。

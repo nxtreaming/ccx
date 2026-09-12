@@ -34,3 +34,23 @@ func learnedToolCallUnsupported(channelUID, model string) bool {
 	}
 	return learnedToolCallUnsupportedLookup(channelUID, model)
 }
+
+// verifiedToolCallModelsLookup 供测试替换的正向白名单查询入口。
+var verifiedToolCallModelsLookup = func(channelUID string) map[string]bool {
+	cache := config.SharedChannelCompatCache()
+	if cache == nil {
+		return nil
+	}
+	return cache.VerifiedToolCallModelsForChannel(channelUID, true)
+}
+
+// verifiedToolCallModels 返回该渠道经运行期 auto 流量实测产生过真实
+// function_call 事件的模型集合（小写模型名键，不含探针来源——探针只验证
+// 强制 tool_choice，「强制通过、auto 文本化」的组合实测存在）。白名单模式
+// 的触发判定与成员查询共用：空集合 = 渠道无正向记录（fail-open）。
+func verifiedToolCallModels(channelUID string) map[string]bool {
+	if channelUID == "" {
+		return nil
+	}
+	return verifiedToolCallModelsLookup(channelUID)
+}

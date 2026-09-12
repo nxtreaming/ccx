@@ -63,6 +63,15 @@ const (
 	// 需在转发前从 anthropic-beta header 中按 token 粒度剥离。
 	// 学习条件：400/422 错误明确点名拒绝某 token + 请求侧确实携带 anthropic-beta header。
 	TraitUnsupportedBetaHeader CompatTrait = "unsupported_beta_header"
+	// TraitVerifiedToolCalls 渠道×模型实测产生过真实 function_call 事件（正向证据）。
+	// 写入方：能力测试工具探针（强制 tool_choice 返回 ccx_probe 调用）与运行期
+	// 成功路径（带 tools 请求 2xx 完成且流中观察到真实工具调用块）。读取方：
+	// ModelResolver 与 SmartRouter 的白名单模式——渠道内存在任一验证组合时，
+	// 带工具请求的候选只从验证组合中产生；无记录渠道 fail-open 不受影响。
+	// 这是「伪工具标记方言长尾」（qwen/deepseek/glm 各族 auto 下文本化工具
+	// 调用，负向清单打地鼠）的根治：agentic 流量只走实证可用的组合。
+	// 不进 AllCompatTraits（无请求改写）。
+	TraitVerifiedToolCalls CompatTrait = "verified_tool_calls"
 )
 
 // TraitProtocolUnsupportedPrefix 「模型×执行协议端点不可用」记忆的 trait 键前缀，
@@ -929,6 +938,53 @@ func (c *ChannelCompatCache) IsDocumentUnsupportedForChannelModel(channelUID, mo
 // 任一 Key 已知不支持就按不支持处理。无学习记录 = false（fail-open）。
 func (c *ChannelCompatCache) IsToolCallUnsupportedForChannelModel(channelUID, model string) bool {
 	return c.isTraitEnabledForChannelModel(channelUID, model, TraitNoToolCallSupport)
+}
+
+// VerifiedToolCallModelsForChannel 返回该渠道上实测产生过真实 function_call
+// 事件的模型集合（任一 Key 验证过即纳入，键为小写模型名）。
+// onlyRuntime=true 时仅聚合运行期证据（带 tools 的真实流量 2xx 完成且流中
+// 有真实 function_call 事件，覆盖 tool_choice=auto 场景）——探针只验证强制
+// tool_choice（协议层），「强制通过、auto 下文本化工具调用」的组合实测存在
+// （qwen3.7-max），探针正向结论不得单独作为 agentic 白名单依据。
+func (c *ChannelCompatCache) VerifiedToolCallModelsForChannel(channelUID string, onlyRuntime bool) map[string]bool {
+	if channelUID == "" {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var verified map[string]bool
+	for key, entry := range c.cache {
+		if entry == nil {
+			continue
+		}
+		parts := strings.SplitN(key, ":", 3)
+		if len(parts) != 3 || parts[0] != channelUID {
+			continue
+		}
+		if time.Since(entry.DetectedAt) > channelCompatTTL {
+			continue
+		}
+		if state, ok := entry.Traits[TraitVerifiedToolCalls]; ok && state.Enabled {
+			if onlyRuntime && state.Source != CompatSourceRuntimeSignal {
+				continue
+			}
+			if verified == nil {
+				verified = make(map[string]bool)
+			}
+			verified[strings.ToLower(parts[2])] = true
+		}
+	}
+	return verified
+}
+
+// IsToolCallVerifiedForChannelModel 返回该渠道-模型是否有任一 Key 实测产生过
+// 真实 function_call 事件（含探针来源；正向白名单判定请用
+// VerifiedToolCallModelsForChannel(uid, true) 只认运行期证据）。
+func (c *ChannelCompatCache) IsToolCallVerifiedForChannelModel(channelUID, model string) bool {
+	if channelUID == "" || model == "" {
+		return false
+	}
+	return c.VerifiedToolCallModelsForChannel(channelUID, false)[strings.ToLower(model)]
 }
 
 // IsProtocolUnsupportedForChannelModel 返回该渠道-模型在指定执行协议端点是否有任一

@@ -750,12 +750,30 @@ func filterSeverityClassCapable(profiles []ModelProfile, channelUID string) []Mo
 	return eligible
 }
 
-// filterLearnedToolCallCapable 剔除该渠道上实测不能执行工具调用的模型（TraitNoToolCallSupport）。
+// filterLearnedToolCallCapable 带工具请求的候选过滤（两级）：
+//  1. 白名单模式：渠道内存在任一「实测真实工具调用」组合（TraitVerifiedToolCalls，
+//     探针/运行期正向证据）时，候选只从验证组合中产生——伪工具标记方言是开放
+//     长尾（qwen/deepseek/glm 各族 auto 下文本化工具调用），负向清单打地鼠，
+//     正向白名单才是根治；验证组合与候选无交集时回退黑名单逻辑（不空转）。
+//  2. 黑名单模式：剔除实测不能执行工具调用的组合（TraitNoToolCallSupport）。
+//
 // 画像的 SupportsToolCalls 来自注册表静态表，覆盖不了「静态宣称支持、渠道实例
-// 实际不执行（假成功/幻觉工具输出）」的组合——这类只能靠运行期学习规避。
-// 与 filterSeverityClassCapable 对称：带工具请求在替代映射阶段即避开已学黑名单，
-// 不必等 SmartRouter 选完渠道后再被 failover 弹回。
+// 实际不执行（假成功/幻觉工具输出）」的组合——这类只能靠学习规避。
+// 与 filterSeverityClassCapable 对称：带工具请求在替代映射阶段即避开。
 func filterLearnedToolCallCapable(profiles []ModelProfile, channelUID string) []ModelProfile {
+	if verified := verifiedToolCallModels(channelUID); len(verified) > 0 {
+		whitelisted := make([]ModelProfile, 0, len(profiles))
+		for _, p := range profiles {
+			if verified[strings.ToLower(p.ModelID)] {
+				whitelisted = append(whitelisted, p)
+			}
+		}
+		if len(whitelisted) > 0 {
+			return whitelisted
+		}
+		// 验证组合不在当前候选集（画像/清单漂移）：回退黑名单逻辑，
+		// 不因白名单存在而空转阻塞请求。
+	}
 	eligible := make([]ModelProfile, 0, len(profiles))
 	for _, p := range profiles {
 		if learnedToolCallUnsupported(channelUID, p.ModelID) {

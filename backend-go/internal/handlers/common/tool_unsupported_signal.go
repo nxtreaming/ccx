@@ -148,3 +148,28 @@ func MaybeLearnForcedToolChoiceMiss(c *gin.Context, upstream *config.UpstreamCon
 			upstream.Name, model)
 	}
 }
+
+// MaybeLearnVerifiedToolCalls 运行期成功路径的正向证据学习。
+//
+// 条件：请求携带 tools + 上游 2xx 完成 + 流中观察到真实 function_call 事件
+// （SawToolCall 由流式路径的工具活动标记供给）。真实流量里的成功工具调用是
+// 强于探针的正向证据（覆盖 tool_choice=auto 场景——探针只测强制形态）。
+// 记入 TraitVerifiedToolCalls 供白名单模式消费：渠道内存在任一验证组合时，
+// 带工具请求的候选只从验证组合产生。
+func MaybeLearnVerifiedToolCalls(c *gin.Context, upstream *config.UpstreamConfig, apiKey, model string, attemptBody []byte, sawToolCall bool) {
+	if c == nil || upstream == nil || upstream.ChannelUID == "" || model == "" {
+		return
+	}
+	if !sawToolCall || !BodyHasTools(attemptBody) {
+		return
+	}
+	cache := config.SharedChannelCompatCache()
+	if cache == nil {
+		return
+	}
+	keyHash := autopilot.KeyHashFromAPIKey(apiKey)
+	if cache.Record(upstream.ChannelUID, keyHash, model, config.TraitVerifiedToolCalls, true, config.CompatSourceRuntimeSignal, "带工具请求 2xx 完成且流中出现真实 function_call 事件") {
+		RequestLogf(c, "[ToolCallCompat] 渠道 %s 模型 %s 真实工具调用成功，已记入正向白名单（agentic 流量优先）",
+			upstream.Name, model)
+	}
+}
