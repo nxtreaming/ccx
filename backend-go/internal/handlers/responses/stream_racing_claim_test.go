@@ -157,6 +157,73 @@ func TestHandleStreamSuccess_RacingQualityGateBlocksPseudoToolMarker(t *testing.
 	}
 }
 
+// 观察窗：竞速影子 + 带工具请求的伪标记在第 3+ delta 才出现（实测 qwen 系
+// 形态——首段干净文本、标记紧跟其后）时，延长观察的 preflight 必须捕获并
+// 让位；主分支（RolePrimary）不受观察窗影响，保持原有放行节奏正常透传。
+func TestHandleStreamSuccess_PseudoMarkerLateDeltaCaughtForShadowOnly(t *testing.T) {
+	run := func(t *testing.T, role string) (string, error) {
+		gin.SetMode(gin.TestMode)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		requestBody := `{"model":"gpt-5","stream":true,"tools":[{"type":"function","name":"exec"}],"input":"hi"}`
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(requestBody))
+		c.Set("requestBodyBytes", []byte(requestBody))
+		c.Set(racing.ContextKeyGate, racing.NewGate())
+		c.Set(racing.ContextKeyRole, role)
+
+		reader, writer := io.Pipe()
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       reader,
+		}
+		go func() {
+			defer errutil.IgnoreDeferred(writer.Close)
+			writeSSE := func(s string) { _, _ = io.WriteString(writer, s) }
+			writeSSE("event: response.output_item.added\n")
+			writeSSE("data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"role\":\"assistant\"}}\n\n")
+			// delta 1-2：干净文本（旧窗口在第 2 个有效内容即放行，捕获不到后续）
+			writeSSE("event: response.output_text.delta\n")
+			writeSSE("data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"git log --oneline -1\"}\n\n")
+			writeSSE("event: response.output_text.delta\n")
+			writeSSE("data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"\\n\"}\n\n")
+			// delta 3：伪标记（实测漏网形态）
+			writeSSE("event: response.output_text.delta\n")
+			writeSSE("data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"</parameter></function></tool_call>\"}\n\n")
+			writeSSE("event: response.completed\n")
+			writeSSE("data: {\"type\":\"response.completed\",\"sequence_number\":4,\"response\":{\"id\":\"resp_late_001\",\"status\":\"completed\",\"output\":[]}}\n\n")
+		}()
+
+		originalReq := &types.ResponsesRequest{Model: "gpt-5", Input: "hi", Stream: true}
+		_, err := handleStreamSuccess(
+			c, resp, "responses",
+			&config.EnvConfig{LogLevel: "info"},
+			session.NewSessionManager(time.Hour, 100, 100000),
+			time.Now(),
+			originalReq,
+			[]byte(requestBody),
+			common.StreamPreflightTimeouts{FirstContentTimeoutMs: 5000, InactivityTimeoutMs: 3000},
+		)
+		return w.Body.String(), err
+	}
+
+	t.Run("影子分支让位", func(t *testing.T) {
+		_, err := run(t, racing.RoleShadow)
+		if err == nil || !strings.Contains(err.Error(), racing.ErrRacingSuperseded.Error()) {
+			t.Fatalf("影子分支伪标记应让位，实际 err = %v", err)
+		}
+	})
+	t.Run("主分支正常透传不受观察窗影响", func(t *testing.T) {
+		body, err := run(t, racing.RolePrimary)
+		if err != nil {
+			t.Fatalf("主分支不应受观察窗影响，实际 err = %v", err)
+		}
+		if !strings.Contains(body, "git log") {
+			t.Fatalf("主分支应正常透传内容，body = %q", body)
+		}
+	})
+}
+
 func errN(err error) string {
 	if err == nil {
 		return "<nil>"
