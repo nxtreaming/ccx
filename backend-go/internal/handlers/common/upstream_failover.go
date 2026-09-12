@@ -1762,6 +1762,9 @@ func TryUpstreamWithAllKeys(
 					channelScheduler.RecordRequestEnd(currentBaseURL, apiKey, metricsServiceType, executionKind)
 					// 空响应 / 无效响应体 / 首字超时 / 断流都是该渠道-模型确实不可用的表现。
 					recordModelCircuitFailure(c, metricsManager, upstream, apiKey, model, err.Error(), apiType)
+					// 白名单失败撤销：带工具请求的无效响应撤销该组合的 verified 记录，
+					// 渠道摘牌后排他 fail-open 放开候选（白名单渠道故障时无路可退的兜底）。
+					MaybeForgetVerifiedToolCalls(c, upstream, apiKey, attemptModel, attemptBody)
 					if markURLFailure != nil {
 						markURLFailure(currentBaseURL)
 					}
