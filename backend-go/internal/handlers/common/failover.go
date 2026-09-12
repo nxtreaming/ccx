@@ -1200,7 +1200,12 @@ func isModelRoutingError(bodyBytes []byte) bool {
 }
 
 // keyModelRestrictionReason 只识别能归因到当前 Key 的模型或模型工具权限错误。
-// 中转站 "no available channel" 属于 relay 级临时耗尽，只允许 failover，不能禁用健康 Key。
+// 中转站 "no available channel"（无分组信息）属于 relay 级临时耗尽，只允许 failover，
+// 不能禁用健康 Key；带 "under group" 的是分组缺失——分组内容由站点运营方配置，
+// 分组不含该模型时同 Key 重试必然重复 400（实测 runanytime 7 把 key 分属
+// Gemini/Grok/ClaudeCode 等组，仅 2 把能服务 gpt-5.6-sol，其余每个请求白烧一轮
+// 400）。按 (Key,模型) 确定性失败处理走限时规避（1 小时恢复），即便撞上 relay
+// 上游池短暂全灭也能自愈。
 func keyModelRestrictionReason(bodyBytes []byte) string {
 	var errResp map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &errResp); err != nil {
@@ -1213,6 +1218,9 @@ func keyModelRestrictionReason(bodyBytes []byte) string {
 
 	code := strings.ToLower(strings.TrimSpace(toStringField(errObj, "code")))
 	message := strings.ToLower(strings.TrimSpace(toStringField(errObj, "message")))
+	if strings.Contains(message, "no available channel for model") && strings.Contains(message, "under group") {
+		return "model_not_in_key_group"
+	}
 	if strings.Contains(message, "no available channel for model") ||
 		strings.Contains(message, "under group") ||
 		strings.Contains(message, "(distributor)") {
